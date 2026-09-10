@@ -1,0 +1,6 @@
+.env
+.env.local
+firebase-service-account.json
+*.secret.js
+node_modules/
+.DS_Store
