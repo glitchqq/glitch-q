@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" id="htmlTag">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="description" content="Glitch Q — متجر بطاقات PlayStation الأول في الجزائر">
+<meta name="theme-color" content="#0a0015">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+<meta http-equiv="X-Frame-Options" content="DENY">
+<title>Glitch Q 🎮 | بطاقات PlayStation</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+<div id="toastWrap" class="tstack"></div>
+
+<!-- ══ CONSENT BANNER ══ -->
+<div id="consentBanner" class="consent-banner hidden">
+  <div class="consent-box">
+    <div class="consent-logo">🎮 GLITCH Q</div>
+    <h3 class="consent-title" id="consentTitle">مرحباً بك في Glitch Q!</h3>
+    <p class="consent-desc">
+      <span id="consentDesc">قبل استخدام موقعنا، يرجى الموافقة على</span>
+      <button onclick="openM('termsModal')" class="consent-link" id="termsLink">الشروط والأحكام</button>
+      <span id="consentAnd"> و</span>
+      <button onclick="openM('privacyModal')" class="consent-link" id="privLink">سياسة الخصوصية</button>.
+    </p>
+    <div class="consent-checks">
+      <label class="consent-check">
+        <input type="checkbox" id="chkTerms">
+        <span id="chkTermsLabel">أوافق على <button onclick="openM('termsModal')" class="consent-link">الشروط والأحكام</button></span>
+      </label>
+      <label class="consent-check">
+        <input type="checkbox" id="chkPrivacy">
+        <span id="chkPrivLabel">أوافق على <button onclick="openM('privacyModal')" class="consent-link">سياسة الخصوصية</button></span>
+      </label>
+    </div>
+    <div class="consent-btns">
+      <button onclick="acceptConsent()" class="consent-accept" id="consentAcceptBtn" disabled>✅ قبول والمتابعة</button>
+      <button onclick="rejectConsent()" class="consent-reject" id="consentRejectBtn">رفض</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOADER -->
+<div id="loader">
+  <div class="ld-wrap">
+    <div class="ld-bot-icon">
+      <div class="ld-eyes"><div class="ld-eye"></div><div class="ld-eye"></div></div>
+      <div class="ld-mouth"></div>
+    </div>
+    <div class="ld-brand">GLITCH <span>Q</span></div>
+    <div class="ld-bar-w"><div class="ld-bar" id="ldBar"></div></div>
+    <div class="ld-txt" id="ldTxt">جاري التحميل...</div>
+  </div>
+</div>
+
+<!-- ══════ MODALS ══════ -->
+
+<!-- AUTH -->
+<div id="authModal" class="modal-ov hidden">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeM('authModal')">✕</button>
+    <div id="loginPane">
+      <div class="mico">🔐</div>
+      <h2 class="mtitle" id="loginTitle">تسجيل الدخول</h2>
+      <p class="msub" id="loginSub">سجل دخولك لتجميع النقاط والمكافآت</p>
+      <form id="loginForm" class="aform">
+        <div class="iw"><i class="fa-solid fa-envelope"></i><input type="email" id="loginEmail" placeholder="البريد الإلكتروني" required autocomplete="email"></div>
+        <div class="iw"><i class="fa-solid fa-lock"></i><input type="password" id="loginPass" placeholder="كلمة المرور" required autocomplete="current-password"></div>
+        <button type="submit" class="btn-p w100" id="loginBtn">دخول</button>
+      </form>
+      <button class="lbtn" onclick="resetPass()" id="forgotBtn">نسيت كلمة المرور؟</button>
+      <div class="aDiv"><span id="orText">أو</span></div>
+      <button class="btn-o w100" id="guestBtn" onclick="closeM('authModal');if(!S.region)openM('regionModal')">تسوق كزائر</button>
+      <p class="sw-a"><span id="noAccText">ليس لديك حساب؟</span> <button onclick="showPane('regPane')" class="lbtn bold" id="goRegBtn">سجل الآن</button></p>
+    </div>
+    <div id="regPane" class="hidden">
+      <div class="mico">✨</div>
+      <h2 class="mtitle" id="regTitle">إنشاء حساب</h2>
+      <p class="msub" id="regSub">احصل على 10 نقاط ترحيبية فوراً!</p>
+      <form id="regForm" class="aform">
+        <div class="irow">
+          <div class="iw"><i class="fa-solid fa-user"></i><input type="text" id="regFirst" placeholder="الاسم" required maxlength="50"></div>
+          <div class="iw"><i class="fa-solid fa-user"></i><input type="text" id="regLast" placeholder="اللقب" required maxlength="50"></div>
+        </div>
+        <div class="iw"><i class="fa-solid fa-envelope"></i><input type="email" id="regEmail" placeholder="البريد الإلكتروني" required autocomplete="email"></div>
+        <div class="iw"><i class="fa-solid fa-lock"></i><input type="password" id="regPass" placeholder="كلمة المرور (6+)" required minlength="6"></div>
+        <div class="iw"><i class="fa-solid fa-lock"></i><input type="password" id="regConf" placeholder="تأكيد كلمة المرور" required></div>
+        <label class="reg-terms-check">
+          <input type="checkbox" id="regTermsChk" required>
+          <span id="regTermsText">أوافق على <button type="button" onclick="openM('termsModal')" class="consent-link">الشروط والأحكام</button> و<button type="button" onclick="openM('privacyModal')" class="consent-link">سياسة الخصوصية</button></span>
+        </label>
+        <button type="submit" class="btn-p w100" id="regBtn">إنشاء الحساب</button>
+      </form>
+      <p class="sw-a"><span id="haveAccText">لديك حساب؟</span> <button onclick="showPane('loginPane')" class="lbtn bold" id="goLoginBtn">سجل دخولك</button></p>
+    </div>
+    <div id="verifyPane" class="hidden">
+      <div class="mico">📧</div>
+      <h2 class="mtitle" id="verifyTitle">تحقق من إيميلك</h2>
+      <p class="msub" id="verifySub">أرسلنا لك رابط التفعيل. افتح بريدك واضغط الرابط.</p>
+      <button onclick="resendVerif()" class="btn-p w100" id="resendBtn">إعادة الإرسال</button>
+      <button onclick="showPane('loginPane')" class="btn-o w100 mt8" id="backLoginBtn">تسجيل الدخول</button>
+    </div>
+  </div>
+</div>
+
+<!-- REGION -->
+<div id="regionModal" class="modal-ov hidden">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeM('regionModal')">✕</button>
+    <div class="mico">🌍</div>
+    <h2 class="mtitle" id="regionTitle">اختر ريجنك</h2>
+    <p class="msub" id="regionSub">حدد ريجن PlayStation لعرض الأسعار الصحيحة</p>
+    <div class="reg-grid">
+      <button class="reg-btn" data-r="eu" data-c="EUR" data-s="€"><span class="rflag">🇪🇺</span><span class="rname">أوروبي</span><span class="rcur">EUR €</span></button>
+      <button class="reg-btn" data-r="us" data-c="USD" data-s="$"><span class="rflag">🇺🇸</span><span class="rname">أمريكي</span><span class="rcur">USD $</span></button>
+      <button class="reg-btn" data-r="sa" data-c="SAR" data-s="ر.س"><span class="rflag">🇸🇦</span><span class="rname">سعودي</span><span class="rcur">SAR ر.س</span></button>
+      <button class="reg-btn" data-r="ae" data-c="AED" data-s="د.إ"><span class="rflag">🇦🇪</span><span class="rname">إماراتي</span><span class="rcur">AED د.إ</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- TRACK -->
+<div id="trackModal" class="modal-ov hidden">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeM('trackModal')">✕</button>
+    <div class="mico">📦</div>
+    <h2 class="mtitle" id="trackTitle">تتبع طلبك</h2>
+    <div class="iw mt8"><i class="fa-solid fa-hashtag"></i><input type="text" id="trkInput" placeholder="رقم الطلب..." maxlength="50"></div>
+    <button onclick="trackOrder()" class="btn-p w100 mt8" id="trackBtn">تتبع</button>
+    <div id="trkRes"></div>
+  </div>
+</div>
+
+<!-- CHECKOUT -->
+<div id="checkoutModal" class="modal-ov hidden">
+  <div class="modal-box wide">
+    <button class="modal-x" onclick="closeM('checkoutModal')">✕</button>
+    <h2 class="mtitle" id="coTitle">🧾 إتمام الطلب</h2>
+    <div class="co-prod-info" id="coProdInfo"></div>
+    <div class="irow mt8">
+      <div class="iw flex1"><i class="fa-solid fa-ticket"></i><input type="text" id="cpnInp" placeholder="كوبون الخصم (اختياري)" maxlength="20"></div>
+      <button onclick="applyCpn()" class="btn-o nowrap" id="applyBtn">تطبيق</button>
+    </div>
+    <div id="cpnRes" class="cpn-res"></div>
+    <div class="total-row"><span id="totalLabel">المبلغ الإجمالي</span><strong id="coTotal" class="total-val">0 دج</strong></div>
+    <div class="pay-tabs mt8">
+      <button class="pay-tab on" id="tabBaridi" onclick="setPay('baridimob')"><i class="fa-solid fa-mobile-screen"></i> BaridiMob</button>
+      <button class="pay-tab" id="tabHand" onclick="setPay('hand')"><i class="fa-solid fa-handshake"></i> <span id="handLabel">يد بيد</span></button>
+    </div>
+    <div id="baridiF">
+      <div class="rip-box">
+        <span id="ripLabel">RIP للتحويل:</span>
+        <code>00799999004390466974</code>
+        <button onclick="copyRIP()" class="copy-btn"><i class="fa-solid fa-copy"></i></button>
+      </div>
+      <div class="iw mt8"><i class="fa-solid fa-user"></i><input type="text" id="senderN" placeholder="الاسم الكامل (كما في بريدي موب)" maxlength="100"></div>
+      <div class="upzone mt8" id="upZone">
+        <input type="file" id="recFile" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" onchange="onFile(event)">
+        <div id="upH" onclick="document.getElementById('recFile').click()" class="up-hint">
+          <i class="fa-solid fa-cloud-arrow-up"></i><span id="uploadHint">ارفع صورة الوصل (max 5MB)</span>
+        </div>
+        <div id="upD" class="up-done hidden">
+          <i class="fa-solid fa-check-circle"></i><span id="upDN"></span>
+          <button onclick="clearUp()">✕</button>
+        </div>
+      </div>
+    </div>
+    <div id="handF" class="hidden">
+      <div class="info-ban mt8"><i class="fa-solid fa-location-dot"></i> <span id="handNote">التسليم يد بيد في <strong>ولاية تلمسان فقط</strong></span></div>
+      <div class="iw mt8"><i class="fa-solid fa-phone"></i><input type="tel" id="handPhone" placeholder="رقم هاتفك" maxlength="20"></div>
+    </div>
+    <div class="pay-tabs mt8">
+      <button class="pay-tab on" id="recvEM" onclick="setRecv('email')"><i class="fa-solid fa-envelope"></i> <span id="emailLabel">إيميل</span></button>
+      <button class="pay-tab" id="recvPH" onclick="setRecv('phone')"><i class="fa-solid fa-phone"></i> <span id="phoneLabel">هاتف</span></button>
+    </div>
+    <div id="emailF"><div class="iw mt8"><i class="fa-solid fa-envelope"></i><input type="email" id="recvEmail" placeholder="البريد لاستلام الكود" autocomplete="email"></div></div>
+    <div id="phoneF" class="hidden"><div class="iw mt8"><i class="fa-solid fa-phone"></i><input type="tel" id="recvPhone" placeholder="رقم الهاتف" maxlength="20"></div></div>
+    <button onclick="submitOrder()" class="btn-p w100 mt16 big" id="submitOrderBtn"><i class="fa-solid fa-bolt"></i> <span id="submitLabel">إرسال الطلب</span></button>
+  </div>
+</div>
+
+<!-- RATING -->
+<div id="ratingModal" class="modal-ov hidden">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeM('ratingModal')">✕</button>
+    <div class="mico">⭐</div>
+    <h2 class="mtitle" id="ratingTitle">قيّم تجربتك</h2>
+    <div class="stars-row" id="starsRow">
+      <button class="starb" data-v="1">★</button><button class="starb" data-v="2">★</button>
+      <button class="starb" data-v="3">★</button><button class="starb" data-v="4">★</button>
+      <button class="starb" data-v="5">★</button>
+    </div>
+    <textarea id="ratingCmt" class="txta" placeholder="تعليق اختياري..." maxlength="300"></textarea>
+    <button onclick="submitRating()" class="btn-p w100 mt8" id="ratingSubmitBtn">إرسال التقييم</button>
+    <button onclick="closeM('ratingModal')" class="btn-o w100 mt8" id="ratingSkipBtn">تخطي</button>
+  </div>
+</div>
+
+<!-- SPIN -->
+<div id="spinModal" class="modal-ov hidden">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeM('spinModal')">✕</button>
+    <div class="mico">🎰</div>
+    <h2 class="mtitle" id="spinTitle">Lucky Spin</h2>
+    <p class="msub" id="spinSub">دوّر العجلة واربح نقاطاً! سبين واحد يومياً</p>
+    <div class="spin-wrap">
+      <div class="spin-outer">
+        <div class="spin-arrow"></div>
+        <canvas id="spinCanvas"></canvas>
+        <div class="spin-center">🎮</div>
+      </div>
+      <button id="spinBtn" onclick="doSpin()" class="btn-spin">أدِر العجلة 🎲</button>
+      <div class="spin-prize" id="spinPrize"></div>
+      <div class="spin-timer-txt" id="spinTimer"></div>
+    </div>
+  </div>
+</div>
+
+<!-- SUPPORT BOT -->
+<div id="supportModal" class="modal-ov hidden">
+  <div class="modal-box wide">
+    <button class="modal-x" onclick="closeM('supportModal')">✕</button>
+    <div class="support-head">
+      <div class="support-bot-av">🤖</div>
+      <div>
+        <h2 class="mtitle" style="margin:0;text-align:right" id="botTitle">مساعد الدعم الفني</h2>
+        <p class="msub" style="margin:0;text-align:right" id="botSub">سأساعدك في حل مشكلتك</p>
+      </div>
+    </div>
+    <div id="supportChat" class="support-chat"></div>
+    <div class="support-quick" id="supportQuick"></div>
+    <div class="support-input-wrap">
+      <input type="text" id="supportInp" class="support-inp" placeholder="اكتب مشكلتك..." maxlength="400">
+      <button onclick="sendSupportMsg()" class="support-send"><i class="fa-solid fa-paper-plane"></i></button>
+    </div>
+    <div class="support-human-btn hidden" id="supportHumanBtn">
+      <button onclick="contactHuman()" class="btn-p w100 mt8"><i class="fa-brands fa-whatsapp"></i> <span id="humanBtnText">تواصل مع الدعم البشري</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- REPORT -->
+<div id="reportModal" class="modal-ov hidden">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeM('reportModal')">✕</button>
+    <div class="mico">⚠️</div>
+    <h2 class="mtitle" id="reportTitle">الإبلاغ عن مشكلة</h2>
+    <p class="msub" id="reportSub">سيتم إرسال بلاغك مباشرة إلى الإدارة</p>
+    <div class="iw mt8"><i class="fa-solid fa-heading"></i><input type="text" id="rptTitle" placeholder="عنوان المشكلة" maxlength="100"></div>
+    <select id="rptCategory" class="sel-field mt8">
+      <option value="" id="rptCatDefault">نوع المشكلة</option>
+      <option value="payment">مشكلة في الدفع</option>
+      <option value="code">لم أستلم الكود</option>
+      <option value="wrong">كود خاطئ</option>
+      <option value="account">مشكلة في الحساب</option>
+      <option value="product">منتج غير صحيح</option>
+      <option value="other">أخرى</option>
+    </select>
+    <textarea id="rptDesc" class="txta mt8" placeholder="وصف المشكلة بالتفصيل..." maxlength="1000"></textarea>
+    <div class="iw mt8"><i class="fa-solid fa-hashtag"></i><input type="text" id="rptOrderId" placeholder="رقم الطلب (إن وجد)" maxlength="50"></div>
+    <div class="upzone mt8" id="rptUpZone">
+      <input type="file" id="rptFile" accept="image/*" style="display:none" onchange="onRptFile(event)">
+      <div id="rptUpH" onclick="document.getElementById('rptFile').click()" class="up-hint">
+        <i class="fa-solid fa-paperclip"></i><span id="rptUpHint">إرفاق صورة (اختياري)</span>
+      </div>
+      <div id="rptUpD" class="up-done hidden">
+        <i class="fa-solid fa-check-circle"></i><span id="rptUpDN"></span>
+        <button onclick="clearRptUp()">✕</button>
+      </div>
+    </div>
+    <button onclick="submitReport()" class="btn-p w100 mt16" id="rptSubmitBtn"><i class="fa-solid fa-paper-plane"></i> إرسال البلاغ</button>
+  </div>
+</div>
+
+<!-- TERMS -->
+<div id="termsModal" class="modal-ov hidden">
+  <div class="modal-box wide">
+    <button class="modal-x" onclick="closeM('termsModal')">✕</button>
+    <h2 class="mtitle">📋 الشروط والأحكام</h2>
+    <div class="legal-content">
+      <p class="legal-updated">آخر تحديث: يناير 2026</p>
+      <h3>1. القبول بالشروط</h3><p>باستخدامك لموقع Glitch Q، فإنك توافق على الالتزام بهذه الشروط.</p>
+      <h3>2. الخدمات المقدمة</h3><p>يقدم متجر Glitch Q بطاقات PlayStation الرقمية واشتراكات PS Plus والألعاب الرقمية. جميع المنتجات أصلية ومرخصة.</p>
+      <h3>3. سياسة الدفع</h3><p>• BaridiMob عبر RIP: 00799999004390466974<br>• يد بيد في ولاية تلمسان فقط.<br>• يجب رفع وصل الدفع عند الشراء عبر BaridiMob.</p>
+      <h3>4. سياسة التسليم</h3><p>يتم إرسال الكود خلال 5 إلى 60 دقيقة من التحقق من الدفع.</p>
+      <h3>5. سياسة الاسترجاع</h3><p>• <strong>لا يتم الاسترجاع بعد إرسال الكود</strong> بأي حال.<br>• في حالة الكود الخاطئ، يحق طلب الاستبدال خلال 24 ساعة بشرط عدم الاستخدام.</p>
+      <h3>6. نظام النقاط والمكافآت</h3><p>• النقاط تُمنح للمشتريات الحقيقية فقط.<br>• يُحظر التلاعب بنظام الإحالات أو إنشاء حسابات وهمية.<br>• المكافآت تخضع للتحقق قبل الإرسال.</p>
+      <h3>7. السلوك المحظور</h3><p>يُحظر: إساءة استخدام الكوبونات، إنشاء حسابات وهمية، تقديم معلومات دفع مزيفة، محاولة الاحتيال على نظام الإحالات.</p>
+      <h3>8. حدود المسؤولية</h3><p>لا يتحمل المتجر المسؤولية عن خسارة ناجمة عن اختيار ريجن خاطئ.</p>
+      <h3>9. التواصل</h3><p>glitchq1q@gmail.com · واتساب: 213658996502</p>
+    </div>
+  </div>
+</div>
+
+<!-- PRIVACY -->
+<div id="privacyModal" class="modal-ov hidden">
+  <div class="modal-box wide">
+    <button class="modal-x" onclick="closeM('privacyModal')">✕</button>
+    <h2 class="mtitle">🔒 سياسة الخصوصية</h2>
+    <div class="legal-content">
+      <p class="legal-updated">آخر تحديث: يناير 2026</p>
+      <h3>1. المعلومات التي نجمعها</h3><p>• بيانات الحساب: الاسم، البريد الإلكتروني.<br>• بيانات المعاملات: سجل الطلبات والمبالغ.<br>• بصمة الجهاز لمنع الاحتيال.</p>
+      <h3>2. كيف نستخدم معلوماتك</h3><p>• معالجة الطلبات وإرسال الأكواد.<br>• منع الاحتيال والتلاعب بنظام النقاط.<br>• تحسين الخدمات.</p>
+      <h3>3. مشاركة البيانات</h3><p><strong>لا نبيع بياناتك لأي طرف ثالث.</strong> نشارك فقط مع Firebase وTelegram لتشغيل الخدمات.</p>
+      <h3>4. أمان البيانات</h3><p>• تشفير SSL لجميع الاتصالات.<br>• كلمات المرور مشفرة عبر Firebase Auth.</p>
+      <h3>5. حقوقك</h3><p>• حق الوصول لبياناتك والتصحيح والحذف.</p>
+      <h3>6. التواصل</h3><p>glitchq1q@gmail.com</p>
+    </div>
+  </div>
+</div>
+
+<!-- FAQ -->
+<div id="faqModal" class="modal-ov hidden">
+  <div class="modal-box wide">
+    <button class="modal-x" onclick="closeM('faqModal')">✕</button>
+    <h2 class="mtitle" id="faqTitle">❓ الأسئلة الشائعة</h2>
+    <div class="faq-list" id="faqList"></div>
+  </div>
+</div>
+
+<!-- ABOUT -->
+<div id="aboutModal" class="modal-ov hidden">
+  <div class="modal-box wide">
+    <button class="modal-x" onclick="closeM('aboutModal')">✕</button>
+    <h2 class="mtitle">👥 عن الفريق</h2>
+    <div class="about-content">
+      <div class="about-hero">
+        <div class="about-bot">🤖</div>
+        <h3>Glitch Q</h3>
+        <p>المتجر الأول لعشاق الجيمينج في الجزائر</p>
+      </div>
+      <div class="about-story">
+        <h4>قصتنا</h4><p>بدأت فكرة Glitch Q من شغف حقيقي بعالم الألعاب. نحن مجموعة من الشباب الجزائري الذين قرروا إنشاء منصة موثوقة تخدم مجتمع الجيمرز الجزائري.</p>
+        <h4>مهمتنا</h4><p>تقديم أفضل بطاقات PlayStation بأسعار تنافسية مع ضمان أعلى مستوى من الأمان والسرعة.</p>
+        <h4>قيمنا</h4>
+        <div class="about-values">
+          <div class="value-item"><span>⚡</span><strong>السرعة</strong><p>تسليم فوري خلال دقائق</p></div>
+          <div class="value-item"><span>🔒</span><strong>الأمان</strong><p>معاملات آمنة 100%</p></div>
+          <div class="value-item"><span>💎</span><strong>الجودة</strong><p>منتجات أصلية مضمونة</p></div>
+          <div class="value-item"><span>🤝</span><strong>الثقة</strong><p>خدمة عملاء دائمة</p></div>
+        </div>
+        <h4>تواصل معنا</h4>
+        <p>📧 glitchq1q@gmail.com<br>📱 واتساب: 213658996502<br>📍 تلمسان، الجزائر</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PRODUCT DETAIL -->
+<div id="prodModal" class="modal-ov hidden">
+  <div class="modal-box wide">
+    <button class="modal-x" onclick="closeM('prodModal')">✕</button>
+    <div id="prodModalContent"></div>
+  </div>
+</div>
+
+<!-- ══════ HEADER ══════ -->
+<header id="header">
+  <div class="hdr-inner">
+    <div class="hdr-logo" onclick="goPage('home')">
+      <div class="logo-av">
+        <svg width="26" height="28" viewBox="0 0 44 50" xmlns="http://www.w3.org/2000/svg">
+          <rect x="6" y="8" width="32" height="22" rx="8" fill="#1a003d" stroke="#9333ea" stroke-width="1.5"/>
+          <rect x="0" y="13" width="6" height="10" rx="3" fill="#1a003d" stroke="#9333ea" stroke-width="1"/>
+          <rect x="38" y="13" width="6" height="10" rx="3" fill="#1a003d" stroke="#9333ea" stroke-width="1"/>
+          <line x1="22" y1="8" x2="22" y2="2" stroke="#9333ea" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="22" cy="1.5" r="2" fill="#ec4899"><animate attributeName="opacity" values="1;.2;1" dur="1s" repeatCount="indefinite"/></circle>
+          <rect x="10" y="13" width="8" height="6" rx="2.5" fill="#00E5FF"><animate attributeName="height" values="6;1;6" dur="3.5s" repeatCount="indefinite" begin=".3s"/><animate attributeName="y" values="13;16;13" dur="3.5s" repeatCount="indefinite" begin=".3s"/></rect>
+          <rect x="26" y="13" width="8" height="6" rx="2.5" fill="#00E5FF"><animate attributeName="height" values="6;1;6" dur="3.5s" repeatCount="indefinite" begin=".5s"/><animate attributeName="y" values="13;16;13" dur="3.5s" repeatCount="indefinite" begin=".5s"/></rect>
+          <path d="M 14 24 Q 22 28 30 24" stroke="#9333ea" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+          <rect x="10" y="33" width="24" height="14" rx="6" fill="#1a003d" stroke="#9333ea" stroke-width="1.3"/>
+          <rect x="14" y="37" width="6" height="3" rx="1.5" fill="#00E5FF" opacity=".8"/>
+          <rect x="24" y="37" width="6" height="3" rx="1.5" fill="#ec4899" opacity=".8"><animate attributeName="opacity" values=".8;.2;.8" dur="1.5s" repeatCount="indefinite"/></rect>
+        </svg>
+      </div>
+      <span class="logo-txt">GLITCH <span class="lq">Q</span></span>
+    </div>
+    <div class="hdr-search">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <input type="text" id="searchInp" placeholder="ابحث عن بطاقات، ألعاب، اشتراكات...">
+    </div>
+    <div class="hdr-acts">
+      <button class="act-btn" id="cartBtn" onclick="openM('cartModal')">
+        <i class="fa-solid fa-cart-shopping"></i>
+        <span class="act-badge hidden" id="cartBadge">0</span>
+      </button>
+      <button class="act-btn" id="notifBtn" onclick="toggleNotif()">
+        <i class="fa-solid fa-bell"></i>
+        <span class="act-badge hidden" id="notifBadge">0</span>
+      </button>
+      <button class="btn-out-sm" id="loginBtnH" onclick="showPane('loginPane');openM('authModal')">دخول</button>
+      <button class="btn-pri-sm" id="regBtnH" onclick="showPane('regPane');openM('authModal')">إنشاء حساب</button>
+      <div id="uMenuWrap" class="hidden">
+        <button class="u-btn" id="uMenuBtn" onclick="toggleUMenu()">
+          <div class="u-av"><i class="fa-solid fa-user"></i></div>
+          <span id="uNameH">حسابي</span>
+          <i class="fa-solid fa-chevron-down" style="font-size:9px;opacity:.5"></i>
+        </button>
+        <div class="u-drop hidden" id="uDrop">
+          <a onclick="goPage('profile')"><i class="fa-solid fa-user"></i> <span id="myAccText">حسابي</span></a>
+          <a onclick="goPage('rewards')"><i class="fa-solid fa-star"></i> <span id="myPtsText">نقاطي</span></a>
+          <a onclick="openM('trackModal')"><i class="fa-solid fa-truck"></i> <span id="trackOrderText">تتبع طلب</span></a>
+          <a onclick="openM('spinModal')"><i class="fa-solid fa-dice"></i> Lucky Spin</a>
+          <div class="drop-div"></div>
+          <a onclick="doLogout()" style="color:#ef4444"><i class="fa-solid fa-right-from-bracket"></i> <span id="logoutText">خروج</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <nav class="main-nav">
+    <div class="nav-in">
+      <ul class="nav-ul">
+        <li class="on"><a onclick="goPage('home')" id="nav0">الرئيسية</a></li>
+        <li><a onclick="goPage('shop')" id="nav1">المتجر</a></li>
+        <li><a onclick="goPage('shop');filterByCat('psplus')" id="nav2">الاشتراكات</a></li>
+        <li><a onclick="goPage('shop');filterByCat('games')" id="nav3">شحن الألعاب</a></li>
+        <li><a onclick="goPage('rewards')" id="nav4">النقاط والمكافآت</a></li>
+        <li><a onclick="goPage('support')" id="nav5">الدعم <span class="nav-live">·</span></a></li>
+      </ul>
+      <button class="lang-btn" onclick="toggleLang()">
+        <i class="fa-solid fa-globe"></i><span id="langLbl">AR</span>
+      </button>
+    </div>
+  </nav>
+</header>
+
+<!-- NOTIF PANEL -->
+<div id="notifPanel" class="notif-panel hidden">
+  <div class="np-head"><span id="notifPanelTitle">🔔 الإشعارات</span><button onclick="closeNotif()">✕</button></div>
+  <div id="notifList"></div>
+</div>
+
+<!-- CART MODAL -->
+<div id="cartModal" class="modal-ov hidden">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeM('cartModal')">✕</button>
+    <h2 class="mtitle" id="cartTitle">🛒 السلة</h2>
+    <div id="cartItems"></div>
+    <div id="cartEmpty" style="text-align:center;padding:30px;color:var(--mid)">
+      <i class="fa-solid fa-cart-shopping" style="font-size:36px;opacity:.3;display:block;margin-bottom:10px"></i>
+      <p id="cartEmptyText">السلة فارغة</p>
+    </div>
+    <div id="cartFoot" class="hidden">
+      <div class="total-row"><span id="cartTotalLabel">المجموع:</span><strong id="cartTotV" class="total-val">0 دج</strong></div>
+      <button onclick="goCheckout()" class="btn-p w100 mt8" id="checkoutBtn">متابعة الشراء</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ PAGES ══════ -->
+<div id="pageWrap">
+
+  <!-- HOME -->
+  <div id="pg-home" class="page on">
+    <section class="hero-sec">
+      <div class="hero-bg-fx"></div>
+      <div class="hero-ptcls" id="heroPtcls"></div>
+      <div class="hero-in">
+        <div class="hero-bot-wrap">
+          <div class="hero-glow"></div>
+          <svg class="hero-svg" viewBox="0 0 140 165" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="hbg"><stop offset="0%" stop-color="#1a003d"/><stop offset="100%" stop-color="#2d1060"/></linearGradient>
+              <linearGradient id="hedge"><stop offset="0%" stop-color="#9333ea"/><stop offset="100%" stop-color="#ec4899"/></linearGradient>
+              <filter id="hgl"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+            </defs>
+            <ellipse cx="70" cy="130" rx="50" ry="11" fill="rgba(147,51,234,.1)"/>
+            <rect x="28" y="72" width="84" height="68" rx="16" fill="url(#hbg)" stroke="url(#hedge)" stroke-width="2.2" filter="url(#hgl)"/>
+            <rect x="30" y="18" width="80" height="58" rx="14" fill="url(#hbg)" stroke="url(#hedge)" stroke-width="2.2" filter="url(#hgl)"/>
+            <line x1="70" y1="18" x2="70" y2="4" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round"/>
+            <circle cx="70" cy="3.5" r="5" fill="#ec4899" filter="url(#hgl)"><animate attributeName="r" values="5;7;5" dur="1.2s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;.4;1" dur="1.2s" repeatCount="indefinite"/></circle>
+            <rect x="12" y="28" width="17" height="28" rx="7" fill="url(#hbg)" stroke="#9333ea" stroke-width="1.6"/>
+            <rect x="111" y="28" width="17" height="28" rx="7" fill="url(#hbg)" stroke="#9333ea" stroke-width="1.6"/>
+            <rect x="38" y="28" width="20" height="13" rx="5" fill="#00E5FF" filter="url(#hgl)"><animate attributeName="height" values="13;2;13" dur="4.5s" begin=".3s" repeatCount="indefinite"/><animate attributeName="y" values="28;34.5;28" dur="4.5s" begin=".3s" repeatCount="indefinite"/></rect>
+            <circle cx="48" cy="33" r="3.5" fill="white" opacity=".6"/>
+            <rect x="82" y="28" width="20" height="13" rx="5" fill="#00E5FF" filter="url(#hgl)"><animate attributeName="height" values="13;2;13" dur="4.5s" begin=".6s" repeatCount="indefinite"/><animate attributeName="y" values="28;34.5;28" dur="4.5s" begin=".6s" repeatCount="indefinite"/></rect>
+            <circle cx="92" cy="33" r="3.5" fill="white" opacity=".6"/>
+            <path d="M 38 25 Q 48 22 58 25" stroke="#9333ea" stroke-width="1.5" fill="none" opacity=".6"/>
+            <path d="M 82 25 Q 92 22 102 25" stroke="#9333ea" stroke-width="1.5" fill="none" opacity=".6"/>
+            <path d="M 48 54 Q 70 66 92 54" stroke="#9333ea" stroke-width="2.5" fill="none" stroke-linecap="round" filter="url(#hgl)"/>
+            <rect x="40" y="84" width="60" height="36" rx="8" fill="#0a0015" stroke="rgba(147,51,234,.3)" stroke-width="1"/>
+            <rect x="48" y="91" width="20" height="8" rx="3.5" fill="#9333ea" opacity=".8"/>
+            <rect x="72" y="91" width="20" height="8" rx="3.5" fill="#ec4899" opacity=".75"><animate attributeName="opacity" values=".75;.2;.75" dur="1.6s" repeatCount="indefinite"/></rect>
+            <rect x="48" y="104" width="44" height="5" rx="2.5" fill="rgba(147,51,234,.2)"/>
+            <rect x="48" y="104" width="44" height="5" rx="2.5" fill="rgba(147,51,234,.7)"><animate attributeName="width" values="44;14;44" dur="2s" repeatCount="indefinite"/></rect>
+            <rect x="5" y="78" width="20" height="44" rx="9" fill="url(#hbg)" stroke="#9333ea" stroke-width="1.6"><animateTransform attributeName="transform" type="rotate" values="0 15 100;14 15 100;0 15 100" dur="2.5s" repeatCount="indefinite"/></rect>
+            <rect x="115" y="78" width="20" height="44" rx="9" fill="url(#hbg)" stroke="#ec4899" stroke-width="1.6"><animateTransform attributeName="transform" type="rotate" values="0 125 100;-14 125 100;0 125 100" dur="2.5s" repeatCount="indefinite"/></rect>
+            <rect x="38" y="132" width="24" height="18" rx="8" fill="url(#hbg)" stroke="#9333ea" stroke-width="1.5"/>
+            <rect x="78" y="132" width="24" height="18" rx="8" fill="url(#hbg)" stroke="#ec4899" stroke-width="1.5"/>
+          </svg>
+          <div class="fb fb1"><i class="fa-brands fa-playstation"></i></div>
+          <div class="fb fb2">⚡</div>
+          <div class="fb fb3">🎮</div>
+          <div class="fb fb4">⭐</div>
+        </div>
+        <div class="hero-cnt">
+          <div class="hero-ey" id="heroWelcome">مرحباً بك في</div>
+          <h1 class="hero-h1">GLITCH <span class="hq">Q</span></h1>
+          <p class="hero-tagline" id="heroTagline">عالم الجيمينج بلا حدود</p>
+          <p class="hero-desc" id="heroDesc">بطاقات PlayStation الأصلية • شحن فوري • دفع آمن<br>نقاط مكافآت يومية والمزيد...</p>
+          <div class="hero-btns">
+            <button onclick="goPage('shop')" class="btn-hero-p"><i class="fa-solid fa-gamepad"></i> <span id="heroShopBtn">تسوق الآن</span></button>
+            <button onclick="goPage('shop')" class="btn-hero-o"><span id="heroExploreBtn">استكشف المتجر</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="feat-strip">
+        <div class="feat"><i class="fa-solid fa-shield-halved"></i><div><b id="feat1T">دفع 100% آمن</b><span id="feat1S">حماية ببياناتك</span></div></div>
+        <div class="feat"><i class="fa-solid fa-bolt"></i><div><b id="feat2T">شحن فوري</b><span id="feat2S">خلال ثوانٍ</span></div></div>
+        <div class="feat"><i class="fa-solid fa-certificate"></i><div><b id="feat3T">منتجات أصلية</b><span id="feat3S">100% معتمدة</span></div></div>
+        <div class="feat"><i class="fa-solid fa-headset"></i><div><b id="feat4T">دعم 24/7</b><span id="feat4S">نحن هنا لمساعدتك</span></div></div>
+        <div class="feat"><i class="fa-regular fa-star"></i><div><b id="feat5T">نقاط مكافآت</b><span id="feat5S">اكسب كل عملية شراء</span></div></div>
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-hdr">
+        <h2 class="sec-ttl"><i class="fa-solid fa-diamond" style="color:#9333ea"></i> <span id="featuredTitle">بطاقات مميزة</span></h2>
+        <button class="see-all" onclick="goPage('shop')" id="seeAllBtn">عرض الكل</button>
+      </div>
+      <div class="prods-scroll" id="homeProdsGrid"></div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-hdr">
+        <h2 class="sec-ttl"><i class="fa-solid fa-compass" style="color:#9333ea"></i> <span id="catsTitle">تصفح الفئات</span></h2>
+      </div>
+      <div class="cats-grid" id="homeCatsGrid"></div>
+    </section>
+
+    <section class="sec">
+      <div class="b3-grid">
+        <div class="b3-card">
+          <div class="b3-ttl"><i class="fa-solid fa-trophy" style="color:#f59e0b"></i> <span id="leadersTitle">أفضل المتصدرين</span></div>
+          <div id="lbList" class="lb-list"></div>
+          <button onclick="openM('spinModal')" class="btn-o w100 mt8" id="spinForPtsBtn">Lucky Spin للنقاط</button>
+        </div>
+        <div class="b3-card">
+          <div class="b3-ttl-row">
+            <span><i class="fa-solid fa-calendar-check" style="color:#9333ea"></i> <b id="missionsTitle">مهام يومية</b></span>
+            <span class="mission-timer" id="mTimer">23:59:59</span>
+          </div>
+          <div class="missions" id="missionsWrap"></div>
+          <button onclick="goPage('rewards')" class="btn-v w100 mt8" id="allMissionsBtn">عرض جميع المهام</button>
+        </div>
+        <div class="b3-card offer-card">
+          <div class="offer-ttl" id="offerTitle">⏰ عرض خاص</div>
+          <div class="offer-cnt" id="offerCnt">47 : 15 : 02</div>
+          <div class="offer-pct">10%</div>
+          <div class="offer-desc" id="offerDesc">خصم على جميع البطاقات<br>استخدم الكود:</div>
+          <div class="offer-code" onclick="applyOfferCode()">GLITCH10 <i class="fa-solid fa-chevron-left"></i></div>
+          <button onclick="goPage('shop')" class="btn-v w100 mt8" id="offerShopBtn">تسوق الآن</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="nl-wrap">
+      <div class="nl-inner">
+        <i class="fa-solid fa-envelope-open-text nl-ico"></i>
+        <div class="nl-txt"><b id="nlTitle">اشترك في نشرتنا البريدية</b><p id="nlSub">احصل على آخر العروض والخصومات الحصرية</p></div>
+        <div class="nl-inp-wrap">
+          <input type="email" id="nlEmail" placeholder="بريدك الإلكتروني...">
+          <button onclick="subscribeNL()" class="btn-v" id="nlBtn">اشتراك ✓</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SHOP -->
+  <div id="pg-shop" class="page">
+    <div class="page-hdr">
+      <h1 class="page-ttl" id="shopTitle">🛒 المتجر</h1>
+      <p class="page-sub" id="shopSub">اختر من بين مجموعة واسعة من المنتجات</p>
+    </div>
+    <div class="cat-filter-bar" id="catFilterBar"></div>
+    <div class="prods-grid" id="shopProdsGrid"></div>
+  </div>
+
+  <!-- REWARDS -->
+  <div id="pg-rewards" class="page">
+    <div class="page-hdr"><h1 class="page-ttl" id="rewardsTitle">⭐ النقاط والمكافآت</h1></div>
+    <div class="rewards-wrap">
+      <div class="pts-card">
+        <div class="pts-big" id="rwPts">0</div>
+        <div id="rwLvlBadge" class="lvl-badge lvl-br">🥉 مبتدئ</div>
+        <div class="pts-bar-w"><div class="pts-bar" id="rwPtsBar" style="width:0%"></div></div>
+        <p style="font-size:11px;color:var(--mid);margin-top:8px" id="rwPtsHint">كل 1000 دج = نقطة · 500 نقطة = خصم 5%</p>
+      </div>
+      <div class="rw-sec">
+        <div class="rw-sec-ttl" id="spinRwTitle">🎰 Lucky Spin</div>
+        <p style="font-size:12px;color:var(--mid);margin-bottom:12px" id="spinRwSub">سبين يومي مجاني — اربح نقاطاً إضافية!</p>
+        <button onclick="openM('spinModal')" class="btn-p w100" id="openSpinBtn">افتح العجلة</button>
+        <p style="font-size:11px;color:var(--dim);margin-top:8px" id="spinTimerRw"></p>
+      </div>
+      <div class="rw-sec">
+        <div class="rw-sec-ttl" id="streakTitle">🔥 تسجيل يومي</div>
+        <div class="streak-days" id="streakRow"></div>
+        <button id="claimBtn" onclick="claimStreak()" class="btn-p w100 mt8" id="claimStreakBtn">استلام مكافأة اليوم</button>
+      </div>
+      <div class="rw-sec">
+        <div class="rw-sec-ttl" id="missionsRwTitle">📋 المهام اليومية</div>
+        <div class="missions" id="missionsWrapRw"></div>
+      </div>
+      <div class="rw-sec" id="refSection">
+        <div class="rw-sec-ttl" id="refTitle">👥 دعوة الأصدقاء</div>
+        <div class="ref-section">
+          <div class="ref-title" id="refLinkTitle">🔗 رابط الدعوة الخاص بك</div>
+          <p class="ref-desc" id="refDesc">شارك رابطك مع أصدقائك. عند تسجيلهم تحصل على <strong style="color:var(--violet)">1000 نقطة</strong> لكل صديق!<br><small style="color:var(--dim)">⚠️ لا يعمل مع حسابات من نفس الجهاز أو الشبكة</small></p>
+          <div class="ref-link-box">
+            <span class="ref-link-txt" id="refLinkTxt">سجل دخولك لعرض رابطك</span>
+            <button class="ref-copy-btn" onclick="copyRefLink()"><i class="fa-solid fa-copy"></i> <span id="copyRefText">نسخ</span></button>
+          </div>
+          <div class="ref-stats">
+            <div class="ref-stat"><span class="ref-stat-n" id="refCount">0</span><span class="ref-stat-l" id="refFriendsLabel">صديق مدعو</span></div>
+            <div class="ref-stat"><span class="ref-stat-n" id="refPts">0</span><span class="ref-stat-l" id="refPtsLabel">نقطة من الدعوات</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="rw-sec">
+        <div class="rw-sec-ttl" id="msTitle">🏆 مكافآت النقاط</div>
+        <p style="font-size:12px;color:var(--mid);margin-bottom:14px;line-height:1.7" id="msDesc">اجمع النقاط واحصل على بطاقات مجانية! يجب أن يتجاوز مجموع مشترياتك قيمة البطاقة.</p>
+        <div class="milestones-grid" id="milestonesGrid"></div>
+      </div>
+      <div class="rw-sec">
+        <div class="rw-sec-ttl" id="badgesTitle">🏅 شاراتي</div>
+        <div class="badges-grid" id="badgesGrid"></div>
+      </div>
+      <div class="rw-sec">
+        <div class="rw-sec-ttl" id="leadersRwTitle">👑 لوحة الصدارة</div>
+        <div id="lbListRw" class="lb-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROFILE -->
+  <div id="pg-profile" class="page">
+    <div class="page-hdr"><h1 class="page-ttl" id="profileTitle">👤 حسابي</h1></div>
+    <div id="notLoggedBox" class="not-logged">
+      <span style="font-size:48px;display:block;margin-bottom:14px">🔐</span>
+      <h3 id="notLoggedTitle">سجل دخولك</h3>
+      <p id="notLoggedSub">لتجميع النقاط وتتبع طلباتك</p>
+      <button onclick="showPane('loginPane');openM('authModal')" class="btn-p mt8" id="notLoggedBtn">دخول / تسجيل</button>
+    </div>
+    <div id="profBox" class="prof-box hidden">
+      <div class="prof-top">
+        <div class="prof-av"><i class="fa-solid fa-user"></i></div>
+        <div class="prof-info"><h3 id="profName">مرحباً</h3><span id="profRegBadge" class="prof-reg-badge"></span></div>
+        <div class="prof-pts"><div class="pn" id="profPts">0</div><div class="pl" id="ptsLabel">نقطة</div></div>
+      </div>
+      <div class="prof-acts">
+        <button onclick="openM('trackModal')" class="pact"><i class="fa-solid fa-truck"></i><span id="profTrack">تتبع</span></button>
+        <button onclick="openM('regionModal')" class="pact"><i class="fa-solid fa-globe"></i><span id="profRegion">الريجن</span></button>
+        <button onclick="openM('ratingModal')" class="pact"><i class="fa-solid fa-star"></i><span id="profRate">تقييم</span></button>
+        <button onclick="openM('spinModal')" class="pact"><i class="fa-solid fa-dice"></i><span>Spin</span></button>
+        <button onclick="goPage('rewards')" class="pact"><i class="fa-solid fa-crown"></i><span id="profRewards">مكافآت</span></button>
+      </div>
+      <div class="prof-hist-ttl" id="profHistTitle">📦 آخر طلباتك</div>
+      <div id="profHistList"></div>
+      <button onclick="doLogout()" class="btn-danger mt16" id="logoutBtn">تسجيل الخروج</button>
+    </div>
+  </div>
+
+  <!-- SUPPORT -->
+  <div id="pg-support" class="page">
+    <div class="page-hdr">
+      <h1 class="page-ttl" id="supportTitle">🎧 الدعم الفني</h1>
+      <p class="page-sub" id="supportSub">نحن هنا لمساعدتك في أي وقت</p>
+    </div>
+    <div class="support-cards-grid">
+      <div class="sup-card" onclick="openM('supportModal')">
+        <i class="fa-solid fa-robot sup-ico" style="color:#9333ea"></i>
+        <h3 id="supCard1T">الدعم الفني</h3>
+        <p id="supCard1S">تحدث مع بوت الدعم الذكي لحل مشكلتك</p>
+        <div class="sup-arrow">←</div>
+      </div>
+      <div class="sup-card" onclick="openM('reportModal')">
+        <i class="fa-solid fa-flag sup-ico" style="color:#ef4444"></i>
+        <h3 id="supCard2T">الإبلاغ عن مشكلة</h3>
+        <p id="supCard2S">أرسل بلاغاً مفصلاً للإدارة</p>
+        <div class="sup-arrow">←</div>
+      </div>
+      <div class="sup-card" onclick="openM('trackModal')">
+        <i class="fa-solid fa-truck sup-ico" style="color:#10b981"></i>
+        <h3 id="supCard3T">تتبع الطلبات</h3>
+        <p id="supCard3S">تتبع حالة طلبك برقم الطلب</p>
+        <div class="sup-arrow">←</div>
+      </div>
+      <div class="sup-card" onclick="openM('faqModal')">
+        <i class="fa-solid fa-circle-question sup-ico" style="color:#f59e0b"></i>
+        <h3 id="supCard4T">الأسئلة الشائعة</h3>
+        <p id="supCard4S">إجابات على أكثر الأسئلة شيوعاً</p>
+        <div class="sup-arrow">←</div>
+      </div>
+      <div class="sup-card" onclick="openWhatsApp()">
+        <i class="fa-brands fa-whatsapp sup-ico" style="color:#25D366"></i>
+        <h3 id="supCard5T">واتساب</h3>
+        <p id="supCard5S">تواصل معنا مباشرة — يفتح المحادثة فوراً</p>
+        <div class="sup-arrow">←</div>
+      </div>
+      <div class="sup-card" onclick="openEmail()">
+        <i class="fa-solid fa-envelope sup-ico" style="color:#00E5FF"></i>
+        <h3 id="supCard6T">البريد الإلكتروني</h3>
+        <p id="supCard6S">glitchq1q@gmail.com — يفتح تطبيق البريد فوراً</p>
+        <div class="sup-arrow">←</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<footer class="site-footer">
+  <div class="footer-in">
+    <div class="f-brand">
+      <div class="f-logo">GLITCH <span class="lq">Q</span></div>
+      <p id="fBrandDesc">المتجر الأول لعشاق الجيمينج في الجزائر.</p>
+      <div class="f-social">
+        <a href="#" class="f-soc" rel="noopener noreferrer"><i class="fa-brands fa-discord"></i></a>
+        <a href="#" class="f-soc" rel="noopener noreferrer"><i class="fa-brands fa-instagram"></i></a>
+        <a href="#" class="f-soc" rel="noopener noreferrer"><i class="fa-brands fa-twitter"></i></a>
+        <a href="#" class="f-soc" rel="noopener noreferrer"><i class="fa-brands fa-youtube"></i></a>
+      </div>
+    </div>
+    <div class="f-col">
+      <h4 id="fQuickTitle">روابط سريعة</h4>
+      <ul>
+        <li><a onclick="openM('aboutModal')" id="fAbout">عن الفريق</a></li>
+        <li><a onclick="openM('faqModal')" id="fFaq">الأسئلة الشائعة</a></li>
+        <li><a onclick="openM('privacyModal')" id="fPrivacy">سياسة الخصوصية</a></li>
+        <li><a onclick="openM('termsModal')" id="fTerms">الشروط والأحكام</a></li>
+      </ul>
+    </div>
+    <div class="f-col">
+      <h4 id="fHelpTitle">مساعدة</h4>
+      <ul>
+        <li><a onclick="openM('supportModal')" id="fSupport">الدعم الفني</a></li>
+        <li><a onclick="openM('reportModal')" id="fReport">الإبلاغ عن مشكلة</a></li>
+        <li><a onclick="openM('trackModal')" id="fTrack">تتبع الطلبات</a></li>
+        <li><a onclick="openWhatsApp()" id="fWa">واتساب المباشر</a></li>
+        <li><a onclick="openEmail()" id="fEmail">البريد الإلكتروني</a></li>
+      </ul>
+    </div>
+    <div class="f-col">
+      <h4 id="fPayTitle">طرق الدفع</h4>
+      <div class="pay-methods">
+        <span class="pay-m">BaridiMob</span>
+        <span class="pay-m" id="fHandMethod">يد بيد</span>
+      </div>
+      <p style="font-size:11px;color:var(--dim);margin-top:8px" id="fHandNote">📍 يد بيد في ولاية تلمسان فقط</p>
+    </div>
+  </div>
+  <div class="f-bottom"><span id="fCopy">GLITCH Q 2026 © جميع الحقوق محفوظة</span></div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
