@@ -19,7 +19,7 @@ const auth=firebase.auth();
 const db=firebase.firestore();
 
 /* ══ WORKER URL المحدّث ══ */
-const WORKER="https://glitchq-proxy.glitchqq.workers.dev";
+const WORKER="https://glitchq-proxy.kadirom7k777.workers.dev";
 const WA_N="213658996502";
 const EMAIL_ADDR="glitchq1q@gmail.com";
 const ADMIN_EMAIL="kadirom7k777@gmail.com";
