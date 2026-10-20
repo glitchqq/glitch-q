@@ -11,6 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
@@ -188,6 +189,14 @@ a{color:inherit;text-decoration:none}
 .abuse-header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .abuse-high{background:rgba(239,68,68,.2);color:var(--red);padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700}
 
+/* ══ PULSE ══ */
+@keyframes pulse-red{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
+.fraud-pulse{animation:pulse-red 2s infinite}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse-red 2s infinite;animation-name:pulse-green}
+@keyframes pulse-green{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.5)}50%{box-shadow:0 0 0 6px rgba(16,185,129,0)}}
+/* ══ STAT DELTA ══ */
+.stat-delta{font-size:10px;margin-top:4px;display:flex;align-items:center;gap:3px}
+.delta-up{color:var(--green)}.delta-down{color:var(--red)}
 /* ══ RESPONSIVE ══ */
 @media(max-width:768px){
   .sidebar{transform:translateX(240px)}
@@ -200,6 +209,7 @@ a{color:inherit;text-decoration:none}
   .topbar{padding:10px 14px;gap:8px}
   .content{padding:14px}
   .tb-time{display:none}
+  #tab-dashboard [style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important}
 }
 @media(min-width:769px){
   .sidebar{transform:translateX(0)}
@@ -292,13 +302,49 @@ a{color:inherit;text-decoration:none}
           <div class="stat-card" style="--bar:linear-gradient(90deg,var(--cyan),var(--green))"><span class="stat-ico">🌐</span><span class="stat-val" id="st-visits">—</span><span class="stat-lbl">الزيارات الكلية</span></div>
           <div class="stat-card" style="--bar:linear-gradient(90deg,var(--red),var(--orange))"><span class="stat-ico">🚨</span><span class="stat-val" id="st-reports">—</span><span class="stat-lbl">البلاغات المفتوحة</span></div>
         </div>
-        <div class="sec">
-          <div class="sec-title"><i class="fa-solid fa-bolt"></i> آخر الطلبات</div>
-          <div id="dashRecentOrders" class="card-list"></div>
+        <!-- CHARTS ROW -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <div class="sec" style="margin-bottom:0">
+            <div class="sec-title"><i class="fa-solid fa-chart-bar"></i> الطلبات — آخر 7 أيام</div>
+            <canvas id="chartOrders" height="160"></canvas>
+          </div>
+          <div class="sec" style="margin-bottom:0">
+            <div class="sec-title"><i class="fa-solid fa-chart-pie"></i> توزيع حالات الطلبات</div>
+            <canvas id="chartStatus" height="160"></canvas>
+          </div>
         </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <div class="sec" style="margin-bottom:0">
+            <div class="sec-title"><i class="fa-solid fa-chart-line"></i> الإيرادات — آخر 7 أيام (دج)</div>
+            <canvas id="chartRevenue" height="160"></canvas>
+          </div>
+          <div class="sec" style="margin-bottom:0">
+            <div class="sec-title"><i class="fa-solid fa-users"></i> تسجيلات جديدة — آخر 7 أيام</div>
+            <canvas id="chartUsers" height="160"></canvas>
+          </div>
+        </div>
+
+        <!-- LIVE ALERTS -->
+        <div class="sec" id="fraudAlertBox" style="display:none;border-color:rgba(239,68,68,.4);margin-bottom:16px">
+          <div class="sec-title" style="color:var(--red)"><i class="fa-solid fa-triangle-exclamation"></i> تنبيهات الاحتيال المباشرة</div>
+          <div id="fraudAlerts" class="card-list"></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <div class="sec" style="margin-bottom:0">
+            <div class="sec-title"><i class="fa-solid fa-bolt"></i> آخر الطلبات</div>
+            <div id="dashRecentOrders" class="card-list"></div>
+          </div>
+          <div class="sec" style="margin-bottom:0">
+            <div class="sec-title"><i class="fa-solid fa-trophy"></i> أفضل العملاء</div>
+            <div id="dashTopUsers"></div>
+          </div>
+        </div>
+
+        <!-- PRODUCT PERFORMANCE -->
         <div class="sec">
-          <div class="sec-title"><i class="fa-solid fa-trophy"></i> أفضل العملاء (نقاطاً)</div>
-          <div id="dashTopUsers"></div>
+          <div class="sec-title"><i class="fa-solid fa-fire"></i> أكثر المنتجات مبيعاً</div>
+          <canvas id="chartProducts" height="120"></canvas>
         </div>
       </div>
 
@@ -612,7 +658,7 @@ a{color:inherit;text-decoration:none}
 const _FC={apiKey:"AIzaSyDuMvn6UePhPf7hWIOkuQKOEoDEwogdIso",authDomain:"glitch-q.firebaseapp.com",projectId:"glitch-q",storageBucket:"glitch-q.firebasestorage.app",messagingSenderId:"34566279347",appId:"1:34566279347:web:8dfea7d9a884c1e8c060c6"};
 firebase.initializeApp(_FC);
 const auth=firebase.auth(),db=firebase.firestore();
-const WORKER="https://broken-bird-bfe5.glitchqq.workers.dev";
+const WORKER="https://glitchq-proxy.kadirom7k777.workers.dev";
 const ADMIN_EMAIL="kadirom7k777@gmail.com";
 
 /* ══ STATE ══ */
@@ -752,10 +798,17 @@ async function loadDashboard(){
       rc.appendChild(el);
     });
     // Top users
-    const topUsers=usersSnap.docs.sort((a,b)=>(b.data().points||0)-(a.data().points||0)).slice(0,5);
+    const usersData=usersSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const topUsers=usersData.sort((a,b)=>(b.points||0)-(a.points||0)).slice(0,5);
     const tu=document.getElementById('dashTopUsers');tu.innerHTML='';
     const medals=['🥇','🥈','🥉','4️⃣','5️⃣'];
-    topUsers.forEach((d,i)=>{const u=d.data();const el=document.createElement('div');el.style.cssText='display:flex;align-items:center;gap:12px;padding:10px;background:rgba(0,229,255,.04);border-radius:8px;margin-bottom:6px;font-size:12px';el.innerHTML=`<span style="font-size:18px">${medals[i]}</span><span style="flex:1;font-weight:700">${san(u.name||u.email||'مستخدم')}</span><span style="font-family:Orbitron;font-size:11px;color:var(--gold)">${(u.points||0).toLocaleString()} نقطة</span><span style="color:var(--mid)">${u.orders||0} طلب</span>`;tu.appendChild(el);});
+    topUsers.forEach((u,i)=>{const el=document.createElement('div');el.style.cssText='display:flex;align-items:center;gap:12px;padding:10px;background:rgba(0,229,255,.04);border-radius:8px;margin-bottom:6px;font-size:12px';el.innerHTML=`<span style="font-size:18px">${medals[i]}</span><span style="flex:1;font-weight:700">${san(u.name||u.email||'مستخدم')}</span><span style="font-family:Orbitron;font-size:11px;color:var(--gold)">${(u.points||0).toLocaleString()} نقطة</span><span style="color:var(--mid)">${u.orders||0} طلب</span>`;tu.appendChild(el);});
+
+    // Charts & Fraud
+    setTimeout(()=>{
+      renderChartsFromOrders(orders,usersData);
+      runFraudDetection(orders,usersData);
+    },100);
   }catch(e){console.error('Dashboard error:',e);}
 }
 
@@ -1117,6 +1170,115 @@ function copyText(txt){navigator.clipboard.writeText(txt).then(()=>aToast('تم 
 function loading(){return '<div class="adm-loading"><div class="spinner"></div><span>جاري التحميل...</span></div>';}
 function empty(msg){return `<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>${msg}</p></div>`;}
 function errState(msg){return `<div class="empty-state"><i class="fa-solid fa-triangle-exclamation" style="color:var(--red)"></i><p style="color:var(--red)">${msg}</p></div>`;}
+
+/* ══════════════════════════════════════════
+   ADVANCED CHARTS ENGINE
+══════════════════════════════════════════ */
+let _charts={};
+const CHART_DEFAULTS={
+  responsive:true,maintainAspectRatio:false,
+  plugins:{legend:{display:false},tooltip:{backgroundColor:'#0f1729',titleColor:'#00E5FF',bodyColor:'#eef2ff',borderColor:'rgba(0,229,255,.2)',borderWidth:1,padding:10,cornerRadius:8,rtl:true}},
+  scales:{x:{grid:{color:'rgba(0,229,255,.06)'},ticks:{color:'#8899bb',font:{size:10}}},y:{grid:{color:'rgba(0,229,255,.06)'},ticks:{color:'#8899bb',font:{size:10}}}}
+};
+
+function getLast7Days(){
+  return Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(6-i));return d.toLocaleDateString('ar-DZ',{month:'short',day:'numeric'});});
+}
+function getDay7Key(ts){
+  if(!ts)return null;const d=ts.toDate?ts.toDate():new Date(ts.seconds*1000);return d.toLocaleDateString('ar-DZ',{month:'short',day:'numeric'});}
+
+function buildChart(id,cfg){
+  if(_charts[id]){_charts[id].destroy();delete _charts[id];}
+  const canvas=document.getElementById(id);if(!canvas)return;
+  _charts[id]=new Chart(canvas,cfg);
+}
+
+function renderChartsFromOrders(orders,users){
+  const days=getLast7Days();
+  const ordCounts=Object.fromEntries(days.map(d=>[d,0]));
+  const revCounts=Object.fromEntries(days.map(d=>[d,0]));
+  const statusCounts={pending:0,processing:0,done:0,rejected:0};
+  const prodCounts={};
+
+  orders.forEach(o=>{
+    const key=getDay7Key(o.ts);
+    if(key&&ordCounts[key]!==undefined){ordCounts[key]++;revCounts[key]+=(o.totalDZD||0);}
+    if(o.status)statusCounts[o.status]=(statusCounts[o.status]||0)+1;
+    const prod=o.product||'أخرى';prodCounts[prod]=(prodCounts[prod]||0)+1;
+  });
+
+  // Users by day
+  const usrCounts=Object.fromEntries(days.map(d=>[d,0]));
+  users.forEach(u=>{const key=getDay7Key(u.created);if(key&&usrCounts[key]!==undefined)usrCounts[key]++;});
+
+  const gradient=(ctx,c1,c2)=>{const g=ctx.createLinearGradient(0,0,0,160);g.addColorStop(0,c1);g.addColorStop(1,c2);return g;};
+
+  // 1. Orders bar chart
+  buildChart('chartOrders',{type:'bar',data:{labels:days,datasets:[{data:Object.values(ordCounts),backgroundColor:'rgba(0,229,255,.25)',borderColor:'#00E5FF',borderWidth:2,borderRadius:6,hoverBackgroundColor:'rgba(0,229,255,.45)'}]},options:{...CHART_DEFAULTS,plugins:{...CHART_DEFAULTS.plugins,tooltip:{...CHART_DEFAULTS.plugins.tooltip,callbacks:{label:ctx=>`${ctx.raw} طلب`}}}}});
+
+  // 2. Status doughnut
+  buildChart('chartStatus',{type:'doughnut',data:{labels:['⏳ قيد المراجعة','⚙️ معالجة','✅ مكتملة','❌ مرفوضة'],datasets:[{data:[statusCounts.pending||0,statusCounts.processing||0,statusCounts.done||0,statusCounts.rejected||0],backgroundColor:['rgba(245,158,11,.7)','rgba(59,130,246,.7)','rgba(16,185,129,.7)','rgba(239,68,68,.7)'],borderColor:['#f59e0b','#3b82f6','#10b981','#ef4444'],borderWidth:2,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'bottom',labels:{color:'#8899bb',font:{size:10},padding:8}},tooltip:{...CHART_DEFAULTS.plugins.tooltip,callbacks:{label:ctx=>`${ctx.label}: ${ctx.raw}`}}},cutout:'65%'}});
+
+  // 3. Revenue line chart
+  buildChart('chartRevenue',{type:'line',data:{labels:days,datasets:[{data:Object.values(revCounts),borderColor:'#ec4899',backgroundColor:ctx=>{const g=ctx.chart.ctx.createLinearGradient(0,0,0,160);g.addColorStop(0,'rgba(236,72,153,.3)');g.addColorStop(1,'rgba(236,72,153,.02)');return g;},fill:true,tension:.4,pointBackgroundColor:'#ec4899',pointRadius:4,borderWidth:2}]},options:{...CHART_DEFAULTS,plugins:{...CHART_DEFAULTS.plugins,tooltip:{...CHART_DEFAULTS.plugins.tooltip,callbacks:{label:ctx=>`${ctx.raw.toLocaleString()} دج`}}}}});
+
+  // 4. Users bar
+  buildChart('chartUsers',{type:'bar',data:{labels:days,datasets:[{data:Object.values(usrCounts),backgroundColor:'rgba(147,51,234,.35)',borderColor:'#9333ea',borderWidth:2,borderRadius:6,hoverBackgroundColor:'rgba(147,51,234,.6)'}]},options:{...CHART_DEFAULTS,plugins:{...CHART_DEFAULTS.plugins,tooltip:{...CHART_DEFAULTS.plugins.tooltip,callbacks:{label:ctx=>`${ctx.raw} مستخدم`}}}}});
+
+  // 5. Products horizontal bar
+  const topProds=Object.entries(prodCounts).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  if(topProds.length){buildChart('chartProducts',{type:'bar',data:{labels:topProds.map(p=>p[0].slice(0,20)),datasets:[{data:topProds.map(p=>p[1]),backgroundColor:['rgba(0,229,255,.5)','rgba(147,51,234,.5)','rgba(236,72,153,.5)','rgba(16,185,129,.5)','rgba(245,158,11,.5)','rgba(59,130,246,.5)'],borderColor:['#00E5FF','#9333ea','#ec4899','#10b981','#f59e0b','#3b82f6'],borderWidth:2,borderRadius:6}]},options:{indexAxis:'y',...CHART_DEFAULTS,scales:{x:{...CHART_DEFAULTS.scales.x,ticks:{...CHART_DEFAULTS.scales.x.ticks,callback:v=>Math.floor(v)}},y:{...CHART_DEFAULTS.scales.y}}}});}
+}
+
+/* ══════════════════════════════════════════
+   FRAUD DETECTION ENGINE
+══════════════════════════════════════════ */
+function runFraudDetection(orders,users){
+  const alerts=[];
+  const now=Date.now();
+  const hour=3600000;
+
+  // 1. Multiple orders same email in 1h
+  const byContact={};
+  orders.forEach(o=>{
+    const c=o.receiveContact||o.userId;if(!c)return;
+    if(!byContact[c])byContact[c]=[];
+    byContact[c].push(o);
+  });
+  Object.entries(byContact).forEach(([c,ords])=>{
+    const recent=ords.filter(o=>{const ts=o.ts?.seconds?o.ts.seconds*1000:0;return now-ts<hour;});
+    if(recent.length>=3)alerts.push({level:'high',icon:'🚨',msg:`${recent.length} طلبات من نفس جهة الاتصال خلال ساعة`,detail:c.slice(0,40),ids:recent.map(o=>o.id.slice(0,12)).join('، ')});
+  });
+
+  // 2. Orders with same userId too fast
+  const byUser={};
+  orders.forEach(o=>{if(!o.userId||o.userId==='guest')return;if(!byUser[o.userId])byUser[o.userId]=[];byUser[o.userId].push(o);});
+  Object.entries(byUser).forEach(([uid,ords])=>{
+    const recent=ords.filter(o=>{const ts=o.ts?.seconds?o.ts.seconds*1000:0;return now-ts<hour*2;});
+    if(recent.length>=4)alerts.push({level:'medium',icon:'⚠️',msg:`${recent.length} طلبات من مستخدم واحد في ساعتين`,detail:`UID: ${uid.slice(0,16)}`,ids:recent.map(o=>o.id.slice(0,10)).join('، ')});
+  });
+
+  // 3. High value orders not confirmed after 24h
+  const highValue=orders.filter(o=>o.status==='pending'&&(o.totalDZD||0)>5000);
+  highValue.forEach(o=>{const ts=o.ts?.seconds?o.ts.seconds*1000:0;if(now-ts>hour*24)alerts.push({level:'medium',icon:'💰',msg:`طلب قيمة عالية معلّق أكثر من 24 ساعة`,detail:`${(o.totalDZD||0).toLocaleString()} دج — ${o.product||''}`,ids:o.id.slice(0,16)});});
+
+  // 4. Users with 0 orders but high points
+  users.forEach(u=>{if(!u.orders&&(u.points||0)>200)alerts.push({level:'low',icon:'🎯',msg:`مستخدم بنقاط عالية بدون طلبات`,detail:`${u.name||u.email||'مجهول'} — ${u.points} نقطة`,ids:u.id?.slice(0,16)||''});});
+
+  // Render
+  const box=document.getElementById('fraudAlertBox');
+  const el=document.getElementById('fraudAlerts');
+  if(!alerts.length){box.style.display='none';return;}
+  box.style.display='block';el.innerHTML='';
+  alerts.forEach(a=>{
+    const colors={high:'var(--red)',medium:'var(--orange)',low:'var(--gold)'};
+    const c=colors[a.level]||'var(--mid)';
+    const div=document.createElement('div');
+    div.style.cssText=`background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.25);border-radius:10px;padding:12px;margin-bottom:8px;`;
+    div.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:18px">${a.icon}</span><strong style="color:${c};font-size:13px">${a.msg}</strong><span style="margin-right:auto;font-size:10px;background:${c}22;color:${c};padding:2px 8px;border-radius:6px;font-weight:700">${a.level==='high'?'عالي':a.level==='medium'?'متوسط':'منخفض'}</span></div><div style="font-size:11px;color:var(--mid)">${a.detail}</div><div style="font-size:10px;color:var(--dim);margin-top:4px">IDs: ${a.ids}</div>`;
+    el.appendChild(div);
+  });
+}
 </script>
 </body>
 </html>
