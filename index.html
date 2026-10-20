@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <meta name="description" content="Glitch Q — متجر بطاقات PlayStation الأول في الجزائر">
 <meta name="theme-color" content="#0a0015">
+<link rel="preconnect" href="https://www.gstatic.com">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
 <meta http-equiv="X-Frame-Options" content="DENY">
@@ -420,10 +424,8 @@
       <ul class="nav-ul">
         <li class="on"><a onclick="goPage('home')" id="nav0">الرئيسية</a></li>
         <li><a onclick="goPage('shop')" id="nav1">المتجر</a></li>
-        <li><a onclick="goPage('shop');filterByCat('psplus')" id="nav2">الاشتراكات</a></li>
-        <li><a onclick="goPage('shop');filterByCat('games')" id="nav3">شحن الألعاب</a></li>
-        <li><a onclick="goPage('rewards')" id="nav4">النقاط والمكافآت</a></li>
-        <li><a onclick="goPage('support')" id="nav5">الدعم <span class="nav-live">·</span></a></li>
+        <li><a onclick="goPage('rewards')" id="nav2">النقاط والمكافآت</a></li>
+        <li><a onclick="goPage('support')" id="nav3">الدعم <span class="nav-live">·</span></a></li>
       </ul>
       <button class="lang-btn" onclick="toggleLang()">
         <i class="fa-solid fa-globe"></i><span id="langLbl">AR</span>
@@ -760,6 +762,6 @@
   <div class="f-bottom"><span id="fCopy">GLITCH Q 2026 © جميع الحقوق محفوظة</span></div>
 </footer>
 
-<script src="script.js"></script>
+<script src="script.js" defer></script>
 </body>
 </html>

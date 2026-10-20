@@ -19,7 +19,7 @@ const auth=firebase.auth();
 const db=firebase.firestore();
 
 /* ══ WORKER URL المحدّث ══ */
-const WORKER="https://glitchq-proxy.glitchqq.workers.dev/telegram";
+const WORKER="https://glitchq-proxy.glitchqq.workers.dev";
 const WA_N="213658996502";
 const EMAIL_ADDR="glitchq1q@gmail.com";
 const ADMIN_EMAIL="kadirom7k777@gmail.com";
@@ -311,7 +311,7 @@ function applyTranslations(){
 
   // Nav
   const navItems=document.querySelectorAll('.nav-ul li a');
-  const navKeys=['nav_home','nav_shop','nav_subs','nav_games','nav_rewards'];
+  const navKeys=['nav_home','nav_shop','nav_rewards'];
   navItems.forEach((a,i)=>{if(navKeys[i])a.textContent=t(navKeys[i]);});
   const nav5=document.querySelector('.nav-ul li:last-child a');
   if(nav5)nav5.innerHTML=`${t('nav_support')} <span class="nav-live">·</span>`;
@@ -488,20 +488,7 @@ const DEFAULT_CATS=[
   {id:'psplus',name:'اشتراكات PS Plus',nameEn:'PS Plus Subscriptions',icon:'👑',bg:'linear-gradient(135deg,#b45309,#f59e0b)',enabled:true,order:2},
   {id:'games',name:'ألعاب رقمية',nameEn:'Digital Games',icon:'🎮',bg:'linear-gradient(135deg,#203a43,#2c5364)',enabled:true,order:3},
 ];
-const DEFAULT_PRODS=[
-  {id:'ps5eu',cat:'psstore',name:'PS Store Card',sub:'France 🇫🇷',val:5,cur:'EUR',sym:'€',priceDZD:7300,stock:true,img:'ps',badge:''},
-  {id:'ps10eu',cat:'psstore',name:'PS Store Card',sub:'France 🇫🇷',val:10,cur:'EUR',sym:'€',priceDZD:13900,stock:true,img:'ps',badge:''},
-  {id:'ps20eu',cat:'psstore',name:'PS Store Card',sub:'France 🇫🇷',val:20,cur:'EUR',sym:'€',priceDZD:27500,stock:true,img:'ps',badge:''},
-  {id:'ps50eu',cat:'psstore',name:'PS Store Card',sub:'France 🇫🇷',val:50,cur:'EUR',sym:'€',priceDZD:67300,stock:false,img:'ps',badge:''},
-  {id:'ps5us',cat:'psstore',name:'PS Store Card',sub:'USA 🇺🇸',val:5,cur:'USD',sym:'$',priceDZD:6500,stock:true,img:'ps',badge:''},
-  {id:'ps10us',cat:'psstore',name:'PS Store Card',sub:'USA 🇺🇸',val:10,cur:'USD',sym:'$',priceDZD:12900,stock:true,img:'ps',badge:''},
-  {id:'psp1',cat:'psplus',name:'PS Plus Essential',sub:'1 شهر 🇫🇷',val:1,cur:'month',sym:'',priceDZD:2100,stock:true,img:'plus',badge:'Essential'},
-  {id:'psp3',cat:'psplus',name:'PS Plus Extra',sub:'3 أشهر 🇫🇷',val:3,cur:'month',sym:'',priceDZD:7500,stock:true,img:'plus',badge:'Extra'},
-  {id:'psp12',cat:'psplus',name:'PS Plus Premium',sub:'12 شهر 🇫🇷',val:12,cur:'month',sym:'',priceDZD:18900,stock:true,img:'plus',badge:'Premium'},
-  {id:'g1',cat:'games',name:'EA FC 25',sub:'PS5 Digital',val:1,cur:'copy',sym:'',priceDZD:8500,stock:true,img:null,badge:'New',desc:'أحدث إصدار من ألعاب كرة القدم',descEn:'Latest soccer game release'},
-  {id:'g2',cat:'games',name:'GTA VI',sub:'PS5 Digital',val:1,cur:'copy',sym:'',priceDZD:12000,stock:false,img:null,badge:'',desc:'اللعبة الأكثر انتظاراً في التاريخ',descEn:'The most anticipated game in history'},
-  {id:'g3',cat:'games',name:'God of War',sub:'PS4/PS5',val:1,cur:'copy',sym:'',priceDZD:6500,stock:true,img:null,badge:'',desc:'مغامرة ملحمية لا مثيل لها',descEn:'An unparalleled epic adventure'},
-];
+const DEFAULT_PRODS=[];
 const BADGES=[
   {id:'newcomer',icon:'🌟',name:'مبتدئ',nameEn:'Newcomer',check:_=>true},
   {id:'firstbuy',icon:'🛒',name:'أول طلب',nameEn:'First Order',check:u=>(u.orders||0)>=1},
@@ -525,19 +512,19 @@ const FAQ_DATA=[
   {q:'ماذا أفعل إذا كان الكود خاطئاً؟',qEn:'What if the code is wrong?',a:'تواصل معنا فوراً عبر واتساب مع رقم طلبك.',aEn:'Contact us immediately via WhatsApp with your order number.'},
 ];
 const MILESTONES=[
-  {id:'m100',pts:100,icon:'🎁',name:'مكافأة 100 نقطة',nameEn:'100 Point Reward',desc:'بطاقة PS Store 5€ مجانية',descEn:'Free PS Store 5€ Card',minSpend:7500,msg:'🎉 مبروك! ربحت بطاقة PS Store 5€ مجانية!',msgEn:'🎉 Congratulations! You won a free PS Store 5€ card!'},
-  {id:'m300',pts:300,icon:'👑',name:'مكافأة 300 نقطة',nameEn:'300 Point Reward',desc:'PS Plus Essential شهر مجاني',descEn:'Free PS Plus Essential 1 Month',minSpend:22000,msg:'🎉 مبروك! ربحت PS Plus Essential شهر مجاني!',msgEn:'🎉 Congratulations! You won a free PS Plus Essential month!'},
-  {id:'m600',pts:600,icon:'💎',name:'مكافأة 600 نقطة',nameEn:'600 Point Reward',desc:'بطاقة PS Store 20€ مجانية',descEn:'Free PS Store 20€ Card',minSpend:45000,msg:'🎉 مبروك! ربحت بطاقة PS Store 20€ مجانية!',msgEn:'🎉 Congratulations! You won a free PS Store 20€ card!'},
-  {id:'m1000',pts:1000,icon:'🏆',name:'مكافأة 1000 نقطة',nameEn:'1000 Point Reward',desc:'PS Plus Extra 3 أشهر مجانية',descEn:'Free PS Plus Extra 3 Months',minSpend:85000,msg:'🎉 مبروك! ربحت PS Plus Extra 3 أشهر مجانية!',msgEn:'🎉 Congratulations! You won free PS Plus Extra 3 months!'},
+  {id:'m100',pts:100,icon:'🎁',name:'مكافأة 100 نقطة',nameEn:'100 Point Reward',desc:'بطاقة PS Store 5€ مجانية',descEn:'Free PS Store 5€ Card',minSpend:50000,msg:'🎉 مبروك! ربحت بطاقة PS Store 5€ مجانية!',msgEn:'🎉 Congratulations! You won a free PS Store 5€ card!'},
+  {id:'m300',pts:300,icon:'👑',name:'مكافأة 300 نقطة',nameEn:'300 Point Reward',desc:'PS Plus Essential شهر مجاني',descEn:'Free PS Plus Essential 1 Month',minSpend:150000,msg:'🎉 مبروك! ربحت PS Plus Essential شهر مجاني!',msgEn:'🎉 Congratulations! You won a free PS Plus Essential month!'},
+  {id:'m600',pts:600,icon:'💎',name:'مكافأة 600 نقطة',nameEn:'600 Point Reward',desc:'بطاقة PS Store 20€ مجانية',descEn:'Free PS Store 20€ Card',minSpend:300000,msg:'🎉 مبروك! ربحت بطاقة PS Store 20€ مجانية!',msgEn:'🎉 Congratulations! You won a free PS Store 20€ card!'},
+  {id:'m1000',pts:1000,icon:'🏆',name:'مكافأة 1000 نقطة',nameEn:'1000 Point Reward',desc:'PS Plus Extra 3 أشهر مجانية',descEn:'Free PS Plus Extra 3 Months',minSpend:600000,msg:'🎉 مبروك! ربحت PS Plus Extra 3 أشهر مجانية!',msgEn:'🎉 Congratulations! You won free PS Plus Extra 3 months!'},
 ];
 const SPIN_SEGMENTS=[
-  {pts:5,label:'5 نقاط',labelEn:'5 Points',color:'#4c1d95',prob:32},
-  {pts:10,label:'10 نقاط',labelEn:'10 Points',color:'#1e3a5f',prob:28},
-  {pts:15,label:'15 نقطة',labelEn:'15 Points',color:'#6d28d9',prob:20},
-  {pts:25,label:'25 نقطة',labelEn:'25 Points',color:'#78350f',prob:12},
-  {pts:50,label:'50 نقطة',labelEn:'50 Points',color:'#1e3a5f',prob:5},
-  {pts:100,label:'100 نقطة',labelEn:'100 Points',color:'#7c2d12',prob:2},
-  {pts:0,label:'حاول غداً',labelEn:'Try Tomorrow',color:'#1c1c2e',prob:1},
+  {pts:2,label:'2 نقاط',labelEn:'2 Points',color:'#4c1d95',prob:35},
+  {pts:3,label:'3 نقاط',labelEn:'3 Points',color:'#1e3a5f',prob:30},
+  {pts:5,label:'5 نقاط',labelEn:'5 Points',color:'#6d28d9',prob:20},
+  {pts:10,label:'10 نقاط',labelEn:'10 Points',color:'#78350f',prob:10},
+  {pts:20,label:'20 نقطة',labelEn:'20 Points',color:'#1e3a5f',prob:4},
+  {pts:50,label:'50 نقطة',labelEn:'50 Points',color:'#7c2d12',prob:1},
+  {pts:0,label:'حاول غداً',labelEn:'Try Tomorrow',color:'#1c1c2e',prob:0},
 ];
 const SUPPORT_FLOWS={
   start:{msg:'مرحباً! أنا بوت الدعم الفني لـ Glitch Q 🤖\nكيف يمكنني مساعدتك اليوم؟',msgEn:"Hello! I'm the Glitch Q support bot 🤖\nHow can I help you today?",opts:['لم أستلم كودي','كودي خاطئ','مشكلة في الدفع','سؤال عن الريجن','مشكلة في الحساب','أخرى'],optsEn:['Did not receive my code','Wrong code','Payment issue','Region question','Account issue','Other']},
@@ -637,7 +624,7 @@ function goPage(name){
   document.querySelectorAll('.nav-ul li').forEach(l=>l.classList.remove('on'));
   $(`pg-${name}`)?.classList.add('on');S.currentPage=name;
   window.scrollTo({top:0,behavior:'smooth'});
-  const map={home:0,shop:1,rewards:4,support:5};
+  const map={home:0,shop:1,rewards:2,support:3};
   const idx=map[name];if(idx!==undefined)document.querySelectorAll('.nav-ul li')[idx]?.classList.add('on');
   if(name==='shop'){renderCatFilterBar();renderShopProds();}
   if(name==='rewards')renderRewardsPage();
@@ -1083,7 +1070,7 @@ $('regForm')?.addEventListener('submit',async e=>{
     const cred=await auth.createUserWithEmailAndPassword(email,pass);
     await cred.user.updateProfile({displayName:`${first} ${last}`});
     await cred.user.sendEmailVerification();
-    await db.collection('users').doc(cred.user.uid).set({firstName:first,lastName:last,name:`${first} ${last}`,email,points:10,history:[],notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],uid_short:cred.user.uid.slice(0,12),region:S.region||null,created:new Date()});
+    await db.collection('users').doc(cred.user.uid).set({firstName:first,lastName:last,name:`${first} ${last}`,email,points:5,history:[],notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],uid_short:cred.user.uid.slice(0,12),region:S.region||null,created:new Date()});
     await auth.signOut();toast(t('t_reg_done'),'tok');showPane('verifyPane');
   }catch(err){let m=t('t_error');if(err.code==='auth/email-already-in-use')m=t('t_email_exists');if(err.code==='auth/weak-password')m=t('t_weak_pass');toast(m,'terr');}
 });
@@ -1288,7 +1275,7 @@ window.claimStreak=async()=>{
   if(!S.user){openM('authModal');return;}
   const today=new Date().toDateString();const last=S.udata?.lastLogin;const yesterday=new Date(Date.now()-86400000).toDateString();
   if(last===today){toast(t('t_streak_done'),'twarn');return;}
-  const newStreak=last===yesterday?(S.udata.streak||0)+1:1;const bonusPts=[5,8,10,12,15,18,25][Math.min(newStreak-1,6)];const newPts=(S.udata.points||0)+bonusPts;
+  const newStreak=last===yesterday?(S.udata.streak||0)+1:1;const bonusPts=[1,1,2,2,3,3,5][Math.min(newStreak-1,6)];const newPts=(S.udata.points||0)+bonusPts;
   try{await db.collection('users').doc(S.user.uid).update({streak:newStreak,lastLogin:today,points:newPts});S.udata.streak=newStreak;S.udata.lastLogin=today;S.udata.points=newPts;toast(`${t('t_streak_reward')} +${bonusPts} ${t('t_pts')} 🔥`,'tok');if(navigator.vibrate)navigator.vibrate([10,30,10,50]);fireConfetti(20);renderRewardsPage();checkAchievements();const btn=$('claimBtn');if(btn){btn.disabled=true;btn.style.opacity='.5';}}
   catch(e){toast(t('t_error'),'terr');}
 };
@@ -1670,8 +1657,18 @@ window.addEventListener('DOMContentLoaded',async()=>{
 
   /* URL params */
   const url=new URLSearchParams(window.location.search);
-  if(url.get('mode')==='verifyEmail'||url.get('mode')==='resetPassword'){
+  if(url.get('mode')==='verifyEmail'){
     toast(t('t_processing'),'tinfo');
+  }else if(url.get('mode')==='resetPassword'){
+    const oobCode=url.get('oobCode');
+    if(oobCode){
+      const newPass=prompt(S.lang==='en'?'Enter your new password (min 6 characters):':'أدخل كلمة المرور الجديدة (6 أحرف على الأقل):');
+      if(newPass&&newPass.length>=6){
+        auth.confirmPasswordReset(oobCode,newPass)
+          .then(()=>{toast(S.lang==='en'?'✅ Password reset successfully! You can now sign in.':'✅ تم تغيير كلمة المرور! يمكنك الدخول الآن.','tok');window.history.replaceState({},'',window.location.pathname);})
+          .catch(()=>{toast(S.lang==='en'?'❌ Invalid or expired reset link.':'❌ رابط منتهي أو غير صحيح.','terr');});
+      }
+    }
   }
 
   /* Consent — after 800ms */
