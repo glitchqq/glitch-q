@@ -1,0 +1,23 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "script.js",
+      "admin.html",
+      "index.html",
+      "style.css",
+      "node_modules/**"
+    ],
+    "rewrites": [],
+    "headers": [
+      {
+        "source": "/reset.html",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache" }
+        ]
+      }
+    ]
+  }
+}
