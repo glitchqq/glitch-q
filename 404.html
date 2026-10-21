@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<script>
+// Redirect all Firebase auth action URLs to reset.html or index.html
+const p = new URLSearchParams(window.location.search);
+const mode = p.get('mode');
+const oobCode = p.get('oobCode');
+const lang = p.get('lang') || 'ar';
+if (mode === 'resetPassword' && oobCode) {
+  window.location.replace(
+    'https://glitchqq.github.io/glitch-q/reset.html?mode=' + mode + '&oobCode=' + encodeURIComponent(oobCode) + '&lang=' + lang
+  );
+} else {
+  window.location.replace('https://glitchqq.github.io/glitch-q/');
+}
+</script>
+</head>
+<body></body>
+</html>
