@@ -1075,7 +1075,7 @@ $('regForm')?.addEventListener('submit',async e=>{
   }catch(err){let m=t('t_error');if(err.code==='auth/email-already-in-use')m=t('t_email_exists');if(err.code==='auth/weak-password')m=t('t_weak_pass');toast(m,'terr');}
 });
 
-window.resetPass=async()=>{const e=($('loginEmail')?.value||'').trim().slice(0,254);if(!e||!isValidEmail(e)){toast(t('t_no_email'),'terr');return;}try{await auth.sendPasswordResetEmail(e,{url:'https://glitchqq.github.io/glitch-q/reset.html',handleCodeInApp:false});toast(t('t_reset_sent'),'tok');}catch(x){toast(t('t_reset_error'),'terr');}};
+window.resetPass=async()=>{const e=($('loginEmail')?.value||'').trim().slice(0,254);if(!e||!isValidEmail(e)){toast(t('t_no_email'),'terr');return;}try{await auth.sendPasswordResetEmail(e,{url:'https://glitch-q.web.app/reset.html',handleCodeInApp:true});toast(t('t_reset_sent'),'tok');}catch(x){toast(t('t_reset_error'),'terr');}};
 window.resendVerif=async()=>{const e=($('regEmail')?.value||'').trim();const p=$('regPass')?.value||'';if(!e||!p)return;try{const c=await auth.signInWithEmailAndPassword(e,p);await c.user.sendEmailVerification();await auth.signOut();toast(t('t_reset_sent'),'tok');}catch(x){toast(t('t_error'),'terr');}};
 window.doLogout=async()=>{await auth.signOut();S.user=null;S.udata=null;updHeaderUI();updProfUI();toast(t('t_logged_out'),'tinfo');};
 
