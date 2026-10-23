@@ -1075,7 +1075,7 @@ $('regForm')?.addEventListener('submit',async e=>{
   }catch(err){let m=t('t_error');if(err.code==='auth/email-already-in-use')m=t('t_email_exists');if(err.code==='auth/weak-password')m=t('t_weak_pass');toast(m,'terr');}
 });
 
-window.resetPass=async()=>{const e=($('loginEmail')?.value||'').trim().slice(0,254);if(!e||!isValidEmail(e)){toast(t('t_no_email'),'terr');return;}try{const r=await fetch(WORKER+'/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})});if(!r.ok)throw new Error('worker');toast(t('t_reset_sent'),'tok');}catch(x){toast(t('t_reset_error'),'terr');}};
+window.resetPass=async()=>{const e=($('loginEmail')?.value||'').trim().slice(0,254);if(!e||!isValidEmail(e)){toast(t('t_no_email'),'terr');return;}try{const r=await fetch('https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=AIzaSyDuMvn6UePhPf7hWIOkuQKOEoDEwogdIso',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestType:'PASSWORD_RESET',email:e})});const d=await r.json().catch(()=>({}));if(d.error&&d.error.message==='EMAIL_NOT_FOUND'){toast(t('t_reset_sent'),'tok');return;}if(!r.ok)throw new Error('firebase');toast(t('t_reset_sent'),'tok');}catch(x){toast(t('t_reset_error'),'terr');}};
 window.resendVerif=async()=>{const e=($('regEmail')?.value||'').trim();const p=$('regPass')?.value||'';if(!e||!p)return;try{const c=await auth.signInWithEmailAndPassword(e,p);await c.user.sendEmailVerification();await auth.signOut();toast(t('t_reset_sent'),'tok');}catch(x){toast(t('t_error'),'terr');}};
 window.doLogout=async()=>{await auth.signOut();S.user=null;S.udata=null;updHeaderUI();updProfUI();toast(t('t_logged_out'),'tinfo');};
 
