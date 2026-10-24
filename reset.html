@@ -276,8 +276,9 @@ body::before{
     <!-- ERROR -->
     <div id="stateError" style="display:none">
       <div class="state-icon red">⚠️</div>
-      <div class="state-title">الرابط منتهي الصلاحية</div>
-      <div class="state-desc">رابط إعادة التعيين انتهت صلاحيته أو تم استخدامه مسبقاً.<br>اطلب رابطاً جديداً من المتجر.</div>
+      <div class="state-title" id="errTitle">الرابط منتهي الصلاحية</div>
+      <div class="state-desc" id="errDesc">رابط إعادة التعيين انتهت صلاحيته أو تم استخدامه مسبقاً.<br>اطلب رابطاً جديداً من المتجر.</div>
+      <div id="errCode" dir="ltr" style="display:none;font-size:11px;color:#8a7fb0;margin:-6px 0 14px;word-break:break-all"></div>
       <a href="https://glitchqq.github.io/glitch-q" class="btn" style="text-decoration:none;display:block">🔄 طلب رابط جديد</a>
       <a href="https://glitchqq.github.io/glitch-q" class="btn-outline">العودة للمتجر</a>
     </div>
@@ -303,12 +304,27 @@ function show(id){
     .forEach(s=>document.getElementById(s).style.display=s===id?'block':'none');
 }
 
+// Show the real reason instead of always claiming "expired"
+function showLinkError(e){
+  const code=(e&&e.code)||'missing-params';
+  const expiredLike=['auth/expired-action-code','auth/invalid-action-code','missing-params'].includes(code);
+  if(!expiredLike){
+    document.getElementById('errTitle').textContent='تعذّر التحقق من الرابط';
+    document.getElementById('errDesc').innerHTML='حدث خطأ أثناء التحقق، وليس بالضرورة أن الرابط منتهي.<br>حاول مرة أخرى أو اطلب رابطاً جديداً.';
+  }
+  const c=document.getElementById('errCode');
+  c.textContent='code: '+code;
+  c.style.display='block';
+  console.warn('[reset] verifyPasswordResetCode failed:',code,e&&e.message);
+  show('stateError');
+}
+
 if(mode==='resetPassword'&&oobCode){
   auth.verifyPasswordResetCode(oobCode)
     .then(()=>show('stateForm'))
-    .catch(()=>show('stateError'));
+    .catch(showLinkError);
 }else{
-  show('stateError');
+  showLinkError(null);
 }
 
 function checkStrength(){
