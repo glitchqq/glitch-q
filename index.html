@@ -152,6 +152,52 @@
   </div>
 </div>
 
+<!-- ACCOUNT SETTINGS -->
+<div id="accountModal" class="modal-ov hidden">
+  <div class="modal-box acc-box">
+    <button class="modal-x" onclick="closeM('accountModal')">✕</button>
+    <div class="mico">⚙️</div>
+    <h2 class="mtitle" id="accTitle">إعدادات الحساب</h2>
+    <div class="acc-tabs" role="tablist">
+      <button type="button" class="on" id="accTabProf" onclick="acctTab('prof')">تخصيص</button>
+      <button type="button" id="accTabSec" onclick="acctTab('sec')">الأمان</button>
+    </div>
+
+    <div id="accProf" class="acc-pane">
+      <div class="acc-prev-row"><div class="prof-av acc-prev" id="accAvPrev">🎮</div></div>
+      <label class="acc-l" for="accNick" id="accNickL">الاسم الظاهر</label>
+      <div class="iw"><i class="fa-solid fa-signature"></i><input type="text" id="accNick" maxlength="20" autocomplete="nickname" placeholder="مثال: ProGamer"></div>
+      <p class="acc-hint" id="accNickHint">يظهر في حسابك ولوحة المتصدرين (2–20 حرفاً).</p>
+      <div class="acc-l" id="accAvL">الصورة الرمزية</div>
+      <div class="av-grid" id="accAvGrid"></div>
+      <div class="acc-l" id="accColL">اللون</div>
+      <div class="av-colors" id="accColors"></div>
+      <label class="acc-l" for="accFavCat" id="accFavL">القسم المفضل عند فتح المتجر</label>
+      <select id="accFavCat" class="acc-sel"><option value="all">كل الأقسام</option></select>
+      <label class="acc-sw"><span><b id="accHideL">إخفائي من لوحة المتصدرين</b><small id="accHideS">لن يظهر اسمك للآخرين، وتبقى نقاطك محفوظة.</small></span><input type="checkbox" id="accHideLb" class="sw"></label>
+      <button type="button" class="btn-p w100 mt8" id="accSaveProf" onclick="acctSaveProfile()">حفظ التغييرات</button>
+    </div>
+
+    <div id="accSec" class="acc-pane hidden">
+      <form id="accPwForm" class="acc-card" novalidate>
+        <div class="acc-card-t" id="accPwTitle">تغيير كلمة المرور</div>
+        <div class="iw"><i class="fa-solid fa-lock"></i><input type="password" id="accPwCur" autocomplete="current-password" maxlength="128" placeholder="كلمة المرور الحالية"></div>
+        <div class="iw"><i class="fa-solid fa-key"></i><input type="password" id="accPwNew" autocomplete="new-password" maxlength="128" placeholder="كلمة المرور الجديدة (8 أحرف على الأقل)"></div>
+        <div class="iw"><i class="fa-solid fa-key"></i><input type="password" id="accPwNew2" autocomplete="new-password" maxlength="128" placeholder="تأكيد كلمة المرور الجديدة"></div>
+        <button type="submit" class="btn-p w100" id="accPwBtn">تغيير كلمة المرور</button>
+      </form>
+      <div class="acc-card">
+        <label class="acc-sw"><span><b id="accAlertT">تنبيه الدخول من جهاز جديد</b><small id="accAlertS">نرسل لك بريداً عند تسجيل دخول إلى حسابك من جهاز جديد.</small></span><input type="checkbox" id="accAlerts" class="sw" onchange="acctToggleAlerts()"></label>
+      </div>
+      <div class="acc-card">
+        <div class="acc-card-t" id="accOutT">تسجيل الخروج من كل الأجهزة</div>
+        <p class="acc-hint" id="accOutS">ينهي جلسات حسابك على كل الأجهزة.</p>
+        <button type="button" class="btn-danger w100" id="accOutBtn" onclick="acctSignOutAll()">تسجيل الخروج من كل الأجهزة</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- TRACK -->
 <div id="trackModal" class="modal-ov hidden">
   <div class="modal-box">
@@ -695,12 +741,13 @@
     </div>
     <div id="profBox" class="prof-box hidden">
       <div class="prof-top">
-        <div class="prof-av"><i class="fa-solid fa-user"></i></div>
+        <div class="prof-av" id="profAv"><i class="fa-solid fa-user"></i></div>
         <div class="prof-info"><h3 id="profName">مرحباً</h3><span id="profRegBadge" class="prof-reg-badge"></span></div>
         <div class="prof-pts"><div class="pn" id="profPts">0</div><div class="pl" id="ptsLabel">نقطة</div></div>
       </div>
       <div class="prof-acts">
         <button onclick="openM('trackModal')" class="pact"><i class="fa-solid fa-truck"></i><span id="profTrack">تتبع</span></button>
+        <button onclick="openM('accountModal')" class="pact" id="profAccBtn"><i class="fa-solid fa-gear"></i><span id="profAcc">الإعدادات</span></button>
         <button onclick="openM('regionModal')" class="pact hidden" id="profRegionBtn"><i class="fa-solid fa-globe"></i><span id="profRegion">الريجن</span></button>
         <button onclick="openM('ratingModal')" class="pact"><i class="fa-solid fa-star"></i><span id="profRate">تقييم</span></button>
         <button onclick="openM('spinModal')" class="pact"><i class="fa-solid fa-dice"></i><span>Spin</span></button>
@@ -807,6 +854,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/lenis@1/dist/lenis.min.js" defer></script>
 <script src="script.js" defer></script>
+<script src="account.js" defer></script>
 <script src="fx.js" defer></script>
 </body>
 </html>

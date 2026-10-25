@@ -362,9 +362,7 @@ function applyTranslations(){
   const pht=document.querySelector('.prof-hist-ttl');if(pht)pht.textContent=t('prof_orders');
   const logBtn=document.querySelector('#profBox .btn-danger');if(logBtn)logBtn.textContent=t('prof_logout');
   const ptsLbl=document.querySelector('.prof-pts .pl');if(ptsLbl)ptsLbl.textContent=t('pts_label');
-  const profActs=document.querySelectorAll('.pact span');
-  const profActKeys=['prof_track','prof_region','prof_rate',null,'prof_rewards'];
-  profActs.forEach((s,i)=>{if(profActKeys[i])s.textContent=t(profActKeys[i]);});
+  [['profTrack','prof_track'],['profRegion','prof_region'],['profRate','prof_rate'],['profRewards','prof_rewards']].forEach(([id,k])=>st(id,t(k)));   /* by id (was by position: broke when a button was added) */
 
   // Support
   st('supportTitle',t('sup_title'));st('supportSub',t('sup_sub'));
@@ -375,7 +373,7 @@ function applyTranslations(){
   // Auth
   st('loginTitle',t('login_title'));st('loginSub',t('login_sub'));
   sp('loginEmail','placeholder',t('login_email'));sp('loginPass','placeholder',t('login_pass'));
-  st('loginBtn',t('login_btn'));st('forgotLbl',t('login_forgot'));applyResetTexts();
+  st('loginBtn',t('login_btn'));st('forgotLbl',t('login_forgot'));applyResetTexts();try{window.acctApplyTexts&&window.acctApplyTexts();}catch(e){}st('profAcc',S.lang==='en'?'Settings':'الإعدادات');
   st('guestBtn',t('login_guest'));st('noAccText',t('login_no_acc'));st('goRegBtn',t('login_reg'));
   st('regTitle',t('reg_title'));st('regSub',t('reg_sub'));
   sp('regFirst','placeholder',t('reg_first'));sp('regLast','placeholder',t('reg_last'));
@@ -624,10 +622,11 @@ function toast(msg,type='tinfo'){
 }
 
 /* ══ MODALS ══ */
-const VALID_MODALS=['authModal','regionModal','trackModal','checkoutModal','ratingModal','spinModal','supportModal','reportModal','termsModal','privacyModal','faqModal','aboutModal','prodModal','cartModal','orderDoneModal'];
+const VALID_MODALS=['authModal','regionModal','trackModal','checkoutModal','ratingModal','spinModal','supportModal','reportModal','termsModal','privacyModal','faqModal','aboutModal','prodModal','cartModal','orderDoneModal','accountModal'];
 function openM(id){
   if(!VALID_MODALS.includes(id))return;
   clearInlineAlerts($(id));
+  if(id==='accountModal'&&!(window.acctOpen&&window.acctOpen()))return;   /* needs a signed-in customer */
   if(id==='regionModal')renderRegionModal();
   $(id)?.classList.remove('hidden');
   if(id==='faqModal')renderFAQ();
@@ -1169,6 +1168,7 @@ async function endSess(fbU){
   }catch(e){S.udata={points:0,history:[],notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,badges:[],claimedMilestones:[]};}
   closeM('authModal');updHeaderUI();updProfUI();loadNotifs();bumpVisitor();
   checkAchievements();checkMilestones();
+  try{window.acctOnLogin&&window.acctOnLogin();}catch(e){}                    /* optional new-device alert + saved preferences */
   db.collection('users').doc(fbU.uid).update({uid_short:fbU.uid.slice(0,12)}).catch(()=>{});
   checkAbuse();
   const url=new URLSearchParams(window.location.search);if(url.get('ref'))processReferral();
@@ -1297,6 +1297,7 @@ function renderProfilePage(){
 function updProfUI(){
   if(!S.user||!S.udata)return;
   setText('profName',san(S.user.displayName||S.udata.name||''));
+  try{window.acctApplyProfile&&window.acctApplyProfile();}catch(e){}
   setText('profPts',(S.udata.points||0).toLocaleString());
   const rb=$('profRegBadge');if(rb)rb.textContent=S.region?`${S.region.toUpperCase()} (${S.sym})`:t('choose_region');
   const hl=$('profHistList');
@@ -1333,12 +1334,12 @@ function renderStreak(){
 
 async function loadLbRw(){
   const list=$('lbListRw');if(!list)return;
-  try{const snap=await db.collection('users').orderBy('points','desc').limit(5).get();list.innerHTML='';const medals=['lb-r1','lb-r2','lb-r3'];let rank=1;snap.forEach(doc=>{const u=doc.data();const el=document.createElement('div');el.className='lb-it';el.innerHTML=`<div class="lb-rank ${medals[rank-1]||''}">${rank}</div><div class="lb-name">${san(u.name||'')}</div><div class="lb-pts">${(u.points||0).toLocaleString()} ${t('t_pts')}</div>${rank===1?'<span>👑</span>':''}`;list.appendChild(el);rank++;});}catch(e){}
+  try{const snap=await db.collection('users').orderBy('points','desc').limit(10).get();list.innerHTML='';const medals=['lb-r1','lb-r2','lb-r3'];let rank=1;snap.forEach(doc=>{const u=doc.data();if(rank>5||(u.prefs&&u.prefs.hideLb===true))return;const el=document.createElement('div');el.className='lb-it';el.innerHTML=`<div class="lb-rank ${medals[rank-1]||''}">${rank}</div><div class="lb-name">${san(u.nick||u.name||'')}</div><div class="lb-pts">${(u.points||0).toLocaleString()} ${t('t_pts')}</div>${rank===1?'<span>👑</span>':''}`;list.appendChild(el);rank++;});}catch(e){}
 }
 
 async function renderLeaderboard(){
   const list=$('lbList');if(!list)return;
-  try{const snap=await db.collection('users').orderBy('points','desc').limit(5).get();list.innerHTML='';const medals=['lb-r1','lb-r2','lb-r3'];let rank=1;snap.forEach(doc=>{const u=doc.data();const el=document.createElement('div');el.className='lb-it';el.innerHTML=`<div class="lb-rank ${medals[rank-1]||''}">${rank}</div><div class="lb-name">${san(u.name||'')}</div><div class="lb-pts">${(u.points||0).toLocaleString()} ${t('t_pts')}</div>`;list.appendChild(el);rank++;});}catch(e){}
+  try{const snap=await db.collection('users').orderBy('points','desc').limit(10).get();list.innerHTML='';const medals=['lb-r1','lb-r2','lb-r3'];let rank=1;snap.forEach(doc=>{const u=doc.data();if(rank>5||(u.prefs&&u.prefs.hideLb===true))return;const el=document.createElement('div');el.className='lb-it';el.innerHTML=`<div class="lb-rank ${medals[rank-1]||''}">${rank}</div><div class="lb-name">${san(u.nick||u.name||'')}</div><div class="lb-pts">${(u.points||0).toLocaleString()} ${t('t_pts')}</div>`;list.appendChild(el);rank++;});}catch(e){}
 }
 
 /* ══ MISSIONS ══ */
