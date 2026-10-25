@@ -80,9 +80,9 @@
         <div class="iw"><i class="fa-solid fa-lock"></i><input type="password" id="loginPass" placeholder="كلمة المرور" required autocomplete="current-password"></div>
         <button type="submit" class="btn-p w100" id="loginBtn">دخول</button>
       </form>
-      <button class="lbtn" onclick="resetPass()" id="forgotBtn">نسيت كلمة المرور؟</button>
+      <button type="button" class="trouble-link" onclick="openReset()" id="forgotBtn"><i class="fa-solid fa-circle-question"></i> <span id="forgotLbl">هل تواجه مشكلة في تسجيل الدخول؟</span></button>
       <div class="aDiv"><span id="orText">أو</span></div>
-      <button class="btn-o w100" id="guestBtn" onclick="closeM('authModal');if(!S.region)openM('regionModal')">تسوق كزائر</button>
+      <button class="btn-o w100" id="guestBtn" onclick="closeM('authModal');maybePromptRegion()">تسوق كزائر</button>
       <p class="sw-a"><span id="noAccText">ليس لديك حساب؟</span> <button onclick="showPane('regPane')" class="lbtn bold" id="goRegBtn">سجل الآن</button></p>
     </div>
     <div id="regPane" class="hidden">
@@ -104,6 +104,27 @@
         <button type="submit" class="btn-p w100" id="regBtn">إنشاء الحساب</button>
       </form>
       <p class="sw-a"><span id="haveAccText">لديك حساب؟</span> <button onclick="showPane('loginPane')" class="lbtn bold" id="goLoginBtn">سجل دخولك</button></p>
+    </div>
+    <!-- RESET (standalone screen, opened from "having trouble signing in?") -->
+    <div id="resetPane" class="hidden">
+      <div id="resetStepForm">
+        <div class="mico">🛟</div>
+        <h2 class="mtitle" id="resetTitle">استعادة الوصول لحسابك</h2>
+        <p class="msub" id="resetSub">أدخل البريد المسجّل به وسنرسل لك رابطاً لاختيار كلمة مرور جديدة.</p>
+        <form id="resetForm" class="aform" novalidate>
+          <div class="iw"><i class="fa-solid fa-envelope"></i><input type="email" id="resetEmail" placeholder="البريد الإلكتروني" required autocomplete="email" maxlength="254"></div>
+          <button type="submit" class="btn-p w100" id="resetBtn">إرسال رابط الاستعادة</button>
+        </form>
+        <button type="button" class="lbtn back-link" onclick="showPane('loginPane')" id="resetBack">← العودة لتسجيل الدخول</button>
+      </div>
+      <div id="resetStepDone" class="hidden">
+        <div class="mico">✉️</div>
+        <h2 class="mtitle" id="resetDoneTitle">تحقق من بريدك</h2>
+        <p class="msub" id="resetDoneSub"></p>
+        <p class="reset-tip" id="resetDoneTip">لم يصلك شيء؟ تفقّد مجلد الرسائل غير المرغوبة (Spam). الرابط صالح لمدة ساعة واحدة.</p>
+        <button type="button" class="btn-o w100" id="resetResend" disabled>إعادة الإرسال</button>
+        <button type="button" class="lbtn back-link" onclick="showPane('loginPane')" id="resetBack2">← العودة لتسجيل الدخول</button>
+      </div>
     </div>
     <div id="verifyPane" class="hidden">
       <div class="mico">📧</div>
@@ -140,6 +161,27 @@
     <div class="iw mt8"><i class="fa-solid fa-hashtag"></i><input type="text" id="trkInput" placeholder="رقم الطلب..." maxlength="50"></div>
     <button onclick="trackOrder()" class="btn-p w100 mt8" id="trackBtn">تتبع</button>
     <div id="trkRes"></div>
+  </div>
+</div>
+
+<!-- ORDER CONFIRMATION -->
+<div id="orderDoneModal" class="modal-ov hidden">
+  <div class="modal-box od-box">
+    <div class="od-check" aria-hidden="true"><svg viewBox="0 0 52 52" width="34" height="34"><path d="M14 27l8 8 16-17" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <h2 class="mtitle" id="odTitle">تم استلام طلبك!</h2>
+    <p class="msub" id="odSub">شكراً لثقتك بـ Glitch Q. طلبك الآن قيد المعالجة.</p>
+    <div class="od-card">
+      <div class="od-row"><span id="odIdLbl">رقم الطلب</span><span class="od-id"><b id="odId" dir="ltr">—</b><button type="button" id="odCopy" onclick="copyOrderId()">نسخ</button></span></div>
+      <div class="od-row"><span id="odProd" class="od-prod"></span><b id="odTot"></b></div>
+    </div>
+    <ol class="od-steps">
+      <li class="done"><i></i><div><b id="od1t">تم استلام الطلب</b><small id="od1s"></small></div></li>
+      <li class="active"><i></i><div><b id="od2t">قيد التجهيز</b><small id="od2s"></small></div></li>
+      <li><i></i><div><b id="od3t">تسليم الكود</b><small id="od3s"></small></div></li>
+    </ol>
+    <button type="button" class="btn-p w100" onclick="trackFromDone()"><i class="fa-solid fa-box"></i> <span id="odTrack">تتبّع طلبك</span></button>
+    <button type="button" class="btn-o w100 mt8" onclick="closeM('orderDoneModal')" id="odClose">متابعة التسوق</button>
+    <button type="button" class="lbtn od-rate" onclick="rateFromDone()" id="odRate">قيّم تجربتك</button>
   </div>
 </div>
 
@@ -659,7 +701,7 @@
       </div>
       <div class="prof-acts">
         <button onclick="openM('trackModal')" class="pact"><i class="fa-solid fa-truck"></i><span id="profTrack">تتبع</span></button>
-        <button onclick="openM('regionModal')" class="pact"><i class="fa-solid fa-globe"></i><span id="profRegion">الريجن</span></button>
+        <button onclick="openM('regionModal')" class="pact hidden" id="profRegionBtn"><i class="fa-solid fa-globe"></i><span id="profRegion">الريجن</span></button>
         <button onclick="openM('ratingModal')" class="pact"><i class="fa-solid fa-star"></i><span id="profRate">تقييم</span></button>
         <button onclick="openM('spinModal')" class="pact"><i class="fa-solid fa-dice"></i><span>Spin</span></button>
         <button onclick="goPage('rewards')" class="pact"><i class="fa-solid fa-crown"></i><span id="profRewards">مكافآت</span></button>

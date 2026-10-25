@@ -60,7 +60,7 @@ const T={
     co_submit:'إرسال الطلب',co_email_tab:'إيميل',co_phone_tab:'هاتف',
     login_title:'تسجيل الدخول',login_sub:'سجل دخولك لتجميع النقاط والمكافآت',
     login_email:'البريد الإلكتروني',login_pass:'كلمة المرور',
-    login_btn:'دخول',login_forgot:'نسيت كلمة المرور؟',
+    login_btn:'دخول',login_forgot:'هل تواجه مشكلة في تسجيل الدخول؟',
     login_guest:'تسوق كزائر',login_no_acc:'ليس لديك حساب؟',login_reg:'سجل الآن',
     reg_title:'إنشاء حساب',reg_sub:'احصل على 10 نقاط ترحيبية فوراً!',
     reg_first:'الاسم',reg_last:'اللقب',reg_pass:'كلمة المرور (6+)',
@@ -192,7 +192,7 @@ const T={
     co_submit:'Submit Order',co_email_tab:'Email',co_phone_tab:'Phone',
     login_title:'Sign In',login_sub:'Sign in to collect points and rewards',
     login_email:'Email address',login_pass:'Password',
-    login_btn:'Sign In',login_forgot:'Forgot password?',
+    login_btn:'Sign In',login_forgot:'Having trouble signing in?',
     login_guest:'Shop as Guest',login_no_acc:"Don't have an account?",login_reg:'Register Now',
     reg_title:'Create Account',reg_sub:'Get 10 welcome points instantly!',
     reg_first:'First Name',reg_last:'Last Name',reg_pass:'Password (6+)',
@@ -375,7 +375,7 @@ function applyTranslations(){
   // Auth
   st('loginTitle',t('login_title'));st('loginSub',t('login_sub'));
   sp('loginEmail','placeholder',t('login_email'));sp('loginPass','placeholder',t('login_pass'));
-  st('loginBtn',t('login_btn'));st('forgotBtn',t('login_forgot'));
+  st('loginBtn',t('login_btn'));st('forgotLbl',t('login_forgot'));applyResetTexts();
   st('guestBtn',t('login_guest'));st('noAccText',t('login_no_acc'));st('goRegBtn',t('login_reg'));
   st('regTitle',t('reg_title'));st('regSub',t('reg_sub'));
   sp('regFirst','placeholder',t('reg_first'));sp('regLast','placeholder',t('reg_last'));
@@ -543,7 +543,7 @@ const SUPPORT_FLOWS={
   'سؤال عن الريجن':{msg:'🇪🇺 EU = أوروبية\n🇺🇸 US = أمريكية\n🇸🇦 SA = سعودية\n🇦🇪 AE = إماراتية',msgEn:'🇪🇺 EU = European\n🇺🇸 US = American\n🇸🇦 SA = Saudi\n🇦🇪 AE = UAE',opts:['نعم شكراً!','كيف أعرف ريجني؟'],optsEn:['Yes, thanks!','How do I know my region?']},
   'كيف أعرف ريجني؟':{msg:'PlayStation Settings > Account > Account Information',msgEn:'PlayStation Settings > Account > Account Information',opts:['شكراً فهمت'],optsEn:['Thanks']},
   'مشكلة في الحساب':{msg:'ما المشكلة؟',msgEn:'What is the issue?',opts:['نسيت كلمة المرور','لم يصل إيميل التفعيل','لا أستطيع الدخول'],optsEn:['Forgot password','No verification email',"Can't sign in"]},
-  'نسيت كلمة المرور':{msg:'اضغط "نسيت كلمة المرور؟" في صفحة الدخول.',msgEn:"Click 'Forgot password?' on the sign in page.",opts:['شكراً فهمت'],optsEn:['Thanks']},
+  'نسيت كلمة المرور':{msg:'اضغط "هل تواجه مشكلة في تسجيل الدخول؟" أسفل زر الدخول لاستعادة حسابك.',msgEn:"Tap 'Having trouble signing in?' under the Sign In button to recover your account.",opts:['شكراً فهمت'],optsEn:['Thanks']},
   'لم يصل إيميل التفعيل':{msg:'تحقق من مجلد Spam.',msgEn:'Check your Spam folder.',opts:['التواصل مع الدعم البشري','شكراً فهمت'],optsEn:['Contact human support','Thanks']},
   'لا أستطيع الدخول':{msg:'جرّب مسح ذاكرة التخزين المؤقت.',msgEn:'Try clearing your browser cache.',opts:['التواصل مع الدعم البشري','شكراً فهمت'],optsEn:['Contact human support','Thanks']},
   'أخرى':{msg:'اكتب مشكلتك في مربع النص.',msgEn:'Write your issue in the text box.',opts:['التواصل مع الدعم البشري'],optsEn:['Contact human support']},
@@ -564,7 +564,7 @@ const SUPPORT_FLOWS={
   'How do I check my order?':{msg:'من قسم الدعم > تتبع الطلبات.',msgEn:'From Support > Track Orders.',opts:['شكراً فهمت'],optsEn:['Thanks']},
   'I want human support':{msg:'سيتم تحويلك للدعم البشري.',msgEn:'Redirecting to human support.',opts:['التواصل مع الدعم البشري'],optsEn:['Contact human support'],human:true},
   'How do I know my region?':{msg:'PlayStation Settings > Account > Account Information',msgEn:'PlayStation Settings > Account > Account Information',opts:['شكراً فهمت'],optsEn:['Thanks']},
-  'Forgot password':{msg:"اضغط 'نسيت كلمة المرور؟' في صفحة الدخول.",msgEn:"Click 'Forgot password?' on the sign in page.",opts:['شكراً فهمت'],optsEn:['Thanks']},
+  'Forgot password':{msg:"اضغط 'هل تواجه مشكلة في تسجيل الدخول؟' أسفل زر الدخول لاستعادة حسابك.",msgEn:"Tap 'Having trouble signing in?' under the Sign In button to recover your account.",opts:['شكراً فهمت'],optsEn:['Thanks']},
   'No verification email':{msg:'تحقق من مجلد Spam.',msgEn:'Check your Spam folder.',opts:['التواصل مع الدعم البشري','شكراً فهمت'],optsEn:['Contact human support','Thanks']},
   "Can't sign in":{msg:'جرّب مسح ذاكرة التخزين المؤقت.',msgEn:'Try clearing your browser cache.',opts:['التواصل مع الدعم البشري','شكراً فهمت'],optsEn:['Contact human support','Thanks']},
   "Don't know how to pay":{msg:'BaridiMob:\n1️⃣ افتح التطبيق\n2️⃣ RIP: 00799999004390466974\n3️⃣ ارفع الوصل',msgEn:'BaridiMob:\n1️⃣ Open app\n2️⃣ RIP: 00799999004390466974\n3️⃣ Upload receipt',opts:['نعم شكراً!'],optsEn:['Yes, thanks!']},
@@ -578,28 +578,57 @@ const SUPPORT_FLOWS={
   'Did not receive my code':{msg:'الكود يصل عادةً خلال 5-60 دقيقة.',msgEn:'The code usually arrives within 5-60 minutes.',opts:['نعم مرّت أكثر من ساعة','لا سأنتظر قليلاً'],optsEn:['Yes, more than an hour','No, I will wait']},
 };
 
-/* ══ TOAST ══ */
+/* ══ FEEDBACK ══
+   No more banners at the top of the page. Feedback now lives where the action happened:
+   • a modal is open  → inline alert at the top of that modal (next to the form)
+   • no modal is open → small bottom snackbar (errors, warnings and reward events only)
+   Trivial confirmations (language, consent, region, welcome…) no longer notify at all. */
+function topModalBox(){
+  const open=[...document.querySelectorAll('.modal-ov:not(.hidden)')];
+  const ov=open[open.length-1];
+  return ov?ov.querySelector('.modal-box'):null;
+}
+function clearInlineAlerts(root){(root||document).querySelectorAll('.inl-alert').forEach(n=>n.remove());}
 function toast(msg,type='tinfo'){
+  msg=String(msg==null?'':msg).slice(0,160);if(!msg)return;
+  const box=topModalBox();
+  if(box){
+    clearInlineAlerts(box);
+    const el=document.createElement('div');
+    el.className=`inl-alert ${type}`;el.setAttribute('role',type==='terr'?'alert':'status');
+    const dot=document.createElement('span');dot.className='ia-dot';
+    const txt=document.createElement('span');txt.className='ia-txt';txt.textContent=msg;
+    el.appendChild(dot);el.appendChild(txt);
+    const anchor=box.querySelector(':scope > .modal-x');
+    box.insertBefore(el,anchor?anchor.nextSibling:box.firstChild);
+    try{box.scrollTop=0;}catch(e){}
+    if(type!=='terr')setTimeout(()=>{if(el.isConnected){el.classList.add('out');setTimeout(()=>el.remove(),300);}},6000);
+    return;
+  }
+  /* page level: silent for plain info, snackbar for everything that matters */
+  if(type==='tinfo')return;
   const c=$('toastWrap');if(!c)return;
-  const el=document.createElement('div');el.className=`toast ${type}`;
-  const ICONS={tok:'✅',terr:'❌',tinfo:'ℹ️',twarn:'⚠️'};
-  const closeSpan=document.createElement('span');closeSpan.className='toast-close';closeSpan.textContent='✕';
-  const icoSpan=document.createElement('span');icoSpan.textContent=ICONS[type]||'ℹ️';
-  const msgSpan=document.createElement('span');msgSpan.textContent=msg;msgSpan.style.flex='1';
-  el.appendChild(closeSpan);el.appendChild(icoSpan);el.appendChild(msgSpan);
-  let dismissed=false;
-  function dismiss(){if(dismissed)return;dismissed=true;el.classList.remove('show');setTimeout(()=>el.remove(),280);}
+  [...c.children].forEach(n=>{if(n.dataset.m===msg)n.remove();});
+  while(c.children.length>=2)c.firstChild.remove();
+  const el=document.createElement('div');el.className=`toast ${type}`;el.dataset.m=msg;
+  el.setAttribute('role',type==='terr'?'alert':'status');
+  const dot=document.createElement('span');dot.className='ia-dot';
+  const txt=document.createElement('span');txt.textContent=msg;txt.style.flex='1';
+  el.appendChild(dot);el.appendChild(txt);
+  let gone=false;
+  function dismiss(){if(gone)return;gone=true;el.classList.remove('show');setTimeout(()=>el.remove(),250);}
   el.addEventListener('click',dismiss);
   c.appendChild(el);
   requestAnimationFrame(()=>requestAnimationFrame(()=>el.classList.add('show')));
-  const timer=setTimeout(dismiss,4000);
-  el.addEventListener('click',()=>clearTimeout(timer),{once:true});
+  setTimeout(dismiss,type==='terr'?5000:3200);
 }
 
 /* ══ MODALS ══ */
-const VALID_MODALS=['authModal','regionModal','trackModal','checkoutModal','ratingModal','spinModal','supportModal','reportModal','termsModal','privacyModal','faqModal','aboutModal','prodModal','cartModal'];
+const VALID_MODALS=['authModal','regionModal','trackModal','checkoutModal','ratingModal','spinModal','supportModal','reportModal','termsModal','privacyModal','faqModal','aboutModal','prodModal','cartModal','orderDoneModal'];
 function openM(id){
   if(!VALID_MODALS.includes(id))return;
+  clearInlineAlerts($(id));
+  if(id==='regionModal')renderRegionModal();
   $(id)?.classList.remove('hidden');
   if(id==='faqModal')renderFAQ();
   if(id==='supportModal')initSupportBot();
@@ -607,8 +636,8 @@ function openM(id){
   if(id==='spinModal'){buildSpinWheel();initSpinTimer();}
   if(navigator.vibrate)navigator.vibrate([8]);
 }
-function closeM(id){$(id)?.classList.add('hidden');}
-function showPane(id){['loginPane','regPane','verifyPane'].forEach(p=>$(p)?.classList.add('hidden'));$(id)?.classList.remove('hidden');}
+function closeM(id){clearInlineAlerts($(id));$(id)?.classList.add('hidden');}
+function showPane(id){clearInlineAlerts($('authModal'));['loginPane','regPane','verifyPane','resetPane'].forEach(p=>$(p)?.classList.add('hidden'));$(id)?.classList.remove('hidden');}
 window.openM=openM;window.closeM=closeM;window.showPane=showPane;
 document.addEventListener('click',e=>{if(e.target.classList.contains('modal-ov')&&!e.target.classList.contains('hidden'))e.target.classList.add('hidden');});
 
@@ -636,7 +665,7 @@ window.goPage=goPage;
 function toggleLang(){
   S.lang=S.lang==='ar'?'en':'ar';
   localStorage.setItem('gq_lang',S.lang);
-  applyTranslations();toast(t('t_lang_changed'),'tinfo');
+  applyTranslations();
   renderHome();
   if(S.currentPage==='shop'){renderCatFilterBar();renderShopProds();}
   if(S.currentPage==='rewards')renderRewardsPage();
@@ -657,8 +686,73 @@ function initConsent(){
 }
 window.acceptConsent=function(){
   localStorage.setItem('gq_consent','1');
-  $('consentBanner')?.classList.add('hidden');toast(t('t_consent_ok'),'tok');
+  $('consentBanner')?.classList.add('hidden');
+  maybePromptRegion();   /* region comes right after consent, never before */
 };
+/* ══ REGIONS (controlled from the admin panel: settings/regions) ══
+   enabled=false  → the picker is hidden and everyone is on defaultRegion (today: EU only)
+   available[x]   → false greys the region out ("unavailable") so it cannot be chosen */
+const REGIONS={
+  eu:{c:'EUR',s:'€',ar:'أوروبي',en:'European',f:'🇪🇺'},
+  us:{c:'USD',s:'$',ar:'أمريكي',en:'American',f:'🇺🇸'},
+  sa:{c:'SAR',s:'ر.س',ar:'سعودي',en:'Saudi',f:'🇸🇦'},
+  ae:{c:'AED',s:'د.إ',ar:'إماراتي',en:'Emirati',f:'🇦🇪'}
+};
+function normRegCfg(x){
+  const o={enabled:false,defaultRegion:'eu',available:{eu:true,us:false,sa:false,ae:false}};
+  if(x&&typeof x==='object'){
+    o.enabled=x.enabled===true;
+    if(x.available&&typeof x.available==='object')Object.keys(REGIONS).forEach(k=>{o.available[k]=x.available[k]===true;});
+    if(typeof x.defaultRegion==='string'&&REGIONS[x.defaultRegion])o.defaultRegion=x.defaultRegion;
+  }
+  if(!o.available[o.defaultRegion]){
+    const first=Object.keys(REGIONS).find(k=>o.available[k]);
+    if(first)o.defaultRegion=first;else{o.defaultRegion='eu';o.available.eu=true;}
+  }
+  return o;
+}
+function readCachedRegCfg(){try{return normRegCfg(JSON.parse(localStorage.getItem('gq_regcfg')||'null'));}catch(e){return normRegCfg(null);}}
+let REG_CFG=readCachedRegCfg();
+function setRegion(r,persist,auto){
+  const m=REGIONS[r];if(!m)return;
+  S.region=r;S.cur=m.c;S.sym=m.s;S.regAuto=!!auto;
+  /* auto = default applied while the picker is off: kept in memory only, so it is never mistaken for the customer's own choice */
+  if(auto)localStorage.removeItem('gq_reg');else localStorage.setItem('gq_reg',r);
+  localStorage.setItem('gq_cur',m.c);localStorage.setItem('gq_sym',m.s);
+  if(persist&&S.user)db.collection('users').doc(S.user.uid).update({region:r,currency:m.c,symbol:m.s}).catch(()=>{});
+}
+function applyRegionConfig(cfg){
+  REG_CFG=cfg;
+  $('profRegionBtn')?.classList.toggle('hidden',!cfg.enabled);
+  $('profRegBadge')?.classList.toggle('hidden',!cfg.enabled);
+  if(!cfg.enabled){
+    if(S.region!==cfg.defaultRegion||!S.regAuto)setRegion(cfg.defaultRegion,false,true);   /* picker off → default region for everyone */
+  }else if(S.regAuto){
+    const ur=S.udata&&S.udata.region;                                             /* picker just turned on and this customer never chose here: */
+    if(ur&&cfg.available[ur])setRegion(ur,false,false);                           /* use the region saved on their account, */
+    else{S.region=null;S.regAuto=false;}                                          /* otherwise ask */
+  }else if(S.region&&!cfg.available[S.region]){
+    S.region=null;localStorage.removeItem('gq_reg');                              /* chosen region became unavailable → ask again */
+  }
+  maybePromptRegion();
+}
+function maybePromptRegion(){
+  if(!localStorage.getItem('gq_consent'))return;                                  /* consent always comes first */
+  if(!REG_CFG.enabled){if(!S.region)setRegion(REG_CFG.defaultRegion,false,true);return;}
+  if(!S.region)openM('regionModal');
+}
+function renderRegionModal(){
+  const en=S.lang==='en';
+  document.querySelectorAll('#regionModal .reg-btn').forEach(b=>{
+    const k=b.dataset.r,ok=!!REG_CFG.available[k];
+    b.disabled=!ok;b.classList.toggle('off',!ok);b.classList.toggle('sel',S.region===k);b.setAttribute('aria-disabled',String(!ok));
+    let tag=b.querySelector('.rsoon');
+    if(!ok){if(!tag){tag=document.createElement('span');tag.className='rsoon';b.appendChild(tag);}tag.textContent=en?'Unavailable for now':'غير متوفر حالياً';}
+    else if(tag)tag.remove();
+  });
+}
+window.maybePromptRegion=maybePromptRegion;
+
 window.rejectConsent=function(){
   const msg=S.lang==='en'?'If you decline, you cannot use the site. Are you sure?':'إذا رفضت لن تتمكن من استخدام الموقع. هل أنت متأكد؟';
   if(confirm(msg)){
@@ -694,11 +788,15 @@ function fireConfetti(n=60){
    SETTINGS & FIREBASE
 ══════════════════════════════════════════ */
 async function loadSettings(){
-  try{const d=await db.collection('settings').doc('categories').get();CATS=d.exists&&Array.isArray(d.data().categories)?d.data().categories:DEFAULT_CATS;}catch(e){CATS=DEFAULT_CATS;}
-  try{const d=await db.collection('settings').doc('products').get();if(d.exists&&Array.isArray(d.data().products)&&d.data().products.length)PRODS=d.data().products;else PRODS=DEFAULT_PRODS;}catch(e){PRODS=DEFAULT_PRODS;}
-  try{const d=await db.collection('settings').doc('coupons').get();if(d.exists&&d.data().coupons){const td=new Date().toISOString().split('T')[0];CPNS={};d.data().coupons.forEach(c=>{if(c.active&&(!c.expiry||c.expiry>=td)&&(!c.maxUses||(c.usedCount||0)<c.maxUses)){const k=String(c.code||'').toUpperCase().trim();if(k)CPNS[k]=c;}});}}catch(e){}
-  try{const d=await db.collection('settings').doc('discount').get();if(d.exists){const x=d.data(),td=new Date().toISOString().split('T')[0];DISC=(x.active&&(!x.expiry||x.expiry>=td)&&x.value>0&&x.value<=100)?{active:true,value:x.value}:{active:false,value:0};}}catch(e){}
-  try{const d=await db.collection('settings').doc('maintenance').get();if(d.exists&&d.data().active){document.body.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0015;color:#a78bca;font-family:Cairo,sans-serif;text-align:center"><div><div style="font-size:60px;margin-bottom:20px">🔧</div><h2 style="color:#00E5FF;font-family:Orbitron,sans-serif;margin-bottom:10px">GLITCH Q</h2><p style="font-size:16px">${t('t_maintenance')}</p></div></div>`;return false;}}catch(e){}
+  /* all documents are fetched in parallel (was one-by-one: up to ~6s on slow networks) */
+  const get=n=>db.collection('settings').doc(n).get().catch(()=>null);
+  const [dCats,dProds,dCpns,dDisc,dMaint,dReg]=await Promise.all(['categories','products','coupons','discount','maintenance','regions'].map(get));
+  try{CATS=dCats&&dCats.exists&&Array.isArray(dCats.data().categories)?dCats.data().categories:DEFAULT_CATS;}catch(e){CATS=DEFAULT_CATS;}
+  try{if(dProds&&dProds.exists&&Array.isArray(dProds.data().products)&&dProds.data().products.length)PRODS=dProds.data().products;else PRODS=DEFAULT_PRODS;}catch(e){PRODS=DEFAULT_PRODS;}
+  try{const d=dCpns;if(d&&d.exists&&d.data().coupons){const td=new Date().toISOString().split('T')[0];CPNS={};d.data().coupons.forEach(c=>{if(c.active&&(!c.expiry||c.expiry>=td)&&(!c.maxUses||(c.usedCount||0)<c.maxUses)){const k=String(c.code||'').toUpperCase().trim();if(k)CPNS[k]=c;}});}}catch(e){}
+  try{const d=dDisc;if(d&&d.exists){const x=d.data(),td=new Date().toISOString().split('T')[0];DISC=(x.active&&(!x.expiry||x.expiry>=td)&&x.value>0&&x.value<=100)?{active:true,value:x.value}:{active:false,value:0};}}catch(e){}
+  try{if(dReg){const cfg=normRegCfg(dReg.exists?dReg.data():null);try{localStorage.setItem('gq_regcfg',JSON.stringify(cfg));}catch(e){}applyRegionConfig(cfg);}}catch(e){}
+  try{const d=dMaint;if(d&&d.exists&&d.data().active){document.body.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0015;color:#a78bca;font-family:Cairo,sans-serif;text-align:center"><div><div style="font-size:60px;margin-bottom:20px">🔧</div><h2 style="color:#00E5FF;font-family:Orbitron,sans-serif;margin-bottom:10px">GLITCH Q</h2><p style="font-size:16px">${t('t_maintenance')}</p></div></div>`;return false;}}catch(e){}
   return true;
 }
 
@@ -861,7 +959,14 @@ function addToCart(prodId){
   if(ex)ex.qty=(ex.qty||1)+1;else S.cart.push({id:prodId,name:prod.name,sub:prod.sub,price:calcPrice(prod),qty:1,img:prod.img||null});
   if(S.cart.length>20)S.cart=S.cart.slice(0,20);
   localStorage.setItem('gq_cart',JSON.stringify(S.cart));updateCartBadge();
-  toast(t('t_added_cart'),'tok');if(navigator.vibrate)navigator.vibrate([8,20]);
+  bumpCart();if(navigator.vibrate)navigator.vibrate([8,20]);
+}
+/* cart feedback without a banner: the cart button pulses and the badge pops */
+function bumpCart(){
+  [$('cartBadge'),$('cartBadge')?.closest('button')].forEach(el=>{
+    if(!el)return;el.classList.remove('bump');void el.offsetWidth;el.classList.add('bump');
+    setTimeout(()=>el.classList.remove('bump'),600);
+  });
 }
 window.addToCart=addToCart;
 
@@ -955,7 +1060,7 @@ window.submitOrder=async()=>{
     const fd=new FormData();
     fd.append('photo',fi.files[0]);fd.append('orderId',oid);fd.append('userId',uid);
     fd.append('caption',`📦 New Order!\n🆔 ${oid}\n👤 ${name}\n🔑 ${uid}\n🎮 ${prodName}\n💰 ${total.toLocaleString()} دج\n${S.cpn?`🎟️ ${S.cpn.code}`:''}\n💳 BaridiMob\n${S.recv==='email'?`📧 ${rE}`:`📞 ${rP}`}`);
-    toast(t('t_sending'),'tinfo');
+    setSubmitting(true);
     try{
       const r=await fetch(`${WORKER}/telegram`,{method:'POST',body:fd});
       if(!r.ok)throw new Error();const res=await r.json();
@@ -963,13 +1068,13 @@ window.submitOrder=async()=>{
         await ref.set({product:prodName,status:'pending',userId:uid,paymentMethod:'baridimob',receiveMethod:S.recv,receiveContact:S.recv==='email'?rE:rP,totalDZD:total,date:new Date().toLocaleDateString('ar'),coupon:S.cpn?.code||null,ts:firebase.firestore.FieldValue.serverTimestamp()});
         if(S.cpn)bumpCpn(S.cpn.code);await onOrderSuccess(oid,total,prodName);
       }else toast(String(res.error||t('t_error')).slice(0,100),'terr');
-    }catch(e){toast(t('t_conn_error'),'terr');}
+    }catch(e){toast(t('t_conn_error'),'terr');}finally{setSubmitting(false);}
   }else{
     const phone=($('handPhone')?.value||'').trim().slice(0,20);
     if(!phone){toast(t('t_phone_required'),'terr');return;}
     const fd=new FormData();fd.append('isText','true');fd.append('orderId',oid);fd.append('userId',uid);
     fd.append('caption',`📦 Hand Delivery!\n🆔 ${oid}\n🔑 ${uid}\n🎮 ${prodName}\n💰 ${total.toLocaleString()} دج\n${S.cpn?`🎟️ ${S.cpn.code}`:''}\n🤝 Tlemcen\n📞 ${phone}`);
-    toast(t('t_sending'),'tinfo');
+    setSubmitting(true);
     try{
       const r=await fetch(`${WORKER}/telegram`,{method:'POST',body:fd});
       if(!r.ok)throw new Error();const res=await r.json();
@@ -977,7 +1082,7 @@ window.submitOrder=async()=>{
         await ref.set({product:prodName,status:'pending',userId:uid,paymentMethod:'hand',phone,receiveMethod:S.recv,receiveContact:S.recv==='email'?rE:phone,totalDZD:total,date:new Date().toLocaleDateString('ar'),coupon:S.cpn?.code||null,ts:firebase.firestore.FieldValue.serverTimestamp()});
         if(S.cpn)bumpCpn(S.cpn.code);await onOrderSuccess(oid,total,prodName);
       }else toast(String(res.error||t('t_error')).slice(0,100),'terr');
-    }catch(e){toast(t('t_conn_error'),'terr');}
+    }catch(e){toast(t('t_conn_error'),'terr');}finally{setSubmitting(false);}
   }
 };
 
@@ -985,8 +1090,38 @@ async function bumpCpn(code){
   try{const d=await db.collection('settings').doc('coupons').get();if(!d.exists)return;const cs=d.data().coupons||[];const i=cs.findIndex(c=>String(c.code||'').toUpperCase()===String(code||'').toUpperCase());if(i!==-1){cs[i].usedCount=(cs[i].usedCount||0)+1;await db.collection('settings').doc('coupons').set({coupons:cs});}}catch(e){}
 }
 
+function setSubmitting(on){
+  const b=$('submitOrderBtn'),l=$('submitLabel');if(!b)return;
+  b.disabled=on;b.classList.toggle('loading',on);
+  if(l){
+    if(on){l.dataset.o=l.textContent;l.textContent=S.lang==='en'?'Sending your order...':'جاري إرسال طلبك...';}
+    else if(l.dataset.o){l.textContent=l.dataset.o;delete l.dataset.o;}
+  }
+}
+
+/* order confirmation: a proper status screen instead of a banner */
+function showOrderDone(oid,total,prodName){
+  const en=S.lang==='en';S._lastOrder=oid;
+  setText('odTitle',en?'Order received!':'تم استلام طلبك!');
+  setText('odSub',en?'Thank you for trusting Glitch Q. Your order is now being processed.':'شكراً لثقتك بـ Glitch Q. طلبك الآن قيد المعالجة.');
+  setText('odIdLbl',en?'Order number':'رقم الطلب');setText('odId',oid);
+  setText('odProd',prodName||'');setText('odTot',(total||0).toLocaleString()+' دج');
+  setText('od1t',en?'Order received':'تم استلام الطلب');setText('od1s',en?'We have your order and payment details':'وصلنا طلبك وبيانات الدفع');
+  setText('od2t',en?'Being prepared':'قيد التجهيز');setText('od2s',en?'We are reviewing the payment and preparing your code':'نراجع الدفع ونجهّز الكود الخاص بك');
+  setText('od3t',en?'Code delivered':'تسليم الكود');setText('od3s',en?'Usually within 5-60 minutes via your chosen method':'غالباً خلال 5-60 دقيقة عبر وسيلة الاستلام التي اخترتها');
+  setText('odCopy',en?'Copy':'نسخ');setText('odTrack',en?'Track your order':'تتبّع طلبك');
+  setText('odRate',en?'Rate your experience':'قيّم تجربتك');setText('odClose',en?'Continue shopping':'متابعة التسوق');
+  openM('orderDoneModal');
+}
+window.copyOrderId=()=>{
+  const b=$('odCopy'),en=S.lang==='en';if(!S._lastOrder)return;
+  navigator.clipboard.writeText(S._lastOrder).then(()=>{if(b){b.textContent=en?'Copied ✓':'تم النسخ ✓';setTimeout(()=>{b.textContent=en?'Copy':'نسخ';},1600);}}).catch(()=>{});
+};
+window.trackFromDone=()=>{closeM('orderDoneModal');const i=$('trkInput');if(i&&S._lastOrder)i.value=S._lastOrder;openM('trackModal');if(S._lastOrder)window.trackOrder?.();};
+window.rateFromDone=()=>{closeM('orderDoneModal');openM('ratingModal');};
+
 async function onOrderSuccess(oid,total,prodName){
-  fireConfetti();toast(t('t_order_sent'),'tok');
+  fireConfetti();
   if(navigator.vibrate)navigator.vibrate([20,50,20,50,100]);
   try{await navigator.clipboard.writeText(oid);}catch(e){}
   if(S.user&&S.udata){
@@ -1002,7 +1137,7 @@ async function onOrderSuccess(oid,total,prodName){
   }
   S.cart=[];localStorage.setItem('gq_cart',JSON.stringify(S.cart));updateCartBadge();
   closeM('checkoutModal');S.selProd=null;S._total=0;S.cpn=null;clearUp();
-  setTimeout(()=>openM('ratingModal'),2500);
+  showOrderDone(oid,total,prodName);
 }
 
 /* ══════════════════════════════════════════
@@ -1012,7 +1147,7 @@ auth.onAuthStateChanged(async fbU=>{
   if(fbU){
     await fbU.reload().catch(()=>{});const cur=auth.currentUser;if(!cur){resetSess();return;}
     const url=new URLSearchParams(window.location.search);
-    if(url.get('mode')==='verifyEmail'){if(cur.emailVerified){window.history.replaceState({},'','');toast(t('t_welcome'),'tok');await endSess(cur);}return;}
+    if(url.get('mode')==='verifyEmail'){if(cur.emailVerified){window.history.replaceState({},'','');await endSess(cur);}return;}
     if(!cur.emailVerified){await auth.signOut();resetSess();return;}
     await endSess(cur);
   }else resetSess();
@@ -1026,7 +1161,7 @@ async function endSess(fbU){
     if(banned.exists){await auth.signOut();toast(t('t_banned'),'terr');resetSess();return;}
     if(snap.exists){
       S.udata=snap.data();
-      if(!S.region&&S.udata.region){S.region=S.udata.region;S.cur=S.udata.currency||'EUR';S.sym=S.udata.symbol||'€';localStorage.setItem('gq_reg',S.region);localStorage.setItem('gq_cur',S.cur);localStorage.setItem('gq_sym',S.sym);}
+      if(!S.region&&S.udata.region&&REG_CFG.enabled&&REG_CFG.available[S.udata.region]){S.region=S.udata.region;S.regAuto=false;S.cur=S.udata.currency||'EUR';S.sym=S.udata.symbol||'€';localStorage.setItem('gq_reg',S.region);localStorage.setItem('gq_cur',S.cur);localStorage.setItem('gq_sym',S.sym);}
     }else{
       S.udata={points:10,history:[],notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],fingerprint:'',uid_short:fbU.uid.slice(0,12),created:new Date()};
       await db.collection('users').doc(fbU.uid).set(S.udata);
@@ -1037,7 +1172,7 @@ async function endSess(fbU){
   db.collection('users').doc(fbU.uid).update({uid_short:fbU.uid.slice(0,12)}).catch(()=>{});
   checkAbuse();
   const url=new URLSearchParams(window.location.search);if(url.get('ref'))processReferral();
-  if(!S.region)openM('regionModal');
+  maybePromptRegion();
 }
 
 function resetSess(){S.user=null;S.udata=null;if(S.ready){updHeaderUI();updProfUI();}}
@@ -1049,7 +1184,7 @@ $('loginForm')?.addEventListener('submit',async e=>{
   const email=($('loginEmail')?.value||'').trim().slice(0,254);const pass=$('loginPass')?.value||'';
   if(!email||!pass||!isValidEmail(email))return;
   if(email===ADMIN_EMAIL){toast(t('t_login_error'),'terr');return;}
-  try{const c=await auth.signInWithEmailAndPassword(email,pass);if(!c.user.emailVerified){await auth.signOut();toast(t('t_verify_first'),'terr');return;}toast(t('t_welcome'),'tok');}
+  try{const c=await auth.signInWithEmailAndPassword(email,pass);if(!c.user.emailVerified){await auth.signOut();toast(t('t_verify_first'),'terr');return;}}
   catch(e){toast(t('t_login_error'),'terr');}
 });
 
@@ -1071,13 +1206,68 @@ $('regForm')?.addEventListener('submit',async e=>{
     await cred.user.updateProfile({displayName:`${first} ${last}`});
     await cred.user.sendEmailVerification();
     await db.collection('users').doc(cred.user.uid).set({firstName:first,lastName:last,name:`${first} ${last}`,email,points:5,history:[],notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],uid_short:cred.user.uid.slice(0,12),region:S.region||null,created:new Date()});
-    await auth.signOut();toast(t('t_reg_done'),'tok');showPane('verifyPane');
+    await auth.signOut();showPane('verifyPane');
   }catch(err){let m=t('t_error');if(err.code==='auth/email-already-in-use')m=t('t_email_exists');if(err.code==='auth/weak-password')m=t('t_weak_pass');toast(m,'terr');}
 });
 
-window.resetPass=async()=>{const e=($('loginEmail')?.value||'').trim().slice(0,254);if(!e||!isValidEmail(e)){toast(t('t_no_email'),'terr');return;}try{const r=await fetch(WORKER+'/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})});if(!r.ok)throw new Error('worker');toast(t('t_reset_sent'),'tok');}catch(x){toast(t('t_reset_error'),'terr');}};
+/* ══ PASSWORD RESET — standalone screen ══ */
+const RESET_TX={
+  ar:{title:'استعادة الوصول لحسابك',sub:'أدخل البريد المسجّل به وسنرسل لك رابطاً لاختيار كلمة مرور جديدة.',ph:'البريد الإلكتروني',btn:'إرسال رابط الاستعادة',back:'← العودة لتسجيل الدخول',
+      doneTitle:'تحقق من بريدك',doneSub:e=>`إذا كان ${e} مسجلاً لدينا، فسيصلك رابط إعادة تعيين كلمة المرور خلال دقائق.`,tip:'لم يصلك شيء؟ تفقّد مجلد الرسائل غير المرغوبة (Spam). الرابط صالح لمدة ساعة واحدة.',
+      resend:'إعادة الإرسال',resendIn:n=>`إعادة الإرسال بعد ${n} ث`,sending:'جاري الإرسال...',bad:'أدخل بريداً إلكترونياً صحيحاً',fail:'تعذّر إرسال الرابط الآن، حاول بعد قليل.',many:'محاولات كثيرة، انتظر قليلاً ثم أعد المحاولة.'},
+  en:{title:'Recover your account',sub:'Enter the email you registered with and we will send you a link to choose a new password.',ph:'Email address',btn:'Send recovery link',back:'← Back to sign in',
+      doneTitle:'Check your inbox',doneSub:e=>`If ${e} is registered with us, you will receive a password reset link within minutes.`,tip:"Didn't get it? Check your Spam folder. The link is valid for one hour.",
+      resend:'Resend',resendIn:n=>`Resend in ${n}s`,sending:'Sending...',bad:'Enter a valid email address',fail:'Could not send the link right now, please try again shortly.',many:'Too many attempts, please wait a moment.'}
+};
+let _resetTimer=null,_resetEmail='';
+function applyResetTexts(){
+  const x=RESET_TX[S.lang==='en'?'en':'ar'];
+  setText('resetTitle',x.title);setText('resetSub',x.sub);setText('resetBtn',x.btn);
+  setText('resetBack',x.back);setText('resetBack2',x.back);
+  setText('resetDoneTitle',x.doneTitle);setText('resetDoneTip',x.tip);
+  const ei=$('resetEmail');if(ei)ei.placeholder=x.ph;
+  if(_resetEmail)setText('resetDoneSub',x.doneSub(_resetEmail));
+  if(!_resetTimer)setText('resetResend',x.resend);
+}
+window.openReset=()=>{
+  const x=$('resetEmail'),le=($('loginEmail')?.value||'').trim();
+  if(x&&le&&!x.value)x.value=le;                              /* carry over what was typed on the login screen */
+  $('resetStepForm')?.classList.remove('hidden');$('resetStepDone')?.classList.add('hidden');
+  applyResetTexts();showPane('resetPane');setTimeout(()=>x?.focus(),120);
+};
+async function sendResetLink(email){
+  const r=await fetch(WORKER+'/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+  if(!r.ok)throw new Error('worker');
+}
+function startResendCooldown(sec){
+  const b=$('resetResend'),x=RESET_TX[S.lang==='en'?'en':'ar'];if(!b)return;
+  clearInterval(_resetTimer);let n=sec;b.disabled=true;b.textContent=x.resendIn(n);
+  _resetTimer=setInterval(()=>{n--;if(n<=0){clearInterval(_resetTimer);_resetTimer=null;b.disabled=false;b.textContent=x.resend;}else b.textContent=x.resendIn(n);},1000);
+}
+$('resetForm')?.addEventListener('submit',async ev=>{
+  ev.preventDefault();
+  const x=RESET_TX[S.lang==='en'?'en':'ar'],btn=$('resetBtn');
+  const email=($('resetEmail')?.value||'').trim().slice(0,254);
+  if(!email||!isValidEmail(email)){toast(x.bad,'terr');return;}
+  if(!RL.ok('reset',3,600000)){toast(x.many,'twarn');return;}
+  btn.disabled=true;btn.textContent=x.sending;
+  try{
+    await sendResetLink(email);
+    _resetEmail=email;setText('resetDoneSub',x.doneSub(email));
+    $('resetStepForm').classList.add('hidden');$('resetStepDone').classList.remove('hidden');
+    startResendCooldown(60);
+  }catch(e){toast(x.fail,'terr');}
+  finally{btn.disabled=false;btn.textContent=x.btn;}
+});
+$('resetResend')?.addEventListener('click',async()=>{
+  const x=RESET_TX[S.lang==='en'?'en':'ar'];
+  if(!_resetEmail||!RL.ok('reset',3,600000)){toast(x.many,'twarn');return;}
+  try{await sendResetLink(_resetEmail);startResendCooldown(60);}catch(e){toast(x.fail,'terr');}
+});
+/* kept for any old caller */
+window.resetPass=window.openReset;
 window.resendVerif=async()=>{const e=($('regEmail')?.value||'').trim();const p=$('regPass')?.value||'';if(!e||!p)return;try{const c=await auth.signInWithEmailAndPassword(e,p);await c.user.sendEmailVerification();await auth.signOut();toast(t('t_reset_sent'),'tok');}catch(x){toast(t('t_error'),'terr');}};
-window.doLogout=async()=>{await auth.signOut();S.user=null;S.udata=null;updHeaderUI();updProfUI();toast(t('t_logged_out'),'tinfo');};
+window.doLogout=async()=>{await auth.signOut();S.user=null;S.udata=null;updHeaderUI();updProfUI();};
 
 /* ══ HEADER UI ══ */
 function updHeaderUI(){
@@ -1090,14 +1280,12 @@ function updHeaderUI(){
 /* ══ REGION ══ */
 document.addEventListener('click',e=>{
   const rb=e.target.closest('.reg-btn');if(!rb)return;
-  const r=rb.dataset.r,c=rb.dataset.c,s=rb.dataset.s;
-  if(!['eu','us','sa','ae'].includes(r))return;
-  S.region=r;S.cur=c;S.sym=s;
-  localStorage.setItem('gq_reg',r);localStorage.setItem('gq_cur',c);localStorage.setItem('gq_sym',s);
-  if(S.user)db.collection('users').doc(S.user.uid).update({region:r,currency:c,symbol:s}).catch(()=>{});
-  closeM('regionModal');toast(`${t('t_region_done')} ${r.toUpperCase()}!`,'tok');
+  const r=rb.dataset.r;
+  if(!REGIONS[r]||!REG_CFG.available[r]||rb.disabled)return;      /* unavailable regions cannot be chosen */
+  setRegion(r,true);
+  closeM('regionModal');                                          /* no banner: the modal simply closes */
   renderHome();if(S.currentPage==='shop')renderShopProds();
-  const rb2=$('profRegBadge');if(rb2)rb2.textContent=`${r.toUpperCase()} (${s})`;
+  const rb2=$('profRegBadge');if(rb2)rb2.textContent=`${r.toUpperCase()} (${REGIONS[r].s})`;
 });
 
 /* ══ PROFILE ══ */
@@ -1638,6 +1826,12 @@ window.addEventListener('DOMContentLoaded',async()=>{
   if(html){html.setAttribute('lang',S.lang);html.setAttribute('dir',S.lang==='ar'?'rtl':'ltr');}
   setText('langLbl',S.lang.toUpperCase());
 
+  /* Consent + region are decided from local state, so they show up immediately
+     (before, they waited for the Firestore round-trip: 5s+ on slow networks) */
+  try{applyTranslations();}catch(e){}
+  initConsent();
+  applyRegionConfig(REG_CFG);
+
   /* Load settings from Firebase */
   try{
     const ok=await Promise.race([
@@ -1657,27 +1851,12 @@ window.addEventListener('DOMContentLoaded',async()=>{
 
   /* URL params */
   const url=new URLSearchParams(window.location.search);
-  if(url.get('mode')==='verifyEmail'){
-    toast(t('t_processing'),'tinfo');
-  }else if(url.get('mode')==='resetPassword'){
-    const oobCode=url.get('oobCode');
-    if(oobCode){
-      const newPass=prompt(S.lang==='en'?'Enter your new password (min 6 characters):':'أدخل كلمة المرور الجديدة (6 أحرف على الأقل):');
-      if(newPass&&newPass.length>=6){
-        auth.confirmPasswordReset(oobCode,newPass)
-          .then(()=>{toast(S.lang==='en'?'✅ Password reset successfully! You can now sign in.':'✅ تم تغيير كلمة المرور! يمكنك الدخول الآن.','tok');window.history.replaceState({},'',window.location.pathname);})
-          .catch(()=>{toast(S.lang==='en'?'❌ Invalid or expired reset link.':'❌ رابط منتهي أو غير صحيح.','terr');});
-      }
-    }
+  if(url.get('mode')==='resetPassword'&&url.get('oobCode')){
+    /* old links that land on the main site go to the branded reset page */
+    window.location.replace('https://glitch-q.web.app/reset.html'+window.location.search);
+    return;
   }
-
-  /* Consent — after 800ms */
-  setTimeout(initConsent,800);
-
-  /* Region — if not set and not logged in */
-  if(!S.region&&!S.user){
-    setTimeout(()=>openM('regionModal'),1200);
-  }
+  maybePromptRegion();
 
   /* Clock */
   setInterval(()=>{

@@ -267,6 +267,7 @@ a{color:inherit;text-decoration:none}
       <div class="sb-section">الإعدادات</div>
       <button class="sb-item" onclick="switchTab('faq')"><i class="fa-solid fa-circle-question"></i> الأسئلة الشائعة</button>
       <button class="sb-item" onclick="switchTab('send')"><i class="fa-solid fa-paper-plane"></i> إرسال كود يدوي</button>
+      <button class="sb-item" onclick="switchTab('regions')"><i class="fa-solid fa-earth-africa"></i> المناطق (الريجنات)</button>
       <button class="sb-item" onclick="switchTab('settings')"><i class="fa-solid fa-sliders"></i> إعدادات الموقع</button>
     </nav>
     <div class="sb-footer">
@@ -603,6 +604,32 @@ a{color:inherit;text-decoration:none}
         </div>
       </div>
 
+      <!-- REGIONS -->
+      <div id="tab-regions" class="tab-panel">
+        <div class="sec">
+          <div class="sec-title"><i class="fa-solid fa-earth-africa"></i> التحكم بالمناطق (الريجنات)</div>
+          <div id="regSummary" style="font-size:12.5px;color:var(--mid);margin-bottom:16px;line-height:1.8"></div>
+
+          <label class="form-label">اختيار الريجن من طرف الزبون</label>
+          <div class="toggle-wrap" style="margin-bottom:6px">
+            <label class="toggle"><input type="checkbox" id="regEnabled"><span class="toggle-sl"></span></label>
+            <span class="toggle-lbl">السماح للزبون باختيار الريجن</span>
+          </div>
+          <p style="font-size:11.5px;color:var(--dim);margin:0 0 16px;line-height:1.7">عند الإيقاف لا تظهر قائمة اختيار الريجن للزبائن إطلاقاً، ويُعتمد الريجن الافتراضي أدناه للجميع.</p>
+          <hr style="border:none;border-top:1px solid var(--brd);margin:16px 0">
+
+          <label class="form-label">الريجن الافتراضي</label>
+          <select id="regDefault" class="adm-inp" style="margin-bottom:16px"></select>
+          <hr style="border:none;border-top:1px solid var(--brd);margin:16px 0">
+
+          <label class="form-label">توفر كل ريجن</label>
+          <p style="font-size:11.5px;color:var(--dim);margin:0 0 10px;line-height:1.7">أوقف الريجن الذي لا تتوفر فيه بطاقات: يظهر للزبون "غير متوفر حالياً" ولا يمكنه اختياره.</p>
+          <div id="regRows" style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px"></div>
+
+          <button onclick="saveRegions()" class="btn btn-c"><i class="fa-solid fa-save"></i> حفظ إعدادات المناطق</button>
+        </div>
+      </div>
+
       <!-- SETTINGS -->
       <div id="tab-settings" class="tab-panel">
         <div class="sec">
@@ -736,7 +763,7 @@ window.addEventListener('resize',()=>{if(window.innerWidth>768){document.getElem
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSidebarMobile();});
 
 /* ══ TABS ══ */
-const TAB_TITLES={dashboard:'لوحة الإحصاء',orders:'الطلبات',products:'المنتجات والأقسام',coupons:'الكوبونات والخصومات',users:'المستخدمون',reviews:'التقييمات',newsletter:'النشرة البريدية',reports:'البلاغات',abuse:'مكافحة الاحتيال',faq:'الأسئلة الشائعة',send:'إرسال كود',settings:'الإعدادات'};
+const TAB_TITLES={dashboard:'لوحة الإحصاء',orders:'الطلبات',products:'المنتجات والأقسام',coupons:'الكوبونات والخصومات',users:'المستخدمون',reviews:'التقييمات',newsletter:'النشرة البريدية',reports:'البلاغات',abuse:'مكافحة الاحتيال',faq:'الأسئلة الشائعة',send:'إرسال كود',regions:'المناطق (الريجنات)',settings:'الإعدادات'};
 
 function switchTab(name){
   if(window.innerWidth<=768)closeSidebarMobile();
@@ -754,6 +781,7 @@ function switchTab(name){
   if(name==='reports')loadReports();
   if(name==='abuse')loadAbuse();
   if(name==='faq')loadFAQ();
+  if(name==='regions')loadRegions();
   if(name==='settings')loadSettings2();
 }
 
@@ -1143,6 +1171,40 @@ async function sendBroadcast(){
     const notif={title,code:body,date:new Date().toLocaleDateString('ar'),read:false};const batch=db.batch();snap.docs.forEach(d=>batch.update(d.ref,{notifications:firebase.firestore.FieldValue.arrayUnion(notif)}));await batch.commit();
     aToast(`تم الإرسال لـ ${snap.size} مستخدم!`,'📣');document.getElementById('bcTitle').value='';document.getElementById('bcBody').value='';
   }catch(e){aToast('خطأ: '+e.message,'❌');}
+}
+
+/* ══ REGIONS (settings/regions — read by the storefront) ══ */
+const REG_LIST=[['eu','🇪🇺','أوروبي (EUR €)'],['us','🇺🇸','أمريكي (USD $)'],['sa','🇸🇦','سعودي (SAR ر.س)'],['ae','🇦🇪','إماراتي (AED د.إ)']];
+async function loadRegions(){
+  const cfg={enabled:false,defaultRegion:'eu',available:{eu:true,us:false,sa:false,ae:false}};
+  try{
+    const d=await db.collection('settings').doc('regions').get();
+    if(d.exists){const x=d.data();cfg.enabled=x.enabled===true;if(REG_LIST.some(r=>r[0]===x.defaultRegion))cfg.defaultRegion=x.defaultRegion;
+      if(x.available&&typeof x.available==='object')REG_LIST.forEach(([k])=>{cfg.available[k]=x.available[k]===true;});}
+  }catch(e){aToast('تعذّر تحميل إعدادات المناطق','❌');}
+  document.getElementById('regEnabled').checked=cfg.enabled;
+  const sel=document.getElementById('regDefault');
+  sel.innerHTML=REG_LIST.map(([k,f,n])=>`<option value="${k}">${f} ${n}</option>`).join('');sel.value=cfg.defaultRegion;
+  document.getElementById('regRows').innerHTML=REG_LIST.map(([k,f,n])=>`<div class="toggle-wrap"><label class="toggle"><input type="checkbox" id="regAv_${k}" ${cfg.available[k]?'checked':''} onchange="regSummary()"><span class="toggle-sl"></span></label><span class="toggle-lbl">${f} ${n} — <b>متوفر</b></span></div>`).join('');
+  document.getElementById('regEnabled').onchange=regSummary;sel.onchange=regSummary;regSummary();
+}
+function regSummary(){
+  const on=document.getElementById('regEnabled').checked,def=document.getElementById('regDefault').value;
+  const av=REG_LIST.filter(([k])=>document.getElementById('regAv_'+k)?.checked).map(r=>r[1]+' '+r[2].split(' ')[0]);
+  const defName=(REG_LIST.find(r=>r[0]===def)||[])[2]||def;
+  document.getElementById('regSummary').innerHTML=on
+    ?`<b style="color:var(--green)">اختيار الريجن مفعّل</b> — المتاح للزبائن: ${av.join('، ')||'لا شيء'}`
+    :`<b style="color:var(--gold)">اختيار الريجن مغلق</b> — جميع الزبائن على الريجن الافتراضي: ${defName}`;
+}
+async function saveRegions(){
+  const available={};REG_LIST.forEach(([k])=>{available[k]=document.getElementById('regAv_'+k).checked;});
+  const enabled=document.getElementById('regEnabled').checked,def=document.getElementById('regDefault').value;
+  if(!available[def]){aToast('الريجن الافتراضي يجب أن يكون متوفراً','❌');return;}
+  if(enabled&&!Object.values(available).some(Boolean)){aToast('فعّل ريجناً واحداً على الأقل','❌');return;}
+  try{
+    await db.collection('settings').doc('regions').set({enabled,defaultRegion:def,available,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+    aToast('تم حفظ إعدادات المناطق','✅');regSummary();
+  }catch(e){aToast('تعذّر الحفظ — تحقق من صلاحيات قواعد Firestore لـ settings/regions','❌');}
 }
 
 /* ══ SETTINGS ══ */
