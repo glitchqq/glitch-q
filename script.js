@@ -461,6 +461,8 @@ const RL={
   }
 };
 
+/* a value inside a quoted argument of an inline handler: JS-escaped, then HTML-escaped (san alone is not enough: the browser decodes attributes before running them) */
+function jsq(v){return JSON.stringify(String(v==null?'':v)).slice(1,-1).replace(/&/g,'\\u0026').replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/'/g,'\\u0027').replace(/"/g,'&quot;');}
 function san(input){
   if(input===null||input===undefined)return'';
   return String(input)
@@ -875,7 +877,7 @@ function buildProdCard(prod){
       <div class="pc-orig">${san(valText)}</div>
       <div class="pc-dzd">${price.toLocaleString()} دج${DISC.active&&prod.stock!==false?` <s style="opacity:.4;font-size:10px">${orig.toLocaleString()}</s>`:''}</div>
     </div>
-    ${prod.stock!==false?`<button class="pc-cart" onclick="event.stopPropagation();addToCart('${san(prod.id)}')" aria-label="${t('prod_cart')}"><i class="fa-solid fa-cart-shopping"></i></button>`:''}
+    ${prod.stock!==false?`<button class="pc-cart" onclick="event.stopPropagation();addToCart('${jsq(prod.id)}')" aria-label="${t('prod_cart')}"><i class="fa-solid fa-cart-shopping"></i></button>`:''}
   `;
   card.addEventListener('click',()=>{if(prod.stock!==false)openProdDetail(prod);});
   return card;
@@ -909,8 +911,8 @@ function openProdDetail(prod){
       </div>
     </div>
     <div style="display:flex;gap:10px">
-      <button onclick="addToCart('${san(prod.id)}');closeM('prodModal')" class="btn-o" style="flex:1"><i class="fa-solid fa-cart-shopping"></i> ${t('prod_cart')}</button>
-      <button onclick="closeM('prodModal');openCheckoutForProd('${san(prod.id)}')" class="btn-p" style="flex:1"><i class="fa-solid fa-bolt"></i> ${t('prod_order')}</button>
+      <button onclick="addToCart('${jsq(prod.id)}');closeM('prodModal')" class="btn-o" style="flex:1"><i class="fa-solid fa-cart-shopping"></i> ${t('prod_cart')}</button>
+      <button onclick="closeM('prodModal');openCheckoutForProd('${jsq(prod.id)}')" class="btn-p" style="flex:1"><i class="fa-solid fa-bolt"></i> ${t('prod_order')}</button>
     </div>
   `;
   openM('prodModal');
