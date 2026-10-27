@@ -20,6 +20,21 @@ const db=firebase.firestore();
 
 /* ══ WORKER URL المحدّث ══ */
 const WORKER="https://glitchq-proxy.kadirom7k777.workers.dev";
+/* ══ Worker calls: prices, orders, coupons, points and rewards are decided on the server; the browser only asks ══ */
+async function wkCall(path,payload,opt){
+  opt=opt||{};const auth=opt.auth!==false;
+  try{
+    let tok='';
+    if(auth&&S.user){try{tok=await S.user.getIdToken();}catch(e){}}
+    let body,headers={};
+    if(opt.form){body=new FormData();body.append('data',JSON.stringify(payload||{}));if(tok)body.append('idToken',tok);for(const k in (opt.files||{}))if(opt.files[k])body.append(k,opt.files[k]);}
+    else{headers['Content-Type']='application/json';body=JSON.stringify(Object.assign({},payload||{},tok?{idToken:tok}:{}));}
+    const r=await fetch(WORKER+path,{method:'POST',headers,body});
+    let data={};try{data=await r.json();}catch(e){}
+    return{status:r.status,ok:r.ok,data};
+  }catch(e){return{status:0,ok:false,data:{}};}
+}
+function algiersDay(){try{return new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Algiers',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}catch(e){return new Date().toISOString().slice(0,10);}}
 const WA_N="213658996502";
 const EMAIL_ADDR="glitchq1q@gmail.com";
 const ADMIN_EMAIL="kadirom7k777@gmail.com";
@@ -458,7 +473,7 @@ function isValidEmail(e){return/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);}
 function isValidUrl(u){if(!u)return true;try{const x=new URL(u);return['https:','http:'].includes(x.protocol);}catch{return false;}}
 
 /* ══ STATE ══ */
-let PRODS=[],CATS=[],CPNS={},DISC={active:false,value:0};
+let PRODS=[],CATS=[],DISC={active:false,value:0};
 const S={
   lang:localStorage.getItem('gq_lang')||'ar',
   region:localStorage.getItem('gq_reg')||null,
@@ -789,10 +804,9 @@ function fireConfetti(n=60){
 async function loadSettings(){
   /* all documents are fetched in parallel (was one-by-one: up to ~6s on slow networks) */
   const get=n=>db.collection('settings').doc(n).get().catch(()=>null);
-  const [dCats,dProds,dCpns,dDisc,dMaint,dReg]=await Promise.all(['categories','products','coupons','discount','maintenance','regions'].map(get));
+  const [dCats,dProds,dDisc,dMaint,dReg]=await Promise.all(['categories','products','discount','maintenance','regions'].map(get));   /* the coupon list is never downloaded: codes are checked by the server */
   try{CATS=dCats&&dCats.exists&&Array.isArray(dCats.data().categories)?dCats.data().categories:DEFAULT_CATS;}catch(e){CATS=DEFAULT_CATS;}
   try{if(dProds&&dProds.exists&&Array.isArray(dProds.data().products)&&dProds.data().products.length)PRODS=dProds.data().products;else PRODS=DEFAULT_PRODS;}catch(e){PRODS=DEFAULT_PRODS;}
-  try{const d=dCpns;if(d&&d.exists&&d.data().coupons){const td=new Date().toISOString().split('T')[0];CPNS={};d.data().coupons.forEach(c=>{if(c.active&&(!c.expiry||c.expiry>=td)&&(!c.maxUses||(c.usedCount||0)<c.maxUses)){const k=String(c.code||'').toUpperCase().trim();if(k)CPNS[k]=c;}});}}catch(e){}
   try{const d=dDisc;if(d&&d.exists){const x=d.data(),td=new Date().toISOString().split('T')[0];DISC=(x.active&&(!x.expiry||x.expiry>=td)&&x.value>0&&x.value<=100)?{active:true,value:x.value}:{active:false,value:0};}}catch(e){}
   try{if(dReg){const cfg=normRegCfg(dReg.exists?dReg.data():null);try{localStorage.setItem('gq_regcfg',JSON.stringify(cfg));}catch(e){}applyRegionConfig(cfg);}}catch(e){}
   try{const d=dMaint;if(d&&d.exists&&d.data().active){document.body.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0015;color:#a78bca;font-family:Cairo,sans-serif;text-align:center"><div><div style="font-size:60px;margin-bottom:20px">🔧</div><h2 style="color:#00E5FF;font-family:Orbitron,sans-serif;margin-bottom:10px">GLITCH Q</h2><p style="font-size:16px">${t('t_maintenance')}</p></div></div>`;return false;}}catch(e){}
@@ -904,7 +918,7 @@ function openProdDetail(prod){
 
 function openCheckoutForProd(prodId){
   const prod=PRODS.find(p=>p.id===prodId);if(!prod||prod.stock===false)return;
-  S.selProd=prod;S.cpn=null;const price=calcPrice(prod);S._total=price;
+  S.selProd=prod;S.cpn=null;S._cpnDisc=0;const price=calcPrice(prod);S._total=price;
   const valText=getValText(prod);
   const ci=$('coProdInfo');
   if(ci)ci.innerHTML=`<div class="co-pname">${san(prod.name)} — ${san(valText)}</div><div class="co-pprice">${san(prod.sub||'')} · ${price.toLocaleString()} دج</div>`;
@@ -990,7 +1004,7 @@ window.removeFromCart=i=>{if(i<0||i>=S.cart.length)return;S.cart.splice(i,1);loc
 
 function goCheckout(){
   if(!S.cart.length)return;closeM('cartModal');
-  const tot=S.cart.reduce((s,c)=>s+(c.price*(c.qty||1)),0);S._total=tot;S.selProd=null;S.cpn=null;
+  const tot=S.cart.reduce((s,c)=>s+(c.price*(c.qty||1)),0);S._total=tot;S.selProd=null;S.cpn=null;S._cpnDisc=0;
   const ci=$('coProdInfo');
   if(ci)ci.innerHTML=`<div class="co-pname">${S.cart.map(c=>`${san(c.name||'')} x${c.qty||1}`).join(' + ')}</div><div class="co-pprice">${tot.toLocaleString()} دج</div>`;
   setText('coTotal',tot.toLocaleString()+' دج');
@@ -1006,15 +1020,19 @@ window.applyCpn=async()=>{
   const inp=$('cpnInp'),res=$('cpnRes');if(!inp||!res)return;
   const code=inp.value.trim().toUpperCase().slice(0,20);
   if(!code){res.innerHTML=`<span style="color:var(--red)">${t('t_enter_cpn')}</span>`;return;}
-  try{const d=await db.collection('settings').doc('coupons').get();if(d.exists){const td=new Date().toISOString().split('T')[0];CPNS={};(d.data().coupons||[]).forEach(c=>{if(c.active&&(!c.expiry||c.expiry>=td)&&(!c.maxUses||(c.usedCount||0)<c.maxUses)){const k=String(c.code||'').toUpperCase().trim();if(k)CPNS[k]=c;}});}}catch(e){}
-  if(CPNS[code]){
-    S.cpn=CPNS[code];const base=S._total||0;
+  if(S._cpnDisc){S._total=(S._total||0)+S._cpnDisc;S._cpnDisc=0;}          /* never stack a coupon on an already-discounted total */
+  const r=await wkCall('/coupon/validate',{code},{auth:false});
+  if(r.data&&r.data.ok){
+    S.cpn={code:r.data.code,type:r.data.type,value:r.data.value};const base=S._total||0;
     const dc=S.cpn.type==='percent'?Math.floor(base*Math.min(S.cpn.value,100)/100):Math.min(S.cpn.value,base);
-    S._total=Math.max(0,base-dc);
+    S._total=Math.max(0,base-dc);S._cpnDisc=dc;
     const discTxt=S.lang==='en'?`Discount ${S.cpn.value}${S.cpn.type==='percent'?'%':' DZD'}`:`خصم ${S.cpn.value}${S.cpn.type==='percent'?'%':' دج'}`;
     res.innerHTML=`<span style="color:var(--green)">✅ ${discTxt}</span>`;
     setText('coTotal',S._total.toLocaleString()+' دج');
-  }else{S.cpn=null;res.innerHTML=`<span style="color:var(--red)">${t('t_coupon_invalid')}</span>`;}
+  }else{
+    S.cpn=null;S._cpnDisc=0;setText('coTotal',(S._total||0).toLocaleString()+' دج');
+    res.innerHTML=`<span style="color:var(--red)">${r.status===429?t('t_too_many'):t('t_coupon_invalid')}</span>`;
+  }
 };
 window.applyOfferCode=()=>{if(S.cart.length){goCheckout();}else{goPage('shop');toast(t('t_choose_prod'),'twarn');}};
 
@@ -1041,53 +1059,37 @@ async function validImg(file){
 ══════════════════════════════════════════ */
 window.submitOrder=async()=>{
   if(!RL.ok('order',3,60000)){toast(t('t_too_many'),'twarn');return;}
-  const total=S._total||0;const uid=S.user?S.user.uid:'guest';
-  const ref=db.collection('orders').doc();const oid=ref.id;
-  let prodName='';
-  if(S.selProd){const vt=getValText(S.selProd);prodName=`${S.selProd.name} ${vt} (${S.selProd.sub||''})`;}
-  else{prodName=S.cart.map(c=>`${c.name||''} x${c.qty||1}`).join(' + ');}
+  const items=S.selProd?[{id:S.selProd.id,qty:1}]:S.cart.map(c=>({id:c.id,qty:c.qty||1}));
+  if(!items.length)return;
   const rE=($('recvEmail')?.value||'').trim().slice(0,254);
   const rP=($('recvPhone')?.value||'').trim().slice(0,20);
-
+  const data={items,coupon:S.cpn?.code||'',pay:S.pay,recv:S.recv};
+  let files={};
+  if(S.recv==='email'){if(!isValidEmail(rE)){toast(t('t_email_invalid'),'terr');return;}data.email=rE;}
   if(S.pay==='baridimob'){
     const name=san(($('senderN')?.value||'').trim()).slice(0,100);
     const fi=$('recFile');
     if(!name){toast(t('t_name_full'),'terr');return;}
     if(!fi?.files?.length){toast(t('t_upload_receipt'),'terr');return;}
     const ok=await validImg(fi.files[0]);if(!ok){toast(t('t_img_invalid'),'terr');return;}
-    if(rE&&!isValidEmail(rE)){toast(t('t_email_invalid'),'terr');return;}
-    const fd=new FormData();
-    fd.append('photo',fi.files[0]);fd.append('orderId',oid);fd.append('userId',uid);
-    fd.append('caption',`📦 New Order!\n🆔 ${oid}\n👤 ${name}\n🔑 ${uid}\n🎮 ${prodName}\n💰 ${total.toLocaleString()} دج\n${S.cpn?`🎟️ ${S.cpn.code}`:''}\n💳 BaridiMob\n${S.recv==='email'?`📧 ${rE}`:`📞 ${rP}`}`);
-    setSubmitting(true);
-    try{
-      const r=await fetch(`${WORKER}/telegram`,{method:'POST',body:fd});
-      if(!r.ok)throw new Error();const res=await r.json();
-      if(res.ok){
-        await ref.set({product:prodName,status:'pending',userId:uid,paymentMethod:'baridimob',receiveMethod:S.recv,receiveContact:S.recv==='email'?rE:rP,totalDZD:total,date:new Date().toLocaleDateString('ar'),coupon:S.cpn?.code||null,ts:firebase.firestore.FieldValue.serverTimestamp()});
-        if(S.cpn)bumpCpn(S.cpn.code);await onOrderSuccess(oid,total,prodName);
-      }else toast(String(res.error||t('t_error')).slice(0,100),'terr');
-    }catch(e){toast(t('t_conn_error'),'terr');}finally{setSubmitting(false);}
+    if(S.recv==='phone'){if(!rP){toast(t('t_phone_required'),'terr');return;}data.phone=rP;}
+    data.name=name;files={photo:fi.files[0]};
   }else{
     const phone=($('handPhone')?.value||'').trim().slice(0,20);
     if(!phone){toast(t('t_phone_required'),'terr');return;}
-    const fd=new FormData();fd.append('isText','true');fd.append('orderId',oid);fd.append('userId',uid);
-    fd.append('caption',`📦 Hand Delivery!\n🆔 ${oid}\n🔑 ${uid}\n🎮 ${prodName}\n💰 ${total.toLocaleString()} دج\n${S.cpn?`🎟️ ${S.cpn.code}`:''}\n🤝 Tlemcen\n📞 ${phone}`);
-    setSubmitting(true);
-    try{
-      const r=await fetch(`${WORKER}/telegram`,{method:'POST',body:fd});
-      if(!r.ok)throw new Error();const res=await r.json();
-      if(res.ok){
-        await ref.set({product:prodName,status:'pending',userId:uid,paymentMethod:'hand',phone,receiveMethod:S.recv,receiveContact:S.recv==='email'?rE:phone,totalDZD:total,date:new Date().toLocaleDateString('ar'),coupon:S.cpn?.code||null,ts:firebase.firestore.FieldValue.serverTimestamp()});
-        if(S.cpn)bumpCpn(S.cpn.code);await onOrderSuccess(oid,total,prodName);
-      }else toast(String(res.error||t('t_error')).slice(0,100),'terr');
-    }catch(e){toast(t('t_conn_error'),'terr');}finally{setSubmitting(false);}
+    data.phone=phone;
   }
+  setSubmitting(true);
+  try{
+    const r=await wkCall('/order/create',data,{form:true,files});
+    if(r.data&&r.data.ok){await onOrderSuccess(r.data.orderId,r.data.total,r.data.product);}
+    else if(r.status===0)toast(t('t_conn_error'),'terr');
+    else if(r.status===429)toast(t('t_too_many'),'twarn');
+    else if(r.status===401){toast(t('t_login_first'),'terr');openM('authModal');}
+    else if(r.status===403)toast(t('t_banned'),'terr');
+    else toast(String((r.data&&r.data.error)||t('t_error')).slice(0,100),'terr');
+  }catch(e){toast(t('t_conn_error'),'terr');}finally{setSubmitting(false);}
 };
-
-async function bumpCpn(code){
-  try{const d=await db.collection('settings').doc('coupons').get();if(!d.exists)return;const cs=d.data().coupons||[];const i=cs.findIndex(c=>String(c.code||'').toUpperCase()===String(code||'').toUpperCase());if(i!==-1){cs[i].usedCount=(cs[i].usedCount||0)+1;await db.collection('settings').doc('coupons').set({coupons:cs});}}catch(e){}
-}
 
 function setSubmitting(on){
   const b=$('submitOrderBtn'),l=$('submitLabel');if(!b)return;
@@ -1123,20 +1125,21 @@ async function onOrderSuccess(oid,total,prodName){
   fireConfetti();
   if(navigator.vibrate)navigator.vibrate([20,50,20,50,100]);
   try{await navigator.clipboard.writeText(oid);}catch(e){}
-  if(S.user&&S.udata){
-    try{
-      const pts=Math.floor(total/1000);const np=(S.udata.points||0)+pts;const orders=(S.udata.orders||0)+1;
-      const newSpend=(S.udata.totalSpend||0)+total;
-      const nh=[`${prodName} — ${new Date().toLocaleDateString('ar')}`,...(S.udata.history||[])].slice(0,20);
-      S.udata.points=np;S.udata.history=nh;S.udata.orders=orders;S.udata.totalSpend=newSpend;
-      await db.collection('users').doc(S.user.uid).update({points:np,history:nh,orders,totalSpend:newSpend});
-      checkAchievements();checkMilestones();
-      if(pts>0)setTimeout(()=>toast(`+${pts} ${t('t_pts')} 🌟`,'twarn'),1500);
-    }catch(e){}
-  }
   S.cart=[];localStorage.setItem('gq_cart',JSON.stringify(S.cart));updateCartBadge();
-  closeM('checkoutModal');S.selProd=null;S._total=0;S.cpn=null;clearUp();
+  closeM('checkoutModal');S.selProd=null;S._total=0;S.cpn=null;S._cpnDisc=0;clearUp();
   showOrderDone(oid,total,prodName);
+  loadHistory();
+}
+
+/* order history comes from the customer's own orders (read-only for them) */
+async function loadHistory(){
+  if(!S.user)return;
+  try{
+    const snap=await db.collection('orders').where('userId','==',S.user.uid).limit(30).get();
+    const rows=snap.docs.map(d=>d.data()).sort((a,b)=>((b.ts&&b.ts.toMillis?b.ts.toMillis():0)-(a.ts&&a.ts.toMillis?a.ts.toMillis():0)));
+    S.history=rows.slice(0,20).map(o=>`${o.product||''} — ${o.date||''}`);
+    updProfUI();
+  }catch(e){}
 }
 
 /* ══════════════════════════════════════════
@@ -1162,21 +1165,21 @@ async function endSess(fbU){
       S.udata=snap.data();
       if(!S.region&&S.udata.region&&REG_CFG.enabled&&REG_CFG.available[S.udata.region]){S.region=S.udata.region;S.regAuto=false;S.cur=S.udata.currency||'EUR';S.sym=S.udata.symbol||'€';localStorage.setItem('gq_reg',S.region);localStorage.setItem('gq_cur',S.cur);localStorage.setItem('gq_sym',S.sym);}
     }else{
-      S.udata={points:10,history:[],notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],fingerprint:'',uid_short:fbU.uid.slice(0,12),created:new Date()};
+      S.udata={points:5,notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],uid_short:fbU.uid.slice(0,12),email:fbU.email||'',name:fbU.displayName||'',created:new Date()};
       await db.collection('users').doc(fbU.uid).set(S.udata);
     }
   }catch(e){S.udata={points:0,history:[],notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,badges:[],claimedMilestones:[]};}
   closeM('authModal');updHeaderUI();updProfUI();loadNotifs();bumpVisitor();
   checkAchievements();checkMilestones();
   try{window.acctOnLogin&&window.acctOnLogin();}catch(e){}                    /* optional new-device alert + saved preferences */
-  db.collection('users').doc(fbU.uid).update({uid_short:fbU.uid.slice(0,12)}).catch(()=>{});
+  loadHistory();
   checkAbuse();
   const url=new URLSearchParams(window.location.search);if(url.get('ref'))processReferral();
   maybePromptRegion();
 }
 
-function resetSess(){S.user=null;S.udata=null;if(S.ready){updHeaderUI();updProfUI();}}
-async function bumpVisitor(){const k='vst_'+new Date().toDateString();if(sessionStorage.getItem(k))return;sessionStorage.setItem(k,'1');db.collection('settings').doc('stats').set({visitors:firebase.firestore.FieldValue.increment(1)},{merge:true}).catch(()=>{});}
+function resetSess(){S.user=null;S.udata=null;S.history=null;if(S.ready){updHeaderUI();updProfUI();}}
+async function bumpVisitor(){const k='vst_'+new Date().toDateString();if(sessionStorage.getItem(k))return;sessionStorage.setItem(k,'1');wkCall('/stats/visit',{},{auth:false});}
 
 $('loginForm')?.addEventListener('submit',async e=>{
   e.preventDefault();
@@ -1205,7 +1208,7 @@ $('regForm')?.addEventListener('submit',async e=>{
     const cred=await auth.createUserWithEmailAndPassword(email,pass);
     await cred.user.updateProfile({displayName:`${first} ${last}`});
     await cred.user.sendEmailVerification();
-    await db.collection('users').doc(cred.user.uid).set({firstName:first,lastName:last,name:`${first} ${last}`,email,points:5,history:[],notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],uid_short:cred.user.uid.slice(0,12),region:S.region||null,created:new Date()});
+    await db.collection('users').doc(cred.user.uid).set({firstName:first,lastName:last,name:`${first} ${last}`,email,points:5,notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],uid_short:cred.user.uid.slice(0,12),region:S.region||null,created:new Date()});
     await auth.signOut();showPane('verifyPane');
   }catch(err){let m=t('t_error');if(err.code==='auth/email-already-in-use')m=t('t_email_exists');if(err.code==='auth/weak-password')m=t('t_weak_pass');toast(m,'terr');}
 });
@@ -1301,7 +1304,7 @@ function updProfUI(){
   setText('profPts',(S.udata.points||0).toLocaleString());
   const rb=$('profRegBadge');if(rb)rb.textContent=S.region?`${S.region.toUpperCase()} (${S.sym})`:t('choose_region');
   const hl=$('profHistList');
-  if(hl){hl.innerHTML='';(S.udata.history||[]).slice(0,5).forEach(h=>{const d=document.createElement('div');d.className='hi';d.innerHTML=`<span>${san(h)}</span><i class="fa-solid fa-clock" style="color:var(--violet);font-size:11px"></i>`;hl.appendChild(d);});}
+  if(hl){hl.innerHTML='';(S.history||S.udata.history||[]).slice(0,5).forEach(h=>{const d=document.createElement('div');d.className='hi';d.innerHTML=`<span>${san(h)}</span><i class="fa-solid fa-clock" style="color:var(--violet);font-size:11px"></i>`;hl.appendChild(d);});}
 }
 
 /* ══ REWARDS PAGE ══ */
@@ -1332,21 +1335,26 @@ function renderStreak(){
   [1,2,3,4,5,6,7].forEach((d,i)=>{const el=document.createElement('div');el.className=`sday${i<streak?' done':''}${i===streak?' today':''}`;el.innerHTML=`<i class="fa-solid ${i<streak?'fa-check':i===streak?'fa-circle-dot':'fa-circle'}"></i><span>${d}</span>`;row.appendChild(el);});
 }
 
-async function loadLbRw(){
-  const list=$('lbListRw');if(!list)return;
-  try{const snap=await db.collection('users').orderBy('points','desc').limit(10).get();list.innerHTML='';const medals=['lb-r1','lb-r2','lb-r3'];let rank=1;snap.forEach(doc=>{const u=doc.data();if(rank>5||(u.prefs&&u.prefs.hideLb===true))return;const el=document.createElement('div');el.className='lb-it';el.innerHTML=`<div class="lb-rank ${medals[rank-1]||''}">${rank}</div><div class="lb-name">${san(u.nick||u.name||'')}</div><div class="lb-pts">${(u.points||0).toLocaleString()} ${t('t_pts')}</div>${rank===1?'<span>👑</span>':''}`;list.appendChild(el);rank++;});}catch(e){}
+async function fetchLeaderboard(){
+  if(S._lb&&Date.now()<S._lbExp)return S._lb;
+  const r=await wkCall('/leaderboard',{},{auth:false});
+  if(r.data&&r.data.ok&&Array.isArray(r.data.top)){S._lb=r.data.top;S._lbExp=Date.now()+60000;return S._lb;}
+  return null;
 }
-
-async function renderLeaderboard(){
-  const list=$('lbList');if(!list)return;
-  try{const snap=await db.collection('users').orderBy('points','desc').limit(10).get();list.innerHTML='';const medals=['lb-r1','lb-r2','lb-r3'];let rank=1;snap.forEach(doc=>{const u=doc.data();if(rank>5||(u.prefs&&u.prefs.hideLb===true))return;const el=document.createElement('div');el.className='lb-it';el.innerHTML=`<div class="lb-rank ${medals[rank-1]||''}">${rank}</div><div class="lb-name">${san(u.nick||u.name||'')}</div><div class="lb-pts">${(u.points||0).toLocaleString()} ${t('t_pts')}</div>`;list.appendChild(el);rank++;});}catch(e){}
+async function paintLeaderboard(id,crown){
+  const list=$(id);if(!list)return;
+  const top=await fetchLeaderboard();if(!top)return;
+  list.innerHTML='';const medals=['lb-r1','lb-r2','lb-r3'];
+  top.forEach((u,i)=>{const el=document.createElement('div');el.className='lb-it';el.innerHTML=`<div class="lb-rank ${medals[i]||''}">${i+1}</div><div class="lb-name">${san(u.name||'')}</div><div class="lb-pts">${(u.points||0).toLocaleString()} ${t('t_pts')}</div>${crown&&i===0?'<span>👑</span>':''}`;list.appendChild(el);});
 }
+async function loadLbRw(){return paintLeaderboard('lbListRw',true);}
+async function renderLeaderboard(){return paintLeaderboard('lbList',false);}
 
 /* ══ MISSIONS ══ */
 function renderMissions(containerId){
   const wrap=$(containerId);if(!wrap)return;wrap.innerHTML='';
   const missions=[
-    {id:'login',icon:'fa-calendar-check',color:'var(--cyan)',name:'تسجيل دخول يومي',nameEn:'Daily Login',pts:5,check:()=>S.udata?.lastLogin===new Date().toDateString(),prog:()=>({done:S.udata?.lastLogin===new Date().toDateString()?1:0,total:1})},
+    {id:'login',icon:'fa-calendar-check',color:'var(--cyan)',name:'تسجيل دخول يومي',nameEn:'Daily Login',pts:5,check:()=>S.udata?.lastLogin===algiersDay(),prog:()=>({done:S.udata?.lastLogin===algiersDay()?1:0,total:1})},
     {id:'buy',icon:'fa-cart-shopping',color:'var(--violet)',name:'إجراء عملية شراء',nameEn:'Make a Purchase',pts:10,check:()=>(S.udata?.orders||0)>0,prog:()=>({done:Math.min(S.udata?.orders||0,1),total:1})},
     {id:'ref',icon:'fa-user-plus',color:'var(--pink)',name:'دعوة أصدقاء (3)',nameEn:'Invite Friends (3)',pts:1000,check:()=>(S.udata?.referrals||0)>=3,prog:()=>({done:S.udata?.referrals||0,total:3})},
   ];
@@ -1378,11 +1386,10 @@ window.trackOrder=async()=>{
   const inp=$('trkInput'),res=$('trkRes');if(!inp||!res)return;
   const oid=inp.value.trim().slice(0,50);if(!oid){res.innerHTML=`<div class="stbox st-pend">${S.lang==='en'?'Enter order number':'أدخل رقم الطلب'}</div>`;return;}
   if(!RL.ok('track',5,60000))return;
-  try{
-    const doc=await db.collection('orders').doc(oid).get();
-    if(doc.exists){const o=doc.data();const m={pending:{t:t('order_pend'),c:'st-pend'},processing:{t:t('order_proc'),c:'st-proc'},done:{t:t('order_done'),c:'st-done'},rejected:{t:t('order_rej'),c:'st-rej'}};const s=m[o.status]||m.pending;res.innerHTML=`<div class="stbox ${s.c}"><strong>${s.t}</strong><br><small>${san(o.product||'')}</small><br><small>📅 ${o.date||''}</small></div>`;}
-    else res.innerHTML=`<div class="stbox st-rej">${t('track_not_found')}</div>`;
-  }catch(e){res.innerHTML=`<div class="stbox st-pend">${t('track_error')}</div>`;}
+  const r=await wkCall('/order/track',{orderId:oid},{auth:false});
+  if(r.data&&r.data.ok){const o=r.data;const m={pending:{t:t('order_pend'),c:'st-pend'},processing:{t:t('order_proc'),c:'st-proc'},done:{t:t('order_done'),c:'st-done'},rejected:{t:t('order_rej'),c:'st-rej'}};const st=m[o.status]||m.pending;res.innerHTML=`<div class="stbox ${st.c}"><strong>${st.t}</strong><br><small>${san(o.product||'')}</small><br><small>📅 ${san(o.date||'')}</small></div>`;}
+  else if(r.status===200)res.innerHTML=`<div class="stbox st-rej">${t('track_not_found')}</div>`;
+  else res.innerHTML=`<div class="stbox st-pend">${t('track_error')}</div>`;
 };
 
 /* ══ RATING ══ */
@@ -1392,8 +1399,9 @@ window.submitRating=async()=>{
   if(!RL.ok('rating',2,60000)){toast(t('t_too_many'),'twarn');return;}
   const cmt=san(($('ratingCmt')?.value||'')).slice(0,300);
   try{
-    await db.collection('ratings').add({rating:S.stars,comment:cmt,userId:S.user?.uid||'guest',userName:san(S.user?.displayName||''),date:new Date().toLocaleDateString('ar'),hidden:false});
-    if(S.user&&S.udata){const ratings=(S.udata.ratings||0)+1;S.udata.ratings=ratings;await db.collection('users').doc(S.user.uid).update({ratings}).catch(()=>{});checkAchievements();}
+    const r=await wkCall('/rating/create',{rating:S.stars,comment:cmt});
+    if(!(r.data&&r.data.ok))throw new Error('rating');
+    if(S.user&&S.udata){S.udata.ratings=(S.udata.ratings||0)+1;checkAchievements();}
     toast(t('t_rating_done'),'tok');closeM('ratingModal');if($('ratingCmt'))$('ratingCmt').value='';S.stars=0;document.querySelectorAll('.starb').forEach(s=>s.classList.remove('lit'));
   }catch(e){toast(t('t_error'),'terr');}
 };
@@ -1427,7 +1435,6 @@ function drawWheel(canvas,rotation){
   ctx.beginPath();ctx.arc(cx,cy,28,0,2*Math.PI);ctx.strokeStyle='rgba(147,51,234,.5)';ctx.lineWidth=7;ctx.stroke();
 }
 
-function getWeightedPrize(){const total=SPIN_SEGMENTS.reduce((s,p)=>s+p.prob,0);let r=Math.random()*total;for(const p of SPIN_SEGMENTS){r-=p.prob;if(r<=0)return p;}return SPIN_SEGMENTS[0];}
 
 function initSpinTimer(){
   const update=()=>{const ls=localStorage.getItem('gq_lastSpin');if(ls){const rem=parseInt(ls)+86400000-Date.now();if(rem>0){const h=Math.floor(rem/3600000),m=Math.floor((rem%3600000)/60000);setText('spinTimer',`${t('t_spin_next')} ${h}${S.lang==='en'?'h':'س'} ${m}${S.lang==='en'?'m':'د'}`);const btn=$('spinBtn');if(btn){btn.disabled=true;btn.style.opacity='.5';}return;}}setText('spinTimer','');const btn=$('spinBtn');if(btn){btn.disabled=false;btn.style.opacity='1';btn.textContent=t('spin_btn');}};
@@ -1441,20 +1448,28 @@ window.doSpin=async function(){
   if(!S.user){toast(t('t_login_first'),'terr');openM('authModal');return;}
   S.spinning=true;const btn=$('spinBtn');if(btn){btn.disabled=true;btn.style.opacity='.5';}
   if($('spinPrize'))$('spinPrize').textContent='';
-  const prize=getWeightedPrize();const prizeIdx=SPIN_SEGMENTS.indexOf(prize);
+  const r=await wkCall('/account/spin',{});
+  if(!(r.data&&r.data.ok)){
+    S.spinning=false;if(btn){btn.disabled=false;btn.style.opacity='1';}
+    if(r.data&&r.data.reason==='wait'){localStorage.setItem('gq_lastSpin',String(Date.now()-(86400000-(r.data.remainingMs||86400000))));initSpinTimer();toast(t('t_spin_daily'),'twarn');}
+    else toast(t('t_error'),'terr');
+    return;
+  }
+  const prizeIdx=Math.max(0,Math.min(SPIN_SEGMENTS.length-1,r.data.index|0));const prize=SPIN_SEGMENTS[prizeIdx];
   const segAngle=360/SPIN_SEGMENTS.length;const targetSegCenter=prizeIdx*segAngle+segAngle/2;
   const spins=5+Math.floor(Math.random()*3);const targetDeg=spins*360+(360-targetSegCenter);
   const duration=4500;const startTime=performance.now();const startRot=spinRotation;const canvas=$('spinCanvas');
   function easeOut(t_){return 1-Math.pow(1-t_,4);}
-  function animate(now){const elapsed=now-startTime;const progress=Math.min(elapsed/duration,1);const eased=easeOut(progress);const currentDeg=startRot+targetDeg*eased;if(canvas)drawWheel(canvas,(currentDeg*Math.PI)/180);if(progress<1){requestAnimationFrame(animate);}else{spinRotation=(startRot+targetDeg)%360;onSpinDone(prize);}}
+  function animate(now){const elapsed=now-startTime;const progress=Math.min(elapsed/duration,1);const eased=easeOut(progress);const currentDeg=startRot+targetDeg*eased;if(canvas)drawWheel(canvas,(currentDeg*Math.PI)/180);if(progress<1){requestAnimationFrame(animate);}else{spinRotation=(startRot+targetDeg)%360;onSpinDone(prize,r.data);}}
   requestAnimationFrame(animate);
 };
 
-async function onSpinDone(prize){
+async function onSpinDone(prize,srv){
   S.spinning=false;localStorage.setItem('gq_lastSpin',Date.now().toString());
   const label=S.lang==='en'?(prize.labelEn||prize.label):prize.label;
   const prizeEl=$('spinPrize');if(prizeEl)prizeEl.textContent=`🎉 ${S.lang==='en'?'You won':'ربحت'} ${label}!`;
-  if(prize.pts>0){const np=(S.udata.points||0)+prize.pts;S.udata.points=np;S.udata.spins=(S.udata.spins||0)+1;await db.collection('users').doc(S.user.uid).update({points:np,spins:S.udata.spins}).catch(()=>{});updProfUI();checkAchievements();checkMilestones();toast(`+${prize.pts} ${t('t_pts')} ⚡`,'tok');fireConfetti(30);}
+  if(srv&&Number.isFinite(srv.points)){S.udata.points=srv.points;S.udata.spins=srv.spins;}
+  if(prize.pts>0){updProfUI();checkAchievements();checkMilestones();toast(`+${prize.pts} ${t('t_pts')} ⚡`,'tok');fireConfetti(30);}
   else toast(S.lang==='en'?'Better luck tomorrow! 🍀':'حظاً أوفر غداً! 🍀','twarn');
   initSpinTimer();const btn=$('spinBtn');if(btn){btn.disabled=false;btn.style.opacity='1';}
 }
@@ -1462,11 +1477,13 @@ async function onSpinDone(prize){
 /* ══ STREAK ══ */
 window.claimStreak=async()=>{
   if(!S.user){openM('authModal');return;}
-  const today=new Date().toDateString();const last=S.udata?.lastLogin;const yesterday=new Date(Date.now()-86400000).toDateString();
-  if(last===today){toast(t('t_streak_done'),'twarn');return;}
-  const newStreak=last===yesterday?(S.udata.streak||0)+1:1;const bonusPts=[1,1,2,2,3,3,5][Math.min(newStreak-1,6)];const newPts=(S.udata.points||0)+bonusPts;
-  try{await db.collection('users').doc(S.user.uid).update({streak:newStreak,lastLogin:today,points:newPts});S.udata.streak=newStreak;S.udata.lastLogin=today;S.udata.points=newPts;toast(`${t('t_streak_reward')} +${bonusPts} ${t('t_pts')} 🔥`,'tok');if(navigator.vibrate)navigator.vibrate([10,30,10,50]);fireConfetti(20);renderRewardsPage();checkAchievements();const btn=$('claimBtn');if(btn){btn.disabled=true;btn.style.opacity='.5';}}
-  catch(e){toast(t('t_error'),'terr');}
+  const r=await wkCall('/account/streak',{});
+  if(r.data&&r.data.ok){
+    S.udata.streak=r.data.streak;S.udata.lastLogin=r.data.lastLogin;S.udata.points=r.data.points;
+    toast(`${t('t_streak_reward')} +${r.data.bonus} ${t('t_pts')} 🔥`,'tok');if(navigator.vibrate)navigator.vibrate([10,30,10,50]);fireConfetti(20);renderRewardsPage();checkAchievements();
+    const btn=$('claimBtn');if(btn){btn.disabled=true;btn.style.opacity='.5';}
+  }else if(r.data&&r.data.reason==='done'){S.udata.lastLogin=algiersDay();toast(t('t_streak_done'),'twarn');renderRewardsPage();}
+  else toast(t('t_error'),'terr');
 };
 
 /* ══ ACHIEVEMENTS ══ */
@@ -1511,23 +1528,15 @@ window.claimMilestone=async function(msId){
   if(!S.user||!S.udata){toast(t('t_login_first'),'terr');return;}
   if(!RL.ok('milestone',5,60000)){toast(t('t_too_many'),'twarn');return;}
   const ms=MILESTONES.find(m=>m.id===msId);if(!ms)return;
-  const pts=S.udata.points||0;const totalSpend=S.udata.totalSpend||0;const claimed=S.udata.claimedMilestones||[];
-  if(pts<ms.pts){toast(`${t('t_ms_pts')}: ${ms.pts}`,'twarn');return;}
-  if(claimed.includes(msId)){toast(t('t_ms_claimed'),'twarn');return;}
-  if(totalSpend<ms.minSpend){toast(`${t('t_ms_spend')} ${ms.minSpend.toLocaleString()} دج`,'twarn');return;}
-  try{
-    const newClaimed=[...claimed,msId];
-    await db.collection('users').doc(S.user.uid).update({claimedMilestones:newClaimed,points:firebase.firestore.FieldValue.increment(-ms.pts)});
-    S.udata.claimedMilestones=newClaimed;S.udata.points=Math.max(0,pts-ms.pts);
-    const fd=new FormData();fd.append('isText','true');fd.append('orderId','MILESTONE');fd.append('userId',S.user.uid);
-    fd.append('caption',`🏆 Reward Claimed!\n👤 ${san(S.user.displayName||'')}\n🔑 ${S.user.uid}\n🎁 ${ms.name}\n💳 ${ms.desc}\n📊 Points: ${ms.pts}\n💰 Spent: ${totalSpend.toLocaleString()} دج`);
-    await fetch(`${WORKER}/telegram`,{method:'POST',body:fd});
-    const notifCode=S.lang==='en'?`Your ${ms.descEn||ms.desc} will be sent within 24 hours.`:`سيتم إرسال ${ms.desc} لك خلال 24 ساعة.`;
-    const notif={title:`🎁 ${S.lang==='en'?(ms.nameEn||ms.name):ms.name}`,code:notifCode,date:new Date().toLocaleDateString('ar'),read:false};
-    await db.collection('users').doc(S.user.uid).update({notifications:firebase.firestore.FieldValue.arrayUnion(notif)});
+  const r=await wkCall('/account/milestone',{id:msId});
+  if(r.data&&r.data.ok){
+    S.udata.claimedMilestones=[...(S.udata.claimedMilestones||[]),msId];S.udata.points=r.data.points;
     const msg=S.lang==='en'?(ms.msgEn||ms.msg):ms.msg;
     toast(msg,'tok');fireConfetti(50);renderMilestones();updProfUI();
-  }catch(e){toast(t('t_ms_error'),'terr');}
+  }else if(r.data&&r.data.reason==='points')toast(`${t('t_ms_pts')}: ${ms.pts}`,'twarn');
+  else if(r.data&&r.data.reason==='claimed')toast(t('t_ms_claimed'),'twarn');
+  else if(r.data&&r.data.reason==='spend')toast(`${t('t_ms_spend')} ${ms.minSpend.toLocaleString()} دج`,'twarn');
+  else toast(t('t_ms_error'),'terr');
 };
 
 function checkMilestones(){
@@ -1563,19 +1572,9 @@ async function processReferral(){
   if(!ref||!S.user||typeof ref!=='string'||ref.length>12)return;
   if(ref===S.user.uid.slice(0,12))return;
   const k=`gq_ref_${S.user.uid}`;if(localStorage.getItem(k))return;
-  try{
-    const fp=await getFingerprint();
-    const isAbuse=await checkReferralAbuse(ref,fp);
-    if(isAbuse){toast(t('t_ref_self'),'terr');return;}
-    const snap=await db.collection('users').where('uid_short','==',ref).limit(1).get();
-    if(snap.empty)return;
-    const refUid=snap.docs[0].id;
-    if(refUid===S.user.uid)return;
-    await db.collection('users').doc(refUid).update({points:firebase.firestore.FieldValue.increment(1000),referrals:firebase.firestore.FieldValue.increment(1)});
-    await db.collection('referrals').add({referrer:refUid,referred:S.user.uid,fp_hash:fp.slice(0,16),date:new Date().toISOString()});
-    localStorage.setItem(k,'1');
-    toast(t('t_ref_done'),'tok');
-  }catch(e){}
+  const r=await wkCall('/account/referral',{ref});
+  if(r.data&&r.data.ok){localStorage.setItem(k,'1');toast(t('t_ref_done'),'tok');}
+  else if(r.data&&(r.data.reason==='already'))localStorage.setItem(k,'1');
 }
 
 async function getFingerprint(){
@@ -1584,33 +1583,9 @@ async function getFingerprint(){
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-async function checkReferralAbuse(refShortId,fp){
-  try{
-    const snap=await db.collection('users').where('uid_short','==',refShortId).limit(1).get();
-    if(snap.empty)return true;
-    if(snap.docs[0].data().fingerprint===fp.slice(0,16))return true;
-    const existing=await db.collection('referrals').where('fp_hash','==',fp.slice(0,16)).limit(1).get();
-    if(!existing.empty)return true;
-    return false;
-  }catch(e){return false;}
-}
-
 async function checkAbuse(){
   if(!S.user)return;
-  try{
-    const fp=await getFingerprint();const fpKey=fp.slice(0,16);
-    await db.collection('users').doc(S.user.uid).update({fingerprint:fpKey}).catch(()=>{});
-    const snap=await db.collection('users').where('fingerprint','==',fpKey).get();
-    if(snap.size>2){
-      const ids=snap.docs.map(d=>d.id).filter(id=>id!==S.user.uid);
-      if(ids.length>=2){
-        await db.collection('abuse_flags').add({userId:S.user.uid,fingerprint:fpKey,suspectedAlts:ids,date:new Date().toISOString(),reason:'multiple_accounts'});
-        const fd=new FormData();fd.append('isText','true');fd.append('orderId','ABUSE');fd.append('userId',S.user.uid);
-        fd.append('caption',`⚠️ Multi-account!\n🔑 ${S.user.uid}\n🖥️ ${fpKey}\n👥 ${ids.slice(0,3).join(', ')}`);
-        fetch(`${WORKER}/telegram`,{method:'POST',body:fd}).catch(()=>{});
-      }
-    }
-  }catch(e){}
+  try{const fp=await getFingerprint();wkCall('/account/fp',{fp:fp.slice(0,16)});}catch(e){}
 }
 
 /* ══════════════════════════════════════════
@@ -1642,7 +1617,7 @@ window.subscribeNL=async()=>{
   const e=($('nlEmail')?.value||'').trim();
   if(!e||!isValidEmail(e)){toast(t('t_email_invalid'),'terr');return;}
   if(!RL.ok('newsletter',3,300000)){toast(t('t_too_many'),'twarn');return;}
-  try{await db.collection('newsletter').add({email:e,date:new Date().toISOString()});}catch(x){}
+  wkCall('/newsletter/subscribe',{email:e},{auth:false});
   toast(t('t_subscribed'),'tok');if($('nlEmail'))$('nlEmail').value='';
 };
 
@@ -1749,9 +1724,7 @@ window.sendSupportMsg=function(){
 $('supportInp')?.addEventListener('keypress',e=>{if(e.key==='Enter')window.sendSupportMsg();});
 
 window.contactHuman=function(){
-  const fd=new FormData();fd.append('isText','true');fd.append('orderId','SUPPORT');fd.append('userId',S.user?.uid||'guest');
-  fd.append('caption',`🆘 Support Request!\n👤 ${san(S.user?.displayName||'Guest')}\n🔑 ${S.user?.uid||'guest'}\n⏰ ${new Date().toLocaleString()}`);
-  fetch(`${WORKER}/telegram`,{method:'POST',body:fd}).catch(()=>{});
+  wkCall('/support/ping',{});
   const msg=`Hello Glitch Q 🎮\nI need help:\n👤 ${san(S.user?.displayName||'Guest')}\n🔑 ${S.user?.uid?.slice(0,8)||'—'}`;
   openWhatsApp(msg);toast(t('t_redirect_human'),'tok');
 };
@@ -1768,20 +1741,14 @@ window.submitReport=async()=>{
   if(!category){toast(t('t_report_cat_req'),'terr');return;}
   if(!desc||desc.length<20){toast(t('t_report_desc_req'),'terr');return;}
   if(!RL.ok('report',3,300000)){toast(t('t_too_many'),'twarn');return;}
-  const uid=S.user?S.user.uid:'guest';
-  try{
-    await db.collection('reports').add({title,category,desc,orderId,userId:uid,userName:san(S.user?.displayName||''),status:'open',date:new Date().toLocaleDateString('ar'),ts:firebase.firestore.FieldValue.serverTimestamp()});
-    const hasFile=$('rptFile')?.files?.length>0;
-    const fd=new FormData();
-    if(hasFile){const ok=await validImg($('rptFile').files[0]);if(ok){fd.append('photo',$('rptFile').files[0]);fd.append('isText','false');}else fd.append('isText','true');}
-    else fd.append('isText','true');
-    fd.append('orderId','REPORT');fd.append('userId',uid);
-    fd.append('caption',`🚨 New Report!\n👤 ${san(S.user?.displayName||'Guest')}\n🔑 ${uid}\n📌 ${title}\n📂 ${category}\n📝 ${desc.slice(0,300)}\n🆔 ${orderId||'—'}`);
-    await fetch(`${WORKER}/telegram`,{method:'POST',body:fd});
+  const files={};
+  if($('rptFile')?.files?.length>0){const ok=await validImg($('rptFile').files[0]);if(ok)files.photo=$('rptFile').files[0];}
+  const r=await wkCall('/report/create',{title,category,desc,orderId},{form:true,files});
+  if(r.data&&r.data.ok){
     toast(t('t_report_sent'),'tok');closeM('reportModal');
     [$('rptTitle'),$('rptDesc'),$('rptOrderId')].forEach(el=>{if(el)el.value='';});
     if($('rptCategory'))$('rptCategory').value='';clearRptUp();
-  }catch(e){toast(t('t_report_error'),'terr');}
+  }else toast(r.status===429?t('t_too_many'):t('t_report_error'),'terr');
 };
 
 /* ══════════════════════════════════════════

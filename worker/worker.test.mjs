@@ -343,6 +343,12 @@ ck('rating: stored with verified uid; user ratings +1', s === 200 && [...fs.docs
 { const f = new FormData(); f.append('data', JSON.stringify({ title: 'T', category: 'c', desc: 'short' })); [s] = await call('/report/create', null, { form: f }); ck('report: too short → 400', s === 400); }
 [s] = await call('/stats/visit', {}); [s] = await call('/stats/visit', {}, { ip: '5.5.5.5' }); ck('visit: counter incremented atomically', get('settings/stats').visitors === 2, JSON.stringify(get('settings/stats')));
 
+/* ───────── support ping ───────── */
+seed(); fs.tg = [];
+[s, j] = await call('/support/ping', { idToken: await tok('u1'), text: '<b>injected</b>' }); ck('support ping: owner notified with server-built text', s === 200 && fs.tg.length === 1 && fs.tg[0].text.includes('Support Request') && !fs.tg[0].text.includes('injected'), JSON.stringify(fs.tg));
+[s] = await call('/support/ping', { idToken: 'bad.tok.en' }); ck('support ping: bad token → 401', s === 401);
+{ const ip = '6.6.6.6'; fs.tg = []; for (let i = 0; i < 8; i++) await call('/support/ping', {}, { ip }); ck('support ping: per-IP cap (3 messages max)', fs.tg.length === 3, fs.tg.length); }
+
 /* ───────── admin notify ───────── */
 seed();
 const adm = (over = {}) => mk({ sub: 'adm', email: 'kadirom7k777@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' }, ...over });

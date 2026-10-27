@@ -82,6 +82,7 @@ export default {
         '/account/fp':             () => handleFingerprint(request, env, cors),
         '/account/revoke-sessions': () => handleRevokeSessions(request, env, cors),
         '/account/login-alert':    () => handleLoginAlert(request, env, cors),
+        '/support/ping':           () => handleSupportPing(request, env, cors),
         '/admin/notify':           () => handleAdminNotify(request, env, cors),
       };
       const h = Object.prototype.hasOwnProperty.call(routes, path) ? routes[path] : null;
@@ -348,7 +349,8 @@ async function loadCatalog(env) {
   const [p, c, d] = await Promise.all([
     fsGet(env, 'settings/products'), fsGet(env, 'settings/categories'), fsGet(env, 'settings/discount'),
   ]);
-  const cats = Array.isArray(c.data.categories) ? c.data.categories : [];
+  // same defaults as DEFAULT_CATS in script.js, used when the categories document does not exist yet
+  const cats = Array.isArray(c.data.categories) ? c.data.categories : [{ id: 'psstore', enabled: true }, { id: 'psplus', enabled: true }, { id: 'games', enabled: true }];
   const products = Array.isArray(p.data.products) ? p.data.products : [];
   const td = dzDay();
   const x = d.data || {};
@@ -783,6 +785,19 @@ async function handleFingerprint(request, env, cors) {
     })]);
     await tgSend(env, `⚠️ Multi-account!\n🔑 ${g.uid}\n🖥️ ${fp}\n👥 ${others.slice(0, 3).join(', ')}`);
   }
+  return json({ ok: true }, 200, cors);
+}
+
+// "Talk to a human" button: tells the owner someone asked for help (text is built here, never taken from the browser).
+async function handleSupportPing(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  if (hit('sup:' + clientIp(request), 3, 600000)) return json({ ok: true }, 200, cors);
+  const body = await readJson(request, 2048);
+  const a = await who(body && body.idToken, env, cors, true);
+  if (a.err) return a.err;
+  const uid = a.claims ? a.claims.sub : 'guest';
+  const name = a.claims ? cleanText(a.claims.name || '', 60) : 'Guest';
+  await tgSend(env, `🆘 Support Request!\n👤 ${name}\n🔑 ${uid}\n⏰ ${new Date().toISOString()}`);
   return json({ ok: true }, 200, cors);
 }
 
