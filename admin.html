@@ -3,8 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="X-Frame-Options" content="DENY">
-<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdnjs.cloudflare.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' https: data:; connect-src https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://glitchq-proxy.kadirom7k777.workers.dev wss://*.firebaseio.com; frame-src https://*.firebaseapp.com https://accounts.google.com https://apis.google.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<style id="antiClick">html{display:none!important}</style>
+<script>if(window.top===window.self){document.getElementById('antiClick').remove();}else{try{window.top.location=window.self.location;}catch(e){}}</script>
 <title>Glitch Q — لوحة التحكم</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
@@ -232,9 +234,8 @@ a{color:inherit;text-decoration:none}
   <div class="login-box">
     <div class="login-logo">🎮 GLITCH Q</div>
     <p class="login-sub">لوحة تحكم الأدمن — دخول آمن</p>
-    <input type="email" id="adminEmail" class="l-inp" placeholder="البريد الإلكتروني" autocomplete="email">
-    <input type="password" id="adminPass" class="l-inp" placeholder="كلمة المرور" autocomplete="current-password">
-    <button onclick="adminLogin()" class="l-btn"><i class="fa-solid fa-right-to-bracket"></i> دخول</button>
+    <button onclick="adminLogin()" class="l-btn"><i class="fa-brands fa-google"></i> الدخول بحساب Google</button>
+    <p class="login-sub" style="margin-top:12px;font-size:11px">يتطلب حساب Google الخاص بالمالك مع التحقق بخطوتين</p>
     <p id="loginErr"></p>
   </div>
 </div>
@@ -687,6 +688,11 @@ firebase.initializeApp(_FC);
 const auth=firebase.auth(),db=firebase.firestore();
 const WORKER="https://glitchq-proxy.kadirom7k777.workers.dev";
 const ADMIN_EMAIL="kadirom7k777@gmail.com";
+async function adminNotify(text){
+  try{const tok=await auth.currentUser.getIdToken();
+    const r=await fetch(WORKER+'/admin/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken:tok,text})});
+    return r.ok;}catch(e){return false;}
+}
 
 /* ══ STATE ══ */
 let allOrders=[],allUsers=[],currentOrderFilter='all',currentReviewFilter='all',currentReportFilter='all';
@@ -694,39 +700,48 @@ let currentOrderForDelivery=null,ordersLoaded=20;
 
 /* ══ SECURITY ══ */
 const RL={_s:{},ok(k='_',max=5,ms=60000){const n=Date.now();if(!this._s[k])this._s[k]={c:0,t:0};const r=this._s[k];if(n>r.t){r.c=0;r.t=n+ms;}if(r.c>=max)return false;r.c++;return true;}};
-function san(t){if(!t||typeof t!=='string')return'';return t.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;').trim().slice(0,500);}
+/* every value that comes from the database is escaped before it reaches innerHTML:
+   esc() for text and double-quoted attributes, jsq() for a quoted argument inside an inline handler */
+function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/`/g,'&#96;');}
+function san(t){return esc(typeof t==='string'?t.trim().slice(0,500):'');}
+function jsq(v){return esc(JSON.stringify(String(v==null?'':v)).slice(1,-1).replace(/&/g,'\\u0026').replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/'/g,'\\u0027'));}
+function safeUrl(u){u=String(u||'').trim();return /^https:\/\/[^\s"'<>`]+$/i.test(u)?u:'';}
+function csvCell(c){let v=String(c==null?'':c);if(/^[=+\-@\t\r]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"';}
 function isValidEmail(e){return/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);}
 
-/* ══ AUTH ══ */
+/* ══ AUTH ══ (Google sign-in only: the account's own 2-step verification / passkey protects the panel) */
+function isAdminUser(u){return !!u&&u.email===ADMIN_EMAIL&&u.emailVerified===true&&(u.providerData||[]).some(p=>p.providerId==='google.com');}
 auth.onAuthStateChanged(u=>{
-  if(u&&u.email===ADMIN_EMAIL){
+  if(isAdminUser(u)){
     document.getElementById('loginScreen').style.display='none';
     document.getElementById('adminApp').style.display='block';
     document.getElementById('sbAdminName').textContent=u.displayName||'Admin';
     document.getElementById('sbAdminEmail').textContent=u.email;
-    initAdmin();
-  }else if(u&&u.email!==ADMIN_EMAIL){auth.signOut();showErr('غير مصرح لك بالوصول');}
+    initAdmin();armIdleLogout();
+  }else if(u){auth.signOut();showErr('غير مصرح لك بالوصول');}
 });
 
 async function adminLogin(){
   if(!RL.ok('login',5,60000)){showErr('محاولات كثيرة');return;}
-  const email=document.getElementById('adminEmail').value.trim();
-  const pass=document.getElementById('adminPass').value;
   showErr('');
-  if(!email||!pass||!isValidEmail(email)){showErr('أدخل البيانات');return;}
-  if(email!==ADMIN_EMAIL){showErr('غير مصرح لهذا البريد');return;}
-  try{await auth.signInWithEmailAndPassword(email,pass);}
-  catch(e){
-    if(e.code==='auth/wrong-password'||e.code==='auth/invalid-credential')showErr('كلمة مرور خاطئة');
-    else if(e.code==='auth/user-not-found')showErr('الحساب غير موجود');
+  try{
+    await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);   /* the session ends when the tab closes */
+    await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  }catch(e){
+    if(e.code==='auth/popup-closed-by-user'||e.code==='auth/cancelled-popup-request')showErr('أُغلقت نافذة الدخول');
+    else if(e.code==='auth/popup-blocked')showErr('المتصفح منع نافذة الدخول، اسمح بالنوافذ المنبثقة');
+    else if(e.code==='auth/unauthorized-domain')showErr('أضف هذا النطاق إلى Authorized domains في Firebase');
+    else if(e.code==='auth/operation-not-allowed')showErr('فعّل مزوّد Google في Firebase Authentication');
     else showErr('خطأ في تسجيل الدخول');
   }
 }
 
-// Allow Enter key on login
-document.addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&document.getElementById('loginScreen').style.display!=='none')adminLogin();
-});
+/* sign out automatically after 30 minutes without activity */
+let idleTimer=null;
+function armIdleLogout(){
+  const reset=()=>{clearTimeout(idleTimer);idleTimer=setTimeout(()=>{auth.signOut().then(()=>location.reload());},30*60*1000);};
+  ['click','keydown','touchstart','mousemove'].forEach(ev=>document.addEventListener(ev,reset,{passive:true}));reset();
+}
 
 function adminLogout(){auth.signOut();location.reload();}
 function showErr(m){document.getElementById('loginErr').textContent=m;}
@@ -822,7 +837,7 @@ async function loadDashboard(){
     recent.forEach(o=>{
       const el=document.createElement('div');el.className='adm-card';
       const sc=o.status==='done'?'badge-done':o.status==='pending'?'badge-pend':o.status==='processing'?'badge-proc':'badge-rej';
-      el.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:rgba(0,229,255,.1);color:var(--cyan)"><i class="fa-solid fa-box"></i></div><div class="adm-card-info"><div class="adm-card-title">${san(o.product||'')}</div><div class="adm-card-sub">💰 ${(o.totalDZD||0).toLocaleString()} دج · ${o.paymentMethod==='baridimob'?'BaridiMob':'يد بيد'}</div><div class="adm-card-meta"><span>🆔 ${o.id.slice(0,14)}...</span><span>📅 ${o.date||''}</span></div></div><span class="badge ${sc}">${o.status}</span></div>`;
+      el.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:rgba(0,229,255,.1);color:var(--cyan)"><i class="fa-solid fa-box"></i></div><div class="adm-card-info"><div class="adm-card-title">${san(o.product||'')}</div><div class="adm-card-sub">💰 ${esc((o.totalDZD||0).toLocaleString())} دج · ${esc(o.paymentMethod==='baridimob'?'BaridiMob':'يد بيد')}</div><div class="adm-card-meta"><span>🆔 ${esc(o.id.slice(0,14))}...</span><span>📅 ${esc(o.date||'')}</span></div></div><span class="badge ${sc}">${esc(o.status)}</span></div>`;
       rc.appendChild(el);
     });
     // Top users
@@ -830,7 +845,7 @@ async function loadDashboard(){
     const topUsers=usersData.sort((a,b)=>(b.points||0)-(a.points||0)).slice(0,5);
     const tu=document.getElementById('dashTopUsers');tu.innerHTML='';
     const medals=['🥇','🥈','🥉','4️⃣','5️⃣'];
-    topUsers.forEach((u,i)=>{const el=document.createElement('div');el.style.cssText='display:flex;align-items:center;gap:12px;padding:10px;background:rgba(0,229,255,.04);border-radius:8px;margin-bottom:6px;font-size:12px';el.innerHTML=`<span style="font-size:18px">${medals[i]}</span><span style="flex:1;font-weight:700">${san(u.name||u.email||'مستخدم')}</span><span style="font-family:Orbitron;font-size:11px;color:var(--gold)">${(u.points||0).toLocaleString()} نقطة</span><span style="color:var(--mid)">${u.orders||0} طلب</span>`;tu.appendChild(el);});
+    topUsers.forEach((u,i)=>{const el=document.createElement('div');el.style.cssText='display:flex;align-items:center;gap:12px;padding:10px;background:rgba(0,229,255,.04);border-radius:8px;margin-bottom:6px;font-size:12px';el.innerHTML=`<span style="font-size:18px">${medals[i]}</span><span style="flex:1;font-weight:700">${san(u.name||u.email||'مستخدم')}</span><span style="font-family:Orbitron;font-size:11px;color:var(--gold)">${esc((u.points||0).toLocaleString())} نقطة</span><span style="color:var(--mid)">${esc(u.orders||0)} طلب</span>`;tu.appendChild(el);});
 
     // Charts & Fraud
     setTimeout(()=>{
@@ -863,11 +878,11 @@ function renderOrders(){
         <div class="adm-card-ico" style="background:rgba(0,229,255,.08);color:var(--cyan)"><i class="fa-solid fa-box"></i></div>
         <div class="adm-card-info">
           <div class="adm-card-title">${san(o.product||'')}</div>
-          <div class="adm-card-sub">💰 ${(o.totalDZD||0).toLocaleString()} دج · ${o.paymentMethod==='baridimob'?'💳 BaridiMob':'🤝 يد بيد'}</div>
+          <div class="adm-card-sub">💰 ${esc((o.totalDZD||0).toLocaleString())} دج · ${esc(o.paymentMethod==='baridimob'?'💳 BaridiMob':'🤝 يد بيد')}</div>
           <div class="adm-card-meta">
-            <span>🆔 ${o.id.slice(0,16)}...</span>
-            <span>👤 ${o.userId==='guest'?'زائر':o.userId?.slice(0,8)||'—'}</span>
-            <span>📅 ${o.date||''}</span>
+            <span>🆔 ${esc(o.id.slice(0,16))}...</span>
+            <span>👤 ${esc(o.userId==='guest'?'زائر':o.userId?.slice(0,8)||'—')}</span>
+            <span>📅 ${esc(o.date||'')}</span>
             ${o.receiveContact?`<span>📧 ${san(o.receiveContact)}</span>`:''}
             ${o.coupon?`<span>🎟️ ${san(o.coupon)}</span>`:''}
           </div>
@@ -875,10 +890,10 @@ function renderOrders(){
         <span class="badge ${sc}">${stxt}</span>
       </div>
       <div class="adm-card-actions">
-        ${o.status==='pending'?`<button onclick="setOrderStatus('${o.id}','processing')" class="btn btn-o btn-sm"><i class="fa-solid fa-gear"></i> معالجة</button><button onclick="openConfirmModal('${o.id}','${san(o.product||'')}','${san(o.receiveContact||'')}')" class="btn btn-g btn-sm"><i class="fa-solid fa-check"></i> إرسال</button><button onclick="setOrderStatus('${o.id}','rejected')" class="btn btn-r btn-sm"><i class="fa-solid fa-xmark"></i> رفض</button>`:''}
-        ${o.status==='processing'?`<button onclick="openConfirmModal('${o.id}','${san(o.product||'')}','${san(o.receiveContact||'')}')" class="btn btn-g btn-sm"><i class="fa-solid fa-paper-plane"></i> إرسال الكود</button><button onclick="setOrderStatus('${o.id}','rejected')" class="btn btn-r btn-sm"><i class="fa-solid fa-xmark"></i> رفض</button>`:''}
-        <button onclick="copyText('${o.id}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> ID</button>
-        <button onclick="deleteOrder('${o.id}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i></button>
+        ${o.status==='pending'?`<button onclick="setOrderStatus('${jsq(o.id)}','processing')" class="btn btn-o btn-sm"><i class="fa-solid fa-gear"></i> معالجة</button><button onclick="openConfirmModal('${jsq(o.id)}','${jsq(o.product||'')}','${jsq(o.receiveContact||'')}')" class="btn btn-g btn-sm"><i class="fa-solid fa-check"></i> إرسال</button><button onclick="setOrderStatus('${jsq(o.id)}','rejected')" class="btn btn-r btn-sm"><i class="fa-solid fa-xmark"></i> رفض</button>`:''}
+        ${o.status==='processing'?`<button onclick="openConfirmModal('${jsq(o.id)}','${jsq(o.product||'')}','${jsq(o.receiveContact||'')}')" class="btn btn-g btn-sm"><i class="fa-solid fa-paper-plane"></i> إرسال الكود</button><button onclick="setOrderStatus('${jsq(o.id)}','rejected')" class="btn btn-r btn-sm"><i class="fa-solid fa-xmark"></i> رفض</button>`:''}
+        <button onclick="copyText('${jsq(o.id)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> ID</button>
+        <button onclick="deleteOrder('${jsq(o.id)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i></button>
       </div>
     `;
     el.appendChild(card);
@@ -886,7 +901,7 @@ function renderOrders(){
 }
 
 function filterOrders(f,btn){currentOrderFilter=f;document.querySelectorAll('#tab-orders .filter-btn').forEach(b=>b.classList.remove('on'));btn.classList.add('on');renderOrders();}
-async function setOrderStatus(id,status){try{await db.collection('orders').doc(id).update({status});allOrders=allOrders.map(o=>o.id===id?{...o,status}:o);renderOrders();aToast(`تم تغيير الحالة: ${status}`,'✅');await loadDashboard();}catch(e){aToast('خطأ في التحديث','❌');}}
+async function setOrderStatus(id,status){if(status==='done'){aToast('استخدم زر إرسال الكود لإتمام الطلب','❌');return;}try{await db.collection('orders').doc(id).update({status});allOrders=allOrders.map(o=>o.id===id?{...o,status}:o);renderOrders();aToast(`تم تغيير الحالة: ${status}`,'✅');await loadDashboard();}catch(e){aToast('خطأ في التحديث','❌');}}
 async function deleteOrder(id){if(!confirm('حذف هذا الطلب نهائياً؟'))return;try{await db.collection('orders').doc(id).delete();allOrders=allOrders.filter(o=>o.id!==id);renderOrders();aToast('تم الحذف','🗑️');}catch(e){aToast('خطأ','❌');}}
 
 function openConfirmModal(orderId,product,contact){
@@ -898,17 +913,41 @@ function openConfirmModal(orderId,product,contact){
 }
 function closeConfirmModal(){document.getElementById('confirmModal').classList.add('hidden');currentOrderForDelivery=null;}
 
+/* Marks an order done and pays the customer ONCE (points = 1 per 1000 DZD, order count, total spent,
+   and the one-time referral reward). The `awarded` flag makes a second call harmless. */
+async function completeOrder(orderId,notif){
+  const FV=firebase.firestore.FieldValue;
+  const oref=db.collection('orders').doc(orderId);
+  return db.runTransaction(async tx=>{
+    const os=await tx.get(oref);if(!os.exists)throw new Error('الطلب غير موجود');
+    const o=os.data();const uid=o.userId;
+    let uref=null,us=null,rref=null,rs=null;
+    if(o.awarded!==true&&uid&&uid!=='guest'){
+      uref=db.collection('users').doc(uid);us=await tx.get(uref);
+      const u=us.exists?us.data():null;
+      if(u&&u.referredBy&&u.referredBy!==uid&&!u.refRewarded){rref=db.collection('users').doc(u.referredBy);rs=await tx.get(rref);}
+    }
+    tx.update(oref,{status:'done',awarded:true});
+    if(us&&us.exists){
+      const total=Math.max(0,Number(o.totalDZD)||0);
+      const upd={points:FV.increment(Math.floor(total/1000)),orders:FV.increment(1),totalSpend:FV.increment(total)};
+      if(notif)upd.notifications=FV.arrayUnion(notif);
+      if(rs&&rs.exists){upd.refRewarded=true;tx.update(rref,{points:FV.increment(1000),referrals:FV.increment(1)});}
+      tx.update(uref,upd);
+    }else if(notif&&uid&&uid!=='guest'){
+      tx.update(db.collection('users').doc(uid),{notifications:FV.arrayUnion(notif)});
+    }
+  });
+}
+
 async function confirmDelivery(){
   const code=document.getElementById('cmCode').value.trim();
   if(!code){aToast('أدخل الكود','❌');return;}
   const{orderId,product,contact}=currentOrderForDelivery||{};if(!orderId)return;
   try{
-    await db.collection('orders').doc(orderId).update({status:'done'});
-    const orderDoc=await db.collection('orders').doc(orderId).get();
-    const userId=orderDoc.data()?.userId;
-    if(userId&&userId!=='guest'){const notif={title:`✅ طلبك جاهز — ${product}`,code:`🔑 الكود: ${code}`,date:new Date().toLocaleDateString('ar'),read:false};await db.collection('users').doc(userId).update({notifications:firebase.firestore.FieldValue.arrayUnion(notif)});}
-    const fd=new FormData();fd.append('isText','true');fd.append('orderId',orderId);fd.append('userId',userId||'');fd.append('caption',`✅ تم التسليم!\n🆔 ${orderId}\n🎮 ${product}\n🔑 ${code}\n📧 ${contact}`);
-    await fetch(WORKER,{method:'POST',body:fd});
+    const notif={title:`✅ طلبك جاهز — ${product}`,code:`🔑 الكود: ${code}`,date:new Date().toLocaleDateString('ar'),read:false};
+    await completeOrder(orderId,notif);
+    await adminNotify(`✅ تم التسليم!\n🆔 ${orderId}\n🎮 ${product}\n🔑 ${code}\n📧 ${contact}`);
     allOrders=allOrders.map(o=>o.id===orderId?{...o,status:'done'}:o);renderOrders();closeConfirmModal();aToast('تم التأكيد وإرسال الكود للعميل!','✅');await loadDashboard();
   }catch(e){aToast('خطأ: '+e.message,'❌');}
 }
@@ -922,12 +961,12 @@ async function loadCats(){
     el.innerHTML='';if(!cats.length){el.innerHTML=empty('لا توجد أقسام');return;}
     cats.sort((a,b)=>(a.order||0)-(b.order||0)).forEach((cat,i)=>{
       const card=document.createElement('div');card.className='adm-card';
-      card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:${cat.bg||'#1c2a44'};font-size:20px">${cat.icon||'📦'}</div><div class="adm-card-info"><div class="adm-card-title">${san(cat.name)} | ${san(cat.nameEn||'')}</div><div class="adm-card-sub">ID: ${san(cat.id)} · ترتيب: ${cat.order||0}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${cat.enabled?'checked':''} onchange="toggleCat(${i},this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="deleteCat(${i})" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
+      card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:${esc(cat.bg||'#1c2a44')};font-size:20px">${cat.icon||'📦'}</div><div class="adm-card-info"><div class="adm-card-title">${san(cat.name)} | ${san(cat.nameEn||'')}</div><div class="adm-card-sub">ID: ${san(cat.id)} · ترتيب: ${esc(cat.order||0)}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${esc(cat.enabled?'checked':'')} onchange="toggleCat(${esc(i)},this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="deleteCat(${esc(i)})" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
       el.appendChild(card);
     });
     // prod filter
     const pf=document.getElementById('prodCatFilter');pf.innerHTML='<button class="filter-btn on" onclick="filterProds(\'all\',this)">الكل</button>';
-    cats.forEach(cat=>{pf.innerHTML+=`<button class="filter-btn" onclick="filterProds('${cat.id}',this)">${cat.icon||''} ${san(cat.name)}</button>`;});
+    cats.forEach(cat=>{pf.innerHTML+=`<button class="filter-btn" onclick="filterProds('${jsq(cat.id)}',this)">${cat.icon||''} ${san(cat.name)}</button>`;});
   }catch(e){el.innerHTML=errState('خطأ');}
 }
 
@@ -957,7 +996,7 @@ function renderProds(){
     const valText=p.cur==='month'?`${p.val} شهر`:p.cur==='copy'?'نسخة':`${p.val}${p.sym||''}`;
     const bgCls=p.img==='ps'?'prod-thumb-ps':p.img==='plus'?'prod-thumb-plus':'prod-thumb-game';
     const ico=p.img==='ps'?'<i class="fa-brands fa-playstation"></i>':p.img==='plus'?'👑':'🎮';
-    card.innerHTML=`<div class="adm-card-top"><div class="prod-thumb ${bgCls}">${p.imgUrl?`<img src="${san(p.imgUrl)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">`:ico}</div><div class="adm-card-info"><div class="adm-card-title">${san(p.name||'')} — ${valText}</div><div class="adm-card-sub">${san(p.sub||'')} · ${(p.priceDZD||0).toLocaleString()} دج</div><div class="adm-card-meta"><span>${p.cat}</span>${p.badge?`<span class="badge badge-info">${san(p.badge)}</span>`:''}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${p.stock!==false?'checked':''} onchange="toggleStock(${realIdx},this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="editProd(${realIdx})" class="btn btn-o btn-sm"><i class="fa-solid fa-pen"></i> تعديل</button><button onclick="deleteProd(${realIdx})" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
+    card.innerHTML=`<div class="adm-card-top"><div class="prod-thumb ${bgCls}">${p.imgUrl?`<img src="${esc(safeUrl(p.imgUrl))}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">`:ico}</div><div class="adm-card-info"><div class="adm-card-title">${san(p.name||'')} — ${esc(valText)}</div><div class="adm-card-sub">${san(p.sub||'')} · ${esc((p.priceDZD||0).toLocaleString())} دج</div><div class="adm-card-meta"><span>${esc(p.cat)}</span>${p.badge?`<span class="badge badge-info">${san(p.badge)}</span>`:''}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${esc(p.stock!==false?'checked':'')} onchange="toggleStock(${esc(realIdx)},this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="editProd(${esc(realIdx)})" class="btn btn-o btn-sm"><i class="fa-solid fa-pen"></i> تعديل</button><button onclick="deleteProd(${esc(realIdx)})" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
     el.appendChild(card);
   });
 }
@@ -991,7 +1030,7 @@ async function loadCoupons(){
     cpns.forEach((c,i)=>{
       const exp=c.expiry?c.expiry>=today?'<span class="badge badge-done">صالح</span>':'<span class="badge badge-rej">منتهي</span>':'<span class="badge badge-info">بلا انتهاء</span>';
       const card=document.createElement('div');card.className='adm-card';
-      card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:rgba(245,158,11,.1);color:var(--gold);font-size:20px">🎟️</div><div class="adm-card-info"><div class="adm-card-title" style="font-family:monospace;font-size:15px;color:var(--cyan)">${san(c.code)}</div><div class="adm-card-sub">${c.type==='percent'?`خصم ${c.value}%`:`خصم ${c.value} دج`} · استُخدم ${c.usedCount||0}/${c.maxUses||'∞'}</div><div class="adm-card-meta"><span>ينتهي: ${c.expiry||'—'}</span>${exp}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${c.active?'checked':''} onchange="toggleCpn(${i},this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="copyText('${san(c.code)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> نسخ</button><button onclick="deleteCpn(${i})" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
+      card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:rgba(245,158,11,.1);color:var(--gold);font-size:20px">🎟️</div><div class="adm-card-info"><div class="adm-card-title" style="font-family:monospace;font-size:15px;color:var(--cyan)">${san(c.code)}</div><div class="adm-card-sub">${c.type==='percent'?`خصم ${c.value}%`:`خصم ${c.value} دج`} · استُخدم ${esc(c.usedCount||0)}/${esc(c.maxUses||'∞')}</div><div class="adm-card-meta"><span>ينتهي: ${esc(c.expiry||'—')}</span>${exp}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${esc(c.active?'checked':'')} onchange="toggleCpn(${esc(i)},this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="copyText('${jsq(c.code)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> نسخ</button><button onclick="deleteCpn(${esc(i)})" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
       el.appendChild(card);
     });
   }catch(e){el.innerHTML=errState('خطأ');}
@@ -1029,7 +1068,7 @@ function renderUsers(){
   if(!filtered.length){el.innerHTML=empty('لا توجد نتائج');return;}
   filtered.forEach(u=>{
     const card=document.createElement('div');card.className='adm-card';
-    card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:linear-gradient(135deg,var(--violet),var(--pink));font-size:18px"><i class="fa-solid fa-user"></i></div><div class="adm-card-info"><div class="adm-card-title">${san(u.name||u.email||'مستخدم')}</div><div class="adm-card-sub">${san(u.email||'')} · ${(u.points||0).toLocaleString()} نقطة</div><div class="adm-card-meta"><span>${u.orders||0} طلب</span>${u.region?`<span class="badge badge-info">${u.region.toUpperCase()}</span>`:''}<span>💰 ${(u.totalSpend||0).toLocaleString()} دج</span>${(u.referrals||0)>0?`<span>👥 ${u.referrals}</span>`:''}</div></div><span style="font-family:Orbitron;font-size:13px;color:var(--gold);font-weight:900">${(u.points||0).toLocaleString()}</span></div><div class="adm-card-actions"><button onclick="openUserModal('${u.uid}')" class="btn btn-o btn-sm"><i class="fa-solid fa-eye"></i> تفاصيل</button><button onclick="addPointsToUser('${u.uid}','${san(u.name||'مستخدم')}')" class="btn btn-c btn-sm"><i class="fa-solid fa-plus"></i> نقاط</button><button onclick="sendNotifToUser('${u.uid}')" class="btn btn-p btn-sm"><i class="fa-solid fa-bell"></i> إشعار</button><button onclick="copyText('${u.uid}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> UID</button></div>`;
+    card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:linear-gradient(135deg,var(--violet),var(--pink));font-size:18px"><i class="fa-solid fa-user"></i></div><div class="adm-card-info"><div class="adm-card-title">${san(u.name||u.email||'مستخدم')}</div><div class="adm-card-sub">${san(u.email||'')} · ${esc((u.points||0).toLocaleString())} نقطة</div><div class="adm-card-meta"><span>${esc(u.orders||0)} طلب</span>${u.region?`<span class="badge badge-info">${esc(u.region.toUpperCase())}</span>`:''}<span>💰 ${esc((u.totalSpend||0).toLocaleString())} دج</span>${(u.referrals||0)>0?`<span>👥 ${esc(u.referrals)}</span>`:''}</div></div><span style="font-family:Orbitron;font-size:13px;color:var(--gold);font-weight:900">${esc((u.points||0).toLocaleString())}</span></div><div class="adm-card-actions"><button onclick="openUserModal('${jsq(u.uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-eye"></i> تفاصيل</button><button onclick="addPointsToUser('${jsq(u.uid)}','${jsq(u.name||'مستخدم')}')" class="btn btn-c btn-sm"><i class="fa-solid fa-plus"></i> نقاط</button><button onclick="sendNotifToUser('${jsq(u.uid)}')" class="btn btn-p btn-sm"><i class="fa-solid fa-bell"></i> إشعار</button><button onclick="copyText('${jsq(u.uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> UID</button></div>`;
     el.appendChild(card);
   });
 }
@@ -1040,7 +1079,7 @@ async function openUserModal(uid){
   try{
     const[uDoc,oSnap]=await Promise.all([db.collection('users').doc(uid).get(),db.collection('orders').where('userId','==',uid).orderBy('ts','desc').limit(5).get()]);
     const u=uDoc.data()||{};const orders=oSnap.docs.map(d=>({id:d.id,...d.data()}));
-    document.getElementById('userModalContent').innerHTML=`<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px"><div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,var(--violet),var(--pink));display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0"><i class="fa-solid fa-user"></i></div><div><div style="font-size:15px;font-weight:800">${san(u.name||'مستخدم')}</div><div style="font-size:11px;color:var(--mid)">${san(u.email||'')} · UID: ${uid.slice(0,12)}...</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;font-size:12px"><div style="background:rgba(0,229,255,.05);border:1px solid var(--brd);border-radius:8px;padding:10px"><span style="color:var(--mid);display:block;font-size:10px">النقاط</span><strong style="font-family:Orbitron;color:var(--gold)">${(u.points||0).toLocaleString()}</strong></div><div style="background:rgba(0,229,255,.05);border:1px solid var(--brd);border-radius:8px;padding:10px"><span style="color:var(--mid);display:block;font-size:10px">الطلبات</span><strong style="color:var(--cyan)">${u.orders||0}</strong></div><div style="background:rgba(0,229,255,.05);border:1px solid var(--brd);border-radius:8px;padding:10px"><span style="color:var(--mid);display:block;font-size:10px">إجمالي الصرف</span><strong style="color:var(--green)">${(u.totalSpend||0).toLocaleString()} دج</strong></div><div style="background:rgba(0,229,255,.05);border:1px solid var(--brd);border-radius:8px;padding:10px"><span style="color:var(--mid);display:block;font-size:10px">الإحالات</span><strong style="color:var(--violet)">${u.referrals||0}</strong></div></div><div style="font-size:10px;font-weight:700;color:var(--mid);letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px">آخر الطلبات</div>${orders.length?orders.map(o=>`<div style="background:rgba(0,229,255,.04);border-radius:8px;padding:8px 10px;margin-bottom:5px;font-size:11px"><span style="font-weight:700">${san(o.product||'')}</span> · ${(o.totalDZD||0).toLocaleString()} دج · <span class="badge badge-${o.status==='done'?'done':o.status==='pending'?'pend':'rej'}">${o.status}</span></div>`).join(''):'<p style="color:var(--dim);font-size:11px">لا توجد طلبات</p>'}<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button onclick="addPointsToUser('${uid}','${san(u.name||'مستخدم')}')" class="btn btn-c btn-sm"><i class="fa-solid fa-plus"></i> إضافة نقاط</button><button onclick="sendNotifToUser('${uid}')" class="btn btn-p btn-sm"><i class="fa-solid fa-bell"></i> إرسال إشعار</button><button onclick="copyText('${uid}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> نسخ UID</button></div>`;
+    document.getElementById('userModalContent').innerHTML=`<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px"><div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,var(--violet),var(--pink));display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0"><i class="fa-solid fa-user"></i></div><div><div style="font-size:15px;font-weight:800">${san(u.name||'مستخدم')}</div><div style="font-size:11px;color:var(--mid)">${san(u.email||'')} · UID: ${esc(uid.slice(0,12))}...</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;font-size:12px"><div style="background:rgba(0,229,255,.05);border:1px solid var(--brd);border-radius:8px;padding:10px"><span style="color:var(--mid);display:block;font-size:10px">النقاط</span><strong style="font-family:Orbitron;color:var(--gold)">${esc((u.points||0).toLocaleString())}</strong></div><div style="background:rgba(0,229,255,.05);border:1px solid var(--brd);border-radius:8px;padding:10px"><span style="color:var(--mid);display:block;font-size:10px">الطلبات</span><strong style="color:var(--cyan)">${esc(u.orders||0)}</strong></div><div style="background:rgba(0,229,255,.05);border:1px solid var(--brd);border-radius:8px;padding:10px"><span style="color:var(--mid);display:block;font-size:10px">إجمالي الصرف</span><strong style="color:var(--green)">${esc((u.totalSpend||0).toLocaleString())} دج</strong></div><div style="background:rgba(0,229,255,.05);border:1px solid var(--brd);border-radius:8px;padding:10px"><span style="color:var(--mid);display:block;font-size:10px">الإحالات</span><strong style="color:var(--violet)">${esc(u.referrals||0)}</strong></div></div><div style="font-size:10px;font-weight:700;color:var(--mid);letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px">آخر الطلبات</div>${orders.length?orders.map(o=>`<div style="background:rgba(0,229,255,.04);border-radius:8px;padding:8px 10px;margin-bottom:5px;font-size:11px"><span style="font-weight:700">${san(o.product||'')}</span> · ${esc((o.totalDZD||0).toLocaleString())} دج · <span class="badge badge-${esc(o.status==='done'?'done':o.status==='pending'?'pend':'rej')}">${esc(o.status)}</span></div>`).join(''):'<p style="color:var(--dim);font-size:11px">لا توجد طلبات</p>'}<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button onclick="addPointsToUser('${jsq(uid)}','${jsq(u.name||'مستخدم')}')" class="btn btn-c btn-sm"><i class="fa-solid fa-plus"></i> إضافة نقاط</button><button onclick="sendNotifToUser('${jsq(uid)}')" class="btn btn-p btn-sm"><i class="fa-solid fa-bell"></i> إرسال إشعار</button><button onclick="copyText('${jsq(uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> نسخ UID</button></div>`;
   }catch(e){document.getElementById('userModalContent').innerHTML=errState('خطأ');}
 }
 function closeUserModal(){document.getElementById('userModal').classList.add('hidden');}
@@ -1066,7 +1105,7 @@ async function loadReviews(){
     if(currentReviewFilter==='hidden')reviews=reviews.filter(r=>r.hidden);
     if(currentReviewFilter==='5star')reviews=reviews.filter(r=>r.rating===5);
     if(!reviews.length){el.innerHTML=empty('لا توجد تقييمات');return;}
-    reviews.forEach(r=>{const card=document.createElement('div');card.className='adm-card';card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:rgba(245,158,11,.1);color:var(--gold);font-size:22px">⭐</div><div class="adm-card-info"><div class="adm-card-title">${san(r.userName||'مستخدم')} · ${'⭐'.repeat(r.rating||0)}</div><div class="adm-card-sub">${r.comment?`"${san(r.comment.slice(0,100))}"`:''}</div><div class="adm-card-meta"><span>📅 ${r.date||''}</span><span class="${r.hidden?'badge badge-warn':'badge badge-done'}">${r.hidden?'🙈 مخفي':'👁️ ظاهر'}</span></div></div></div><div class="adm-card-actions"><button onclick="toggleReview('${r.id}',${!r.hidden})" class="btn btn-o btn-sm">${r.hidden?'👁️ إظهار':'🙈 إخفاء'}</button><button onclick="deleteReview('${r.id}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i></button></div>`;el.appendChild(card);});
+    reviews.forEach(r=>{const card=document.createElement('div');card.className='adm-card';card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:rgba(245,158,11,.1);color:var(--gold);font-size:22px">⭐</div><div class="adm-card-info"><div class="adm-card-title">${san(r.userName||'مستخدم')} · ${esc('⭐'.repeat(Math.max(0,Math.min(5,Math.floor(Number(r.rating))||0))))}</div><div class="adm-card-sub">${r.comment?`"${san(r.comment.slice(0,100))}"`:''}</div><div class="adm-card-meta"><span>📅 ${esc(r.date||'')}</span><span class="${esc(r.hidden?'badge badge-warn':'badge badge-done')}">${esc(r.hidden?'🙈 مخفي':'👁️ ظاهر')}</span></div></div></div><div class="adm-card-actions"><button onclick="toggleReview('${jsq(r.id)}',${esc(!r.hidden)})" class="btn btn-o btn-sm">${esc(r.hidden?'👁️ إظهار':'🙈 إخفاء')}</button><button onclick="deleteReview('${jsq(r.id)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i></button></div>`;el.appendChild(card);});
   }catch(e){el.innerHTML=errState('خطأ');}
 }
 function filterReviews(f,btn){currentReviewFilter=f;document.querySelectorAll('#tab-reviews .filter-btn').forEach(b=>b.classList.remove('on'));btn.classList.add('on');loadReviews();}
@@ -1078,12 +1117,12 @@ async function loadNewsletter(){
   const el=document.getElementById('nlList');el.innerHTML=loading();
   try{
     const snap=await db.collection('newsletter').orderBy('date','desc').get();
-    document.getElementById('nlStats').innerHTML=`<span class="badge badge-info">📧 ${snap.size} مشترك</span>`;
+    document.getElementById('nlStats').innerHTML=`<span class="badge badge-info">📧 ${esc(snap.size)} مشترك</span>`;
     el.innerHTML='';
-    snap.docs.forEach((d,i)=>{const div=document.createElement('div');div.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(0,229,255,.04);border-radius:8px;margin-bottom:5px;font-size:12px';div.innerHTML=`<span>${i+1}. ${san(d.data().email||'')}</span><button onclick="copyText('${san(d.data().email||'')}')" class="btn btn-o btn-sm" style="padding:4px 8px"><i class="fa-solid fa-copy"></i></button>`;el.appendChild(div);});
+    snap.docs.forEach((d,i)=>{const div=document.createElement('div');div.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(0,229,255,.04);border-radius:8px;margin-bottom:5px;font-size:12px';div.innerHTML=`<span>${esc(i+1)}. ${san(d.data().email||'')}</span><button onclick="copyText('${jsq(d.data().email||'')}')" class="btn btn-o btn-sm" style="padding:4px 8px"><i class="fa-solid fa-copy"></i></button>`;el.appendChild(div);});
   }catch(e){el.innerHTML=errState('خطأ');}
 }
-function exportNL(){const items=[];document.querySelectorAll('#nlList div span:first-child').forEach(s=>items.push(s.textContent.replace(/^\d+\. /,'')));const csv='email\n'+items.join('\n');const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='newsletter.csv';a.click();URL.revokeObjectURL(url);aToast('تم التصدير','✅');}
+function exportNL(){const items=[];document.querySelectorAll('#nlList div span:first-child').forEach(s=>items.push(s.textContent.replace(/^\d+\. /,'')));const csv='email\n'+items.map(csvCell).join('\n');const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='newsletter.csv';a.click();URL.revokeObjectURL(url);aToast('تم التصدير','✅');}
 
 /* ══ REPORTS ══ */
 async function loadReports(){
@@ -1094,7 +1133,7 @@ async function loadReports(){
     if(currentReportFilter==='open')reports=reports.filter(r=>r.status==='open');
     if(currentReportFilter==='resolved')reports=reports.filter(r=>r.status==='resolved');
     if(!reports.length){el.innerHTML=empty('لا توجد بلاغات');return;}
-    reports.forEach(r=>{const card=document.createElement('div');card.className='adm-card';card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:rgba(239,68,68,.1);color:var(--red);font-size:20px">🚨</div><div class="adm-card-info"><div class="adm-card-title">${san(r.title||'')} <span class="badge badge-warn">${san(r.category||'')}</span></div><div class="adm-card-sub">${san((r.desc||'').slice(0,100))}...</div><div class="adm-card-meta"><span>👤 ${san(r.userName||'زائر')}</span><span>📅 ${r.date||''}</span>${r.orderId?`<span>🆔 ${san(r.orderId)}</span>`:''}<span class="badge badge-${r.status==='open'?'rej':'done'}">${r.status==='open'?'🔴 مفتوح':'✅ محلول'}</span></div></div></div><div class="adm-card-actions">${r.status==='open'?`<button onclick="resolveReport('${r.id}')" class="btn btn-g btn-sm"><i class="fa-solid fa-check"></i> حلّ</button>`:''}<button onclick="replyReport('${r.id}','${r.userId||''}')" class="btn btn-p btn-sm"><i class="fa-solid fa-reply"></i> رد</button><button onclick="deleteReport('${r.id}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i></button></div>`;el.appendChild(card);});
+    reports.forEach(r=>{const card=document.createElement('div');card.className='adm-card';card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:rgba(239,68,68,.1);color:var(--red);font-size:20px">🚨</div><div class="adm-card-info"><div class="adm-card-title">${san(r.title||'')} <span class="badge badge-warn">${san(r.category||'')}</span></div><div class="adm-card-sub">${san((r.desc||'').slice(0,100))}...</div><div class="adm-card-meta"><span>👤 ${san(r.userName||'زائر')}</span><span>📅 ${esc(r.date||'')}</span>${r.orderId?`<span>🆔 ${san(r.orderId)}</span>`:''}<span class="badge badge-${esc(r.status==='open'?'rej':'done')}">${esc(r.status==='open'?'🔴 مفتوح':'✅ محلول')}</span></div></div></div><div class="adm-card-actions">${r.status==='open'?`<button onclick="resolveReport('${jsq(r.id)}')" class="btn btn-g btn-sm"><i class="fa-solid fa-check"></i> حلّ</button>`:''}<button onclick="replyReport('${jsq(r.id)}','${jsq(r.userId||'')}')" class="btn btn-p btn-sm"><i class="fa-solid fa-reply"></i> رد</button><button onclick="deleteReport('${jsq(r.id)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i></button></div>`;el.appendChild(card);});
   }catch(e){el.innerHTML=errState('خطأ');}
 }
 function filterReports(f,btn){currentReportFilter=f;document.querySelectorAll('#tab-reports .filter-btn').forEach(b=>b.classList.remove('on'));btn.classList.add('on');loadReports();}
@@ -1112,14 +1151,14 @@ async function loadAbuse(){
     const snap=await db.collection('abuse_flags').orderBy('date','desc').limit(30).get();
     el.innerHTML='';
     if(snap.empty){el.innerHTML=empty('لا توجد حالات مشبوهة ✅');return;}
-    snap.forEach(d=>{const a=d.data();const div=document.createElement('div');div.className='abuse-item';div.innerHTML=`<div class="abuse-header"><i class="fa-solid fa-triangle-exclamation" style="color:var(--red)"></i><span style="font-size:13px;font-weight:700">حسابات متعددة من نفس الجهاز</span><span class="abuse-high">⚠️ عالي</span></div><div style="font-size:11px;color:var(--mid);margin-bottom:10px"><span>🔑 ${a.userId?.slice(0,16)}...</span> · <span>🖥️ ${san(a.fingerprint||'')}</span> · <span>📅 ${a.date?.split('T')[0]||''}</span></div><div style="font-size:11px;color:var(--dim);margin-bottom:10px">مشبوهة: ${(a.suspectedAlts||[]).slice(0,3).join(', ')}</div><div style="display:flex;gap:6px;flex-wrap:wrap"><button onclick="banUser('${a.userId}')" class="btn btn-r btn-sm"><i class="fa-solid fa-ban"></i> حظر</button><button onclick="dismissAbuse('${d.id}')" class="btn btn-o btn-sm"><i class="fa-solid fa-check"></i> تجاهل</button></div>`;el.appendChild(div);});
+    snap.forEach(d=>{const a=d.data();const div=document.createElement('div');div.className='abuse-item';div.innerHTML=`<div class="abuse-header"><i class="fa-solid fa-triangle-exclamation" style="color:var(--red)"></i><span style="font-size:13px;font-weight:700">حسابات متعددة من نفس الجهاز</span><span class="abuse-high">⚠️ عالي</span></div><div style="font-size:11px;color:var(--mid);margin-bottom:10px"><span>🔑 ${esc(a.userId?.slice(0,16))}...</span> · <span>🖥️ ${san(a.fingerprint||'')}</span> · <span>📅 ${esc(a.date?.split('T')[0]||'')}</span></div><div style="font-size:11px;color:var(--dim);margin-bottom:10px">مشبوهة: ${esc((a.suspectedAlts||[]).slice(0,3).join(', '))}</div><div style="display:flex;gap:6px;flex-wrap:wrap"><button onclick="banUser('${jsq(a.userId)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-ban"></i> حظر</button><button onclick="dismissAbuse('${jsq(d.id)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-check"></i> تجاهل</button></div>`;el.appendChild(div);});
   }catch(e){el.innerHTML=errState('خطأ');}
   loadBanned();
 }
 
 async function loadBanned(){
   const el=document.getElementById('bannedList');el.innerHTML='';
-  try{const snap=await db.collection('banned_users').get();if(snap.empty){el.innerHTML='<p style="font-size:12px;color:var(--dim);padding:8px">لا يوجد محظورون</p>';return;}snap.forEach(d=>{const b=d.data();const div=document.createElement('div');div.className='adm-card';div.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:rgba(239,68,68,.1);color:var(--red)"><i class="fa-solid fa-ban"></i></div><div class="adm-card-info"><div class="adm-card-title">${d.id.slice(0,20)}...</div><div class="adm-card-sub">السبب: ${san(b.reason||'—')} · ${b.date||''}</div></div></div><div class="adm-card-actions"><button onclick="unbanUser('${d.id}')" class="btn btn-g btn-sm"><i class="fa-solid fa-unlock"></i> رفع الحظر</button></div>`;el.appendChild(div);});}catch(e){}
+  try{const snap=await db.collection('banned_users').get();if(snap.empty){el.innerHTML='<p style="font-size:12px;color:var(--dim);padding:8px">لا يوجد محظورون</p>';return;}snap.forEach(d=>{const b=d.data();const div=document.createElement('div');div.className='adm-card';div.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:rgba(239,68,68,.1);color:var(--red)"><i class="fa-solid fa-ban"></i></div><div class="adm-card-info"><div class="adm-card-title">${esc(d.id.slice(0,20))}...</div><div class="adm-card-sub">السبب: ${san(b.reason||'—')} · ${esc(b.date||'')}</div></div></div><div class="adm-card-actions"><button onclick="unbanUser('${jsq(d.id)}')" class="btn btn-g btn-sm"><i class="fa-solid fa-unlock"></i> رفع الحظر</button></div>`;el.appendChild(div);});}catch(e){}
 }
 
 async function banUser(uid,reason){
@@ -1136,7 +1175,7 @@ async function loadFAQ(){
   try{
     const d=await db.collection('settings').doc('faqs').get();const faqs=d.exists?d.data().faqs||[]:[];el.innerHTML='';
     if(!faqs.length){el.innerHTML=empty('لا توجد أسئلة مخصصة');return;}
-    faqs.forEach((f,i)=>{const card=document.createElement('div');card.className='adm-card';card.innerHTML=`<div style="margin-bottom:8px"><div style="font-size:13px;font-weight:700;margin-bottom:2px">❓ ${san(f.q||'')} | ${san(f.qEn||'')}</div><div style="font-size:12px;color:var(--mid);line-height:1.7">${san((f.a||'').slice(0,150))}</div></div><div class="adm-card-actions"><button onclick="deleteFAQ(${i})" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;el.appendChild(card);});
+    faqs.forEach((f,i)=>{const card=document.createElement('div');card.className='adm-card';card.innerHTML=`<div style="margin-bottom:8px"><div style="font-size:13px;font-weight:700;margin-bottom:2px">❓ ${san(f.q||'')} | ${san(f.qEn||'')}</div><div style="font-size:12px;color:var(--mid);line-height:1.7">${san((f.a||'').slice(0,150))}</div></div><div class="adm-card-actions"><button onclick="deleteFAQ(${esc(i)})" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;el.appendChild(card);});
   }catch(e){el.innerHTML=errState('خطأ');}
 }
 
@@ -1152,10 +1191,10 @@ async function sendCodeManual(){
   const orderId=document.getElementById('scOrderId').value.trim();const userId=document.getElementById('scUserId').value.trim();const product=document.getElementById('scProduct').value.trim();const code=document.getElementById('scCode').value.trim();const contact=document.getElementById('scContact').value.trim();
   if(!code){aToast('أدخل الكود','❌');return;}
   try{
-    if(userId){const notif={title:`✅ ${product||'طلبك جاهز'}`,code:`🔑 الكود: ${code}`,date:new Date().toLocaleDateString('ar'),read:false};await db.collection('users').doc(userId).update({notifications:firebase.firestore.FieldValue.arrayUnion(notif)});}
-    if(orderId)await db.collection('orders').doc(orderId).update({status:'done'});
-    const fd=new FormData();fd.append('isText','true');fd.append('orderId',orderId||'MANUAL');fd.append('userId',userId||'admin');fd.append('caption',`✅ إرسال كود يدوي\n🎮 ${product}\n🔑 ${code}\n📧 ${contact}\n🆔 ${orderId||'—'}`);
-    await fetch(WORKER,{method:'POST',body:fd});
+    const notif=userId?{title:`✅ ${product||'طلبك جاهز'}`,code:`🔑 الكود: ${code}`,date:new Date().toLocaleDateString('ar'),read:false}:null;
+    if(orderId)await completeOrder(orderId,notif);
+    else if(userId)await db.collection('users').doc(userId).update({notifications:firebase.firestore.FieldValue.arrayUnion(notif)});
+    await adminNotify(`✅ إرسال كود يدوي\n🎮 ${product}\n🔑 ${code}\n📧 ${contact}\n🆔 ${orderId||'—'}`);
     aToast('تم الإرسال!','✅');['scOrderId','scUserId','scProduct','scCode','scContact'].forEach(i=>document.getElementById(i).value='');
   }catch(e){aToast('خطأ: '+e.message,'❌');}
 }
@@ -1184,8 +1223,8 @@ async function loadRegions(){
   }catch(e){aToast('تعذّر تحميل إعدادات المناطق','❌');}
   document.getElementById('regEnabled').checked=cfg.enabled;
   const sel=document.getElementById('regDefault');
-  sel.innerHTML=REG_LIST.map(([k,f,n])=>`<option value="${k}">${f} ${n}</option>`).join('');sel.value=cfg.defaultRegion;
-  document.getElementById('regRows').innerHTML=REG_LIST.map(([k,f,n])=>`<div class="toggle-wrap"><label class="toggle"><input type="checkbox" id="regAv_${k}" ${cfg.available[k]?'checked':''} onchange="regSummary()"><span class="toggle-sl"></span></label><span class="toggle-lbl">${f} ${n} — <b>متوفر</b></span></div>`).join('');
+  sel.innerHTML=REG_LIST.map(([k,f,n])=>`<option value="${esc(k)}">${esc(f)} ${esc(n)}</option>`).join('');sel.value=cfg.defaultRegion;
+  document.getElementById('regRows').innerHTML=REG_LIST.map(([k,f,n])=>`<div class="toggle-wrap"><label class="toggle"><input type="checkbox" id="regAv_${esc(k)}" ${esc(cfg.available[k]?'checked':'')} onchange="regSummary()"><span class="toggle-sl"></span></label><span class="toggle-lbl">${esc(f)} ${esc(n)} — <b>متوفر</b></span></div>`).join('');
   document.getElementById('regEnabled').onchange=regSummary;sel.onchange=regSummary;regSummary();
 }
 function regSummary(){
@@ -1193,8 +1232,8 @@ function regSummary(){
   const av=REG_LIST.filter(([k])=>document.getElementById('regAv_'+k)?.checked).map(r=>r[1]+' '+r[2].split(' ')[0]);
   const defName=(REG_LIST.find(r=>r[0]===def)||[])[2]||def;
   document.getElementById('regSummary').innerHTML=on
-    ?`<b style="color:var(--green)">اختيار الريجن مفعّل</b> — المتاح للزبائن: ${av.join('، ')||'لا شيء'}`
-    :`<b style="color:var(--gold)">اختيار الريجن مغلق</b> — جميع الزبائن على الريجن الافتراضي: ${defName}`;
+    ?`<b style="color:var(--green)">اختيار الريجن مفعّل</b> — المتاح للزبائن: ${esc(av.join('، ')||'لا شيء')}`
+    :`<b style="color:var(--gold)">اختيار الريجن مغلق</b> — جميع الزبائن على الريجن الافتراضي: ${esc(defName)}`;
 }
 async function saveRegions(){
   const available={};REG_LIST.forEach(([k])=>{available[k]=document.getElementById('regAv_'+k).checked;});
@@ -1220,7 +1259,7 @@ async function exportOrders(){
     const snap=await db.collection('orders').orderBy('ts','desc').get();
     const rows=[['ID','المنتج','الحالة','المبلغ دج','طريقة الدفع','التاريخ','المستخدم','التواصل']];
     snap.docs.forEach(d=>{const o=d.data();rows.push([d.id,o.product||'',o.status||'',o.totalDZD||0,o.paymentMethod||'',o.date||'',o.userId||'',o.receiveContact||'']);});
-    const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const csv=rows.map(r=>r.map(csvCell).join(',')).join('\n');
     const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`glitchq_orders_${new Date().toISOString().split('T')[0]}.csv`;a.click();URL.revokeObjectURL(url);
     aToast('تم تصدير الطلبات','✅');
   }catch(e){aToast('خطأ','❌');}
@@ -1230,8 +1269,8 @@ async function exportOrders(){
 function setVal(id,val){const el=document.getElementById(id);if(el)el.textContent=val;}
 function copyText(txt){navigator.clipboard.writeText(txt).then(()=>aToast('تم النسخ','📋')).catch(()=>{});}
 function loading(){return '<div class="adm-loading"><div class="spinner"></div><span>جاري التحميل...</span></div>';}
-function empty(msg){return `<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>${msg}</p></div>`;}
-function errState(msg){return `<div class="empty-state"><i class="fa-solid fa-triangle-exclamation" style="color:var(--red)"></i><p style="color:var(--red)">${msg}</p></div>`;}
+function empty(msg){return `<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>${esc(msg)}</p></div>`;}
+function errState(msg){return `<div class="empty-state"><i class="fa-solid fa-triangle-exclamation" style="color:var(--red)"></i><p style="color:var(--red)">${esc(msg)}</p></div>`;}
 
 /* ══════════════════════════════════════════
    ADVANCED CHARTS ENGINE
@@ -1337,7 +1376,7 @@ function runFraudDetection(orders,users){
     const c=colors[a.level]||'var(--mid)';
     const div=document.createElement('div');
     div.style.cssText=`background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.25);border-radius:10px;padding:12px;margin-bottom:8px;`;
-    div.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:18px">${a.icon}</span><strong style="color:${c};font-size:13px">${a.msg}</strong><span style="margin-right:auto;font-size:10px;background:${c}22;color:${c};padding:2px 8px;border-radius:6px;font-weight:700">${a.level==='high'?'عالي':a.level==='medium'?'متوسط':'منخفض'}</span></div><div style="font-size:11px;color:var(--mid)">${a.detail}</div><div style="font-size:10px;color:var(--dim);margin-top:4px">IDs: ${a.ids}</div>`;
+    div.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:18px">${a.icon}</span><strong style="color:${esc(c)};font-size:13px">${esc(a.msg)}</strong><span style="margin-right:auto;font-size:10px;background:${esc(c)}22;color:${esc(c)};padding:2px 8px;border-radius:6px;font-weight:700">${esc(a.level==='high'?'عالي':a.level==='medium'?'متوسط':'منخفض')}</span></div><div style="font-size:11px;color:var(--mid)">${esc(a.detail)}</div><div style="font-size:10px;color:var(--dim);margin-top:4px">IDs: ${esc(a.ids)}</div>`;
     el.appendChild(div);
   });
 }
