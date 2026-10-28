@@ -164,6 +164,14 @@ let [s, j] = await call('/health', null, { method: 'GET' }); ck('health ok', s =
 [s] = await call('/firestore/users/u1', null, { method: 'GET' }); ck('/firestore proxy removed', s === 404, s);
 [s] = await call('/constructor', null, { method: 'GET' }); ck('prototype keys are not routes', s === 404, s);
 
+{ // a chunked upload with no Content-Length must be cut off at the cap, not buffered
+  let sent = 0; const chunk = new Uint8Array(1024 * 1024);
+  const body = new ReadableStream({ pull(c) { if (sent >= 12) c.close(); else { sent++; c.enqueue(chunk); } } });
+  const req = new Request('https://w.example/order/create', { method: 'POST', headers: { Origin: ORIGIN, 'CF-Connecting-IP': fresh(), 'Content-Type': 'multipart/form-data; boundary=x' }, body, duplex: 'half' });
+  const r = await worker.fetch(req, env, { waitUntil() {} });
+  ck('order: 12 MB chunked upload without Content-Length → 413 (stops reading at the cap)', r.status === 413 && sent < 12, r.status + ' read=' + sent + 'MB'); }
+[s] = await call('/account/streak', { idToken: await mk({ sub: 'a/b' }) }); ck('token whose uid contains "/" is refused (database path safety)', s === 401, s);
+
 /* ───────── order/create ───────── */
 seed();
 const T1 = await mk({ sub: 'u1' });
@@ -264,10 +272,12 @@ ck('track: no phone/email/userId leaked', !JSON.stringify(j).includes('0555') &&
 seed();
 put('users/a', { points: 900, nick: 'Zed', firstName: 'Aa', lastName: 'Bb', email: 'secret@x.com', uid_short: 'a' });
 put('users/b', { points: 800, firstName: 'Bob', lastName: 'Smith', prefs: { hideLb: true } });
+put('users/imp', { points: 100, nick: 'Glitch Support', firstName: 'Real', lastName: 'Person' });
 put('users/c', { points: 700, firstName: 'Cara', lastName: 'Doe', avatar: { e: '🦊', c: '#fff' } });
-for (const [i, u] of ['d', 'e', 'f', 'g'].entries()) put('users/' + u, { points: 600 - i, firstName: u.toUpperCase(), lastName: 'Q' });
+for (const [i, u] of ['d', 'e'].entries()) put('users/' + u, { points: 600 - i, firstName: u.toUpperCase(), lastName: 'Q' });
 [s, j] = await call('/leaderboard', null, { method: 'GET' });
-ck('leaderboard: top 5, hidden user excluded, nick used', s === 200 && j.top.length === 5 && j.top[0].name === 'Zed' && !j.top.some(x => x.name.startsWith('Bob')), JSON.stringify(j));
+ck('leaderboard: hidden user excluded, nick used', s === 200 && j.top.length === 5 && j.top[0].name === 'Zed' && !j.top.some(x => x.name.startsWith('Bob')), JSON.stringify(j));
+ck('leaderboard: reserved nickname ("Glitch Support") is replaced by the real first name + initial', j.top.some(x => x.name === 'Real P.') && !JSON.stringify(j).includes('Glitch'), JSON.stringify(j));
 ck('leaderboard: shows "First L." only; no email/uid/last name', j.top[1].name === 'Cara D.' && !JSON.stringify(j).includes('secret') && !JSON.stringify(j).includes('Doe'), JSON.stringify(j.top[1]));
 
 /* ───────── streak / spin / milestone ───────── */

@@ -922,12 +922,12 @@ async function completeOrder(orderId,notif){
     const os=await tx.get(oref);if(!os.exists)throw new Error('الطلب غير موجود');
     const o=os.data();const uid=o.userId;
     let uref=null,us=null,rref=null,rs=null;
-    if(o.awarded!==true&&uid&&uid!=='guest'){
+    if(o.awarded===false&&uid&&uid!=='guest'){   /* only orders created by the new Worker carry awarded:false; older orders were already paid when they were placed */
       uref=db.collection('users').doc(uid);us=await tx.get(uref);
       const u=us.exists?us.data():null;
       if(u&&u.referredBy&&u.referredBy!==uid&&!u.refRewarded){rref=db.collection('users').doc(u.referredBy);rs=await tx.get(rref);}
     }
-    tx.update(oref,{status:'done',awarded:true});
+    tx.update(oref,o.awarded===false?{status:'done',awarded:true}:{status:'done'});
     if(us&&us.exists){
       const total=Math.max(0,Number(o.totalDZD)||0);
       const upd={points:FV.increment(Math.floor(total/1000)),orders:FV.increment(1),totalSpend:FV.increment(total)};

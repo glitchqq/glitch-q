@@ -123,14 +123,41 @@ const RE_EMAIL = /^[^\s@<>"']{1,64}@[^\s@<>"']{1,200}\.[^\s@<>"']{2,}$/;
 const RE_PHONE = /^[0-9+\s()\-]{6,20}$/;
 const RE_ID = /^[A-Za-z0-9]{10,40}$/;
 
-async function readJson(request, maxBytes = 8192) {
+// Reads the request body but stops (and returns null) as soon as it exceeds maxBytes,
+// so a huge or chunked upload can never fill the Worker's memory.
+async function readBody(request, maxBytes) {
   const len = parseInt(request.headers.get('Content-Length') || '0', 10);
   if (len > maxBytes) return null;
+  if (!request.body) return new Uint8Array(0);
+  const reader = request.body.getReader();
+  const chunks = []; let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) { try { await reader.cancel(); } catch {} return null; }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total); let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.byteLength; }
+  return out;
+}
+
+async function readJson(request, maxBytes = 8192) {
   try {
-    const txt = await request.text();
-    if (txt.length > maxBytes) return null;
-    const v = JSON.parse(txt);
+    const buf = await readBody(request, maxBytes);
+    if (!buf) return null;
+    const v = JSON.parse(new TextDecoder().decode(buf));
     return v && typeof v === 'object' ? v : null;
+  } catch { return null; }
+}
+
+// multipart body (order / report): size-capped, then parsed
+async function readForm(request, maxBytes) {
+  try {
+    const buf = await readBody(request, maxBytes);
+    if (!buf) return null;
+    return await new Response(buf, { headers: { 'Content-Type': request.headers.get('Content-Type') || '' } }).formData();
   } catch { return null; }
 }
 
@@ -434,10 +461,8 @@ async function handleOrderCreate(request, env, cors) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
   const ip = clientIp(request);
   if (hit('ord:' + ip, 6, 600000)) return json({ error: 'Too many requests' }, 429, cors);
-  if (parseInt(request.headers.get('Content-Length') || '0', 10) > 6 * 1024 * 1024) return json({ error: 'Request too large' }, 413, cors);
-
-  let form;
-  try { form = await request.formData(); } catch { return json({ error: 'Invalid form data' }, 400, cors); }
+  const form = await readForm(request, 6 * 1024 * 1024);
+  if (!form) return json({ error: 'Invalid or too large request' }, 413, cors);
   let data;
   try { data = JSON.parse(String(form.get('data') || '')); } catch { return json({ error: 'Invalid data' }, 400, cors); }
   if (!data || typeof data !== 'object') return json({ error: 'Invalid data' }, 400, cors);
@@ -565,6 +590,8 @@ async function handleOrderTrack(request, env, cors) {
 /* ═══════════════════════════════════════
    LEADERBOARD — public names/points only; honours "hide me"
 ═══════════════════════════════════════ */
+// same list as the nickname check in account.js (the browser check alone can be bypassed)
+const NICK_BLOCK = /glitch|admin|support|staff|moderator|مشرف|ادمن|أدمن|الدعم|إدارة|ادارة/i;
 let _lb = null, _lbExp = 0;
 async function handleLeaderboard(request, env, cors) {
   if (hit('lb:' + clientIp(request), 30, 60000)) return json({ error: 'Too many requests' }, 429, cors);
@@ -574,7 +601,8 @@ async function handleLeaderboard(request, env, cors) {
   for (const r of rows) {
     const u = r.data;
     if (u.prefs && u.prefs.hideLb === true) continue;
-    const nick = cleanText(u.nick, 20);
+    let nick = cleanText(u.nick, 20);
+    if (NICK_BLOCK.test(nick)) nick = '';                       // reserved names cannot be used to pose as the store
     const first = cleanText(u.firstName || u.name, 30), last = cleanText(u.lastName, 30);
     const name = nick || (first + (last ? ' ' + last[0] + '.' : '')) || '—';
     top.push({ name, points: Math.max(0, Math.floor(Number(u.points) || 0)), avatar: u.avatar && typeof u.avatar === 'object' ? { e: cleanText(u.avatar.e, 8), c: cleanText(u.avatar.c, 12) } : null });
@@ -612,7 +640,7 @@ async function handleNewsletter(request, env, cors) {
 
 async function handleRatingCreate(request, env, cors) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
-  if (hit('rt:' + clientIp(request), 4, 60000)) return json({ error: 'Too many requests' }, 429, cors);
+  if (hit('rt:' + clientIp(request), 5, 3600000)) return json({ error: 'Too many requests' }, 429, cors);
   const body = await readJson(request, 2048);
   if (!body) return json({ error: 'Invalid data' }, 400, cors);
   const rating = Math.floor(Number(body.rating));
@@ -631,10 +659,9 @@ async function handleRatingCreate(request, env, cors) {
 
 async function handleReportCreate(request, env, cors) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
-  if (hit('rep:' + clientIp(request), 3, 300000)) return json({ error: 'Too many requests' }, 429, cors);
-  if (parseInt(request.headers.get('Content-Length') || '0', 10) > 6 * 1024 * 1024) return json({ error: 'Request too large' }, 413, cors);
-  let form;
-  try { form = await request.formData(); } catch { return json({ error: 'Invalid form data' }, 400, cors); }
+  if (hit('rep:' + clientIp(request), 5, 3600000)) return json({ error: 'Too many requests' }, 429, cors);
+  const form = await readForm(request, 6 * 1024 * 1024);
+  if (!form) return json({ error: 'Invalid or too large request' }, 413, cors);
   let data;
   try { data = JSON.parse(String(form.get('data') || '')); } catch { return json({ error: 'Invalid data' }, 400, cors); }
   const title = cleanText(data && data.title, 100), category = cleanText(data && data.category, 40);
@@ -955,7 +982,7 @@ async function verifyIdToken(idToken, projectId) {
   const now = Math.floor(Date.now() / 1000);
   if (payload.aud !== projectId) return null;
   if (payload.iss !== 'https://securetoken.google.com/' + projectId) return null;
-  if (typeof payload.sub !== 'string' || !payload.sub || payload.sub.length > 128) return null;
+  if (typeof payload.sub !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(payload.sub)) return null;   // used in database paths: letters, digits, _ and - only
   if (!(payload.exp > now)) return null;
   if (!(payload.iat <= now + 300)) return null;
   const jwk = (await getJwks()).find(k => k.kid === header.kid);

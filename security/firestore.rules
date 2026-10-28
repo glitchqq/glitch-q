@@ -1,0 +1,123 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GLITCH Q — proposed Firestore rules (least privilege).
+//
+// NOT DEPLOYED. Read SECURITY.md first: the order of the steps matters.
+//
+// Principle: the browser may READ what it needs and change only cosmetic fields of
+// its OWN profile. Everything that carries value — orders, prices, coupons, points,
+// rewards, referrals, ratings, reports, newsletter — is written only by the Worker
+// (service account, which bypasses these rules) or by the store owner.
+// ─────────────────────────────────────────────────────────────────────────────
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // The store owner: the owner's Google account, verified e-mail, Google sign-in
+    // (so the account's own 2-step verification / passkey protects the panel).
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email == 'kadirom7k777@gmail.com'
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+    function signedIn() { return request.auth != null; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+
+    // ── Public store settings (read-only for everyone) ──────────────────────
+    // coupons and stats are NOT listed here: only the owner can read them.
+    match /settings/{docId} {
+      allow read: if docId in ['categories', 'products', 'discount', 'maintenance', 'regions', 'faqs', 'ticker'];
+      allow write: if isAdmin();
+    }
+
+    // ── Customer profiles ───────────────────────────────────────────────────
+    // read:   the customer or the owner (no public listing: the leaderboard is served by the Worker)
+    // create: only the customer, only with the exact starting values
+    // update: only the customer's cosmetic fields; points, spend, orders, streak, referrals,
+    //         claimed rewards, referredBy, fingerprint, uid_short are changed by the Worker/owner only
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+
+      allow create: if isOwner(uid) && validNewUser(uid, request.resource.data);
+
+      allow update: if isAdmin() || (isOwner(uid) && validOwnerEdit(request.resource.data, resource.data));
+
+      allow delete: if isAdmin();
+    }
+
+    function validNewUser(uid, d) {
+      return d.keys().hasOnly([
+          'firstName', 'lastName', 'name', 'email', 'points', 'notifications', 'favorites',
+          'orders', 'ratings', 'spins', 'gifts', 'shares', 'streak', 'referrals', 'totalSpend',
+          'lastLogin', 'badges', 'claimedMilestones', 'uid_short', 'region', 'created'
+        ])
+        && d.keys().hasAll(['email', 'points', 'uid_short'])
+        && d.email == request.auth.token.email
+        && d.points == 5
+        && d.get('orders', 0) == 0 && d.get('ratings', 0) == 0 && d.get('spins', 0) == 0
+        && d.get('gifts', 0) == 0 && d.get('shares', 0) == 0 && d.get('streak', 0) == 0
+        && d.get('referrals', 0) == 0 && d.get('totalSpend', 0) == 0
+        && d.get('lastLogin', null) == null
+        && d.get('notifications', []) == []
+        && d.get('favorites', []) == []
+        && d.get('claimedMilestones', []) == []
+        && d.get('badges', ['newcomer']) == ['newcomer']
+        && d.uid_short is string && d.uid_short.matches('[A-Za-z0-9]{12}')
+        && uid.matches(d.uid_short + '.*')
+        && shortText(d.get('firstName', ''), 50) && shortText(d.get('lastName', ''), 50) && shortText(d.get('name', ''), 101)
+        && (d.get('region', null) == null || d.region in ['eu', 'us', 'sa', 'ae']);
+    }
+
+    function shortText(v, max) { return v is string && v.size() <= max; }
+
+    function validNick(n) {
+      return n is string && (n == '' || n.matches('[\\p{L}\\p{N} _.\\-]{2,20}'));
+    }
+    function validAvatar(a) {
+      return a == null
+        || (a is map && a.keys().hasOnly(['e', 'c']) && shortText(a.get('e', ''), 8) && shortText(a.get('c', ''), 12));
+    }
+    function validPrefs(p) {
+      return p is map
+        && p.keys().hasOnly(['favCat', 'hideLb', 'loginAlerts'])
+        && p.get('hideLb', false) is bool
+        && p.get('loginAlerts', false) is bool
+        && shortText(p.get('favCat', 'all'), 20);
+    }
+
+    function validOwnerEdit(d, old) {
+      let changed = d.diff(old).affectedKeys();
+      return changed.hasOnly(['nick', 'avatar', 'prefs', 'devices', 'region', 'currency', 'symbol', 'badges', 'favorites', 'notifications'])
+        && (!('nick' in changed)        || validNick(d.get('nick', '')))
+        && (!('avatar' in changed)      || validAvatar(d.get('avatar', null)))
+        && (!('prefs' in changed)       || validPrefs(d.get('prefs', {})))
+        && (!('devices' in changed)     || (d.devices is list && d.devices.size() <= 10))
+        && (!('region' in changed)      || d.get('region', null) in ['eu', 'us', 'sa', 'ae'])
+        && (!('currency' in changed)    || d.get('currency', '') in ['EUR', 'USD', 'SAR', 'AED'])
+        && (!('symbol' in changed)      || shortText(d.get('symbol', ''), 4))
+        && (!('badges' in changed)      || (d.badges is list && d.badges.size() <= 40))
+        && (!('favorites' in changed)   || (d.favorites is list && d.favorites.size() <= 200))
+        // notifications may be cleared or marked read, never added to
+        && (!('notifications' in changed) || (d.notifications is list && d.notifications.size() <= old.get('notifications', []).size()));
+    }
+
+    // ── Orders: the customer can read their own; nobody but the Worker/owner writes ──
+    match /orders/{orderId} {
+      allow get, list: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── Suspended accounts: a customer can see their own flag (the Worker enforces it) ──
+    match /banned_users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ── Everything else (ratings, reports, newsletter, referrals, abuse flags, stats, coupons …):
+    //    owner only. The Worker writes with the service account, which bypasses these rules. ──
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
