@@ -915,6 +915,8 @@ function closeConfirmModal(){document.getElementById('confirmModal').classList.a
 
 /* Marks an order done and pays the customer ONCE (points = 1 per 1000 DZD, order count, total spent,
    and the one-time referral reward). The `awarded` flag makes a second call harmless. */
+/* referral reward only for a real purchase (set to 0 to reward any completed first order) */
+const REF_MIN_ORDER_DZD=2000;
 async function completeOrder(orderId,notif){
   const FV=firebase.firestore.FieldValue;
   const oref=db.collection('orders').doc(orderId);
@@ -925,7 +927,7 @@ async function completeOrder(orderId,notif){
     if(o.awarded===false&&uid&&uid!=='guest'){   /* only orders created by the new Worker carry awarded:false; older orders were already paid when they were placed */
       uref=db.collection('users').doc(uid);us=await tx.get(uref);
       const u=us.exists?us.data():null;
-      if(u&&u.referredBy&&u.referredBy!==uid&&!u.refRewarded){rref=db.collection('users').doc(u.referredBy);rs=await tx.get(rref);}
+      if(u&&u.referredBy&&u.referredBy!==uid&&!u.refRewarded&&(Number(o.totalDZD)||0)>=REF_MIN_ORDER_DZD){rref=db.collection('users').doc(u.referredBy);rs=await tx.get(rref);}
     }
     tx.update(oref,o.awarded===false?{status:'done',awarded:true}:{status:'done'});
     if(us&&us.exists){

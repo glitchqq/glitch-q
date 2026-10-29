@@ -950,9 +950,11 @@ async function handleResetPassword(request, env, cors) {
 ═══════════════════════════════════════ */
 let _jwks = null;
 let _jwksExp = 0;
+let _jwksAt = 0;
 
-async function getJwks() {
-  if (_jwks && Date.now() < _jwksExp) return _jwks;
+async function getJwks(force = false) {
+  if (!force && _jwks && Date.now() < _jwksExp) return _jwks;
+  _jwksAt = Date.now();
   const r = await fetch('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com');
   if (!r.ok) throw new Error('jwks status ' + r.status);
   const d = await r.json();
@@ -985,7 +987,9 @@ async function verifyIdToken(idToken, projectId) {
   if (typeof payload.sub !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(payload.sub)) return null;   // used in database paths: letters, digits, _ and - only
   if (!(payload.exp > now)) return null;
   if (!(payload.iat <= now + 300)) return null;
-  const jwk = (await getJwks()).find(k => k.kid === header.kid);
+  let jwk = (await getJwks()).find(k => k.kid === header.kid);
+  // Google rotates its signing keys: an unknown key id triggers ONE refresh (at most every 5 minutes)
+  if (!jwk && Date.now() - _jwksAt > 300000) jwk = (await getJwks(true)).find(k => k.kid === header.kid);
   if (!jwk) return null;
   const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
   const ok = await crypto.subtle.verify(

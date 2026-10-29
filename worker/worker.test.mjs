@@ -154,6 +154,19 @@ function seed() {
   ck('SPIN_SEGMENTS (pts/prob order) identical', JSON.stringify(wSp.map(m => [m.pts, m.prob])) === JSON.stringify(ctx.SPIN_SEGMENTS.map(m => [m.pts, m.prob])));
 }
 
+{ // Google rotates signing keys: a token signed by a key published AFTER the cache was filled must still verify
+  const rot = await genKey(); const jwk2 = { ...(await crypto.subtle.exportKey('jwk', rot.publicKey)), kid: 'k2', alg: 'RS256', use: 'sig' };
+  const before = globalThis.fetch; let served = [jwk];
+  globalThis.fetch = async (u, i) => String(u).includes('service_accounts/v1/jwk') ? J({ keys: served }, 200, { 'cache-control': 'public, max-age=3600' }) : before(u, i);
+  await call('/account/streak', { idToken: await mk({ sub: 'rot0' }) });                    // fills the cache with k1 only
+  served = [jwk, jwk2];
+  const tk = await mk({ sub: 'rot1' }, rot.privateKey, 'k2'); seed(); put('users/rot1', { points: 5 });
+  // (the refresh is rate-limited to every 5 minutes, so move the clock past that for the test)
+  const realNow = Date.now; Date.now = () => realNow() + 301000;
+  const [st] = await call('/account/streak', { idToken: tk });
+  Date.now = realNow; globalThis.fetch = before;
+  ck('key rotation: token signed with a newly published key verifies after one refresh', st === 200, st); }
+
 /* ───────── access control basics ───────── */
 seed();
 let [s, j] = await call('/health', null, { method: 'GET' }); ck('health ok', s === 200 && j.ok);
