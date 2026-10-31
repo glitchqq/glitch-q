@@ -931,7 +931,7 @@ async function handleAdminSendCode(request, env, cors) {
 
   const sent = await sendBrevo(env, {
     to,
-    subject: 'طلبك جاهز — الكود الخاص بك 🔑 Glitch Q',
+    subject: 'طلبك جاهز — الكود الخاص بك | Glitch Q',
     html: buildCodeEmail({ product, code, orderId }),
     text: buildCodeText({ product, code, orderId }),
   });
@@ -1025,7 +1025,7 @@ async function handleResetPassword(request, env, cors) {
       body: JSON.stringify({
         sender: { name: 'Glitch Q', email: 'glitchq1q@gmail.com' },
         to: [{ email }],
-        subject: 'إعادة تعيين كلمة المرور — Glitch Q 🔑',
+        subject: 'إعادة تعيين كلمة المرور | Glitch Q',
         htmlContent: emailHtml,
         textContent: emailText,
       }),
@@ -1192,7 +1192,7 @@ async function handleLoginAlert(request, env, cors) {
     body: JSON.stringify({
       sender: { name: 'Glitch Q', email: 'glitchq1q@gmail.com' },
       to: [{ email }],
-      subject: 'تسجيل دخول جديد إلى حسابك — Glitch Q 🔔',
+      subject: 'تنبيه أمني: تسجيل دخول جديد إلى حسابك | Glitch Q',
       htmlContent: buildLoginAlertEmail({ device, place, when }),
       textContent: buildLoginAlertText({ device, place, when }),
     }),
@@ -1362,17 +1362,81 @@ function json(data, status = 200, headers = {}) {
 }
 
 /* ═══════════════════════════════════════
-   EMAIL TEMPLATE — light-first; no text on gradients
-   (so Gmail dark-mode inversion keeps it readable)
+   EMAIL TEMPLATES — one shell, three letters.
+   Light by default, real dark mode through prefers-color-scheme
+   (Apple Mail, iOS Mail, Outlook apps, Thunderbird). Gmail applies its own inversion,
+   which is why every surface here sets an explicit background and the header/ticket are
+   already dark. Tables + inline styles only; no remote images (blocked by default in
+   most clients), no emoji icons, no text on gradients.
+   Rule: every value that comes from a user, an order or a request goes through escHtml
+   before it reaches a template helper; helpers take TRUSTED html.
 ═══════════════════════════════════════ */
 function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function buildResetEmail(resetLink) {
-  const link = escHtml(resetLink);
+const MAIL_SITE = 'https://glitchqq.github.io/glitch-q/';
+const MAIL_FONT = "-apple-system,'Segoe UI',Tahoma,'Noto Sans Arabic',Arial,sans-serif";
+const MAIL_MONO = "'SF Mono',Consolas,Menlo,'Courier New',monospace";
+
+// One accent per kind of letter: reset = cobalt, delivered code = mint, security alert = gold.
+// `red` is only used for the "wasn't you?" box. `c` names the CSS classes that the dark-mode block recolours.
+const MAIL_TONE = {
+  cobalt: { bar: '#3D6BFF', btn: '#2F5BEA', btnText: '#FFFFFF', btnDk: '#2F5BEA', btnTextDk: '#FFFFFF', ink: '#2748C4', tint: '#EEF2FF', line: '#D3DDFB', inkDk: '#8FAAFF', tintDk: '#141C3D', lineDk: '#26335F', c: { tint: 'tint', ink: 'ink' } },
+  mint:   { bar: '#28C88A', btn: '#0B7A50', btnText: '#FFFFFF', btnDk: '#28C88A', btnTextDk: '#06140E', ink: '#0B7A50', tint: '#E8F8F1', line: '#BFE9D6', inkDk: '#3DDC9F', tintDk: '#0F2A22', lineDk: '#1D4A3A', c: { tint: 'tint', ink: 'ink' } },
+  gold:   { bar: '#F4B63E', btn: '#F4B63E', btnText: '#1A1300', btnDk: '#F4B63E', btnTextDk: '#1A1300', ink: '#8A5A00', tint: '#FFF6E0', line: '#F6DFA6', inkDk: '#F4B63E', tintDk: '#2B2210', lineDk: '#5A4518', c: { tint: 'gtint', ink: 'gink' } },
+  red:    { ink: '#B3243A', tint: '#FFF0F1', line: '#FBC9CF', c: { tint: 'rtint', ink: 'rink' } },
+};
+
+// ── small building blocks (all take trusted html) ────────────────────────
+const mGap = (h) => `<div style="height:${h}px;line-height:${h}px;font-size:1px;">&nbsp;</div>`;
+const mH1 = (s) => `<h1 class="h1 t-h" style="margin:0 0 12px;font-family:${MAIL_FONT};font-size:26px;line-height:1.4;font-weight:800;color:#10131A;text-align:right;">${s}</h1>`;
+const mP = (s, style = '') => `<p class="t-p" style="margin:0 0 18px;font-family:${MAIL_FONT};font-size:15px;line-height:1.95;color:#3A4357;text-align:right;${style}">${s}</p>`;
+const mSmall = (s) => `<p class="t-dim" style="margin:0 0 8px;font-family:${MAIL_FONT};font-size:12.5px;line-height:1.8;color:#6A7388;text-align:right;">${s}</p>`;
+const mHr = () => `<div class="hr" style="height:1px;line-height:1px;font-size:1px;background-color:#E3E7EF;">&nbsp;</div>`;
+const mBox = (inner, pad = '16px 18px') => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="box bd" bgcolor="#F5F7FB" style="background-color:#F5F7FB;border:1px solid #DDE2EC;border-radius:12px;padding:${pad};font-family:${MAIL_FONT};text-align:right;">${inner}</td></tr></table>`;
+const mTintBox = (t, inner) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="${t.c.tint}" bgcolor="${t.tint}" style="background-color:${t.tint};border:1px solid ${t.line};border-radius:12px;padding:16px 18px;font-family:${MAIL_FONT};text-align:right;">${inner}</td></tr></table>`;
+
+const mNote = (t, html) => mTintBox(t, `<div class="${t.c.ink}" style="font-family:${MAIL_FONT};font-size:14px;line-height:1.9;color:${t.ink};">${html}</div>`);
+
+function mButton(href, label, t) {
+  return `<table role="presentation" class="btn-t" cellpadding="0" cellspacing="0" border="0"><tr>
+  <td class="btn-td" align="center" bgcolor="${t.btn}" style="background-color:${t.btn};border-radius:10px;">
+    <a class="btn-a" href="${href}" target="_blank" style="display:inline-block;padding:15px 38px;font-family:${MAIL_FONT};font-size:16px;line-height:1.3;font-weight:700;color:${t.btnText};text-decoration:none;border-radius:10px;">${label}</a>
+  </td></tr></table>`;
+}
+
+function mSteps(items, t) {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${items.map((s, i) => `
+  <tr>
+    <td width="40" valign="top" style="padding:0 0 12px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td class="${t.c.tint} ${t.c.ink}" width="28" height="28" align="center" valign="middle" bgcolor="${t.tint}" style="width:28px;height:28px;background-color:${t.tint};border:1px solid ${t.line};border-radius:14px;font-family:${MAIL_FONT};font-size:13px;line-height:26px;font-weight:800;color:${t.ink};text-align:center;">${i + 1}</td>
+      </tr></table>
+    </td>
+    <td class="t-p" valign="top" style="padding:3px 0 12px;font-family:${MAIL_FONT};font-size:14.5px;line-height:1.8;color:#3A4357;text-align:right;">${s}</td>
+  </tr>`).join('')}
+  </table>`;
+}
+
+// label/value rows inside one bordered panel
+function mFacts(rows) {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="box bd" bgcolor="#F5F7FB" style="background-color:#F5F7FB;border:1px solid #DDE2EC;border-radius:12px;border-collapse:separate;">${rows.map(([label, valueHtml], i) => {
+    const line = i < rows.length - 1 ? 'border-bottom:1px solid #DDE2EC;' : '';
+    return `
+  <tr>
+    <td class="t-dim bd" width="34%" valign="top" style="${line}padding:13px 18px;font-family:${MAIL_FONT};font-size:13px;line-height:1.7;color:#6A7388;text-align:right;">${label}</td>
+    <td class="t-h bd" valign="top" style="${line}padding:13px 18px;font-family:${MAIL_FONT};font-size:14.5px;line-height:1.7;font-weight:700;color:#10131A;text-align:right;">${valueHtml}</td>
+  </tr>`;
+  }).join('')}
+  </table>`;
+}
+
+function mailShell({ tone, label, title, preheader, body, note }) {
+  const t = MAIL_TONE[tone];
   const year = new Date().getFullYear();
-  const font = "Tahoma,'Segoe UI',Arial,sans-serif";
+  const F = MAIL_FONT;
+  const pad = '&#847;&zwnj;&nbsp;'.repeat(40);
   return `<!DOCTYPE html>
 <html dir="rtl" lang="ar" xmlns="http://www.w3.org/1999/xhtml">
 <head>
@@ -1380,65 +1444,78 @@ function buildResetEmail(resetLink) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <meta name="supported-color-schemes" content="light dark">
-<title>إعادة تعيين كلمة المرور — Glitch Q</title>
+<meta name="x-apple-disable-message-reformatting">
+<title>${escHtml(title)}</title>
+<style>
+  body{margin:0;padding:0;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}
+  a{text-decoration:none}
+  @media only screen and (max-width:520px){
+    .wrap{padding:10px 6px!important}
+    .px{padding-left:20px!important;padding-right:20px!important}
+    .h1{font-size:23px!important;line-height:1.45!important}
+    .btn-t{width:100%!important}
+    .btn-a{display:block!important;padding-left:12px!important;padding-right:12px!important}
+    .code-lg{font-size:19px!important;letter-spacing:1px!important}
+  }
+  @media (prefers-color-scheme:dark){
+    body,.bg-page{background-color:#07090D!important}
+    .bg-card{background-color:#11151C!important}
+    .bd{border-color:#232A37!important}
+    .hr{background-color:#232A37!important}
+    .t-h{color:#F2F4F8!important}
+    .t-p{color:#B7BFD0!important}
+    .t-dim{color:#8A93A6!important}
+    .box{background-color:#181C25!important;border-color:#252B38!important}
+    .bg-foot{background-color:#0D1016!important;border-color:#232A37!important}
+    .ink{color:${t.inkDk}!important}
+    .tint{background-color:${t.tintDk}!important;border-color:${t.lineDk}!important}
+    .btn-td{background-color:${t.btnDk}!important}
+    .btn-a{color:${t.btnTextDk}!important}
+    .gtint{background-color:#2B2210!important;border-color:#5A4518!important}
+    .gink{color:#F4B63E!important}
+    .rtint{background-color:#2A1519!important;border-color:#5A2630!important}
+    .rink{color:#FF8A96!important}
+  }
+</style>
 </head>
-<body style="margin:0;padding:0;background-color:#f4f1fb;" bgcolor="#f4f1fb">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f4f1fb;font-size:1px;line-height:1px;">اضغط الزر لاختيار كلمة مرور جديدة لحسابك في Glitch Q — الرابط صالح لمدة ساعة واحدة.&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f4f1fb" style="background-color:#f4f1fb;">
-<tr><td align="center" style="padding:28px 12px;">
+<body class="bg-page" style="margin:0;padding:0;background-color:#EDF0F6;" bgcolor="#EDF0F6">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#EDF0F6;font-size:1px;line-height:1px;">${escHtml(preheader)}${pad}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-page" bgcolor="#EDF0F6" style="background-color:#EDF0F6;">
+<tr><td class="wrap" align="center" style="padding:28px 12px;">
 
-  <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="width:560px;max-width:100%;background-color:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #e4dcf5;">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="bg-card bd" bgcolor="#FFFFFF" style="width:600px;max-width:100%;background-color:#FFFFFF;border:1px solid #DDE2EC;border-radius:16px;border-collapse:separate;overflow:hidden;">
 
-    <!-- Accent stripe (decorative only: no text sits on a gradient) -->
-    <tr><td height="6" bgcolor="#c026d3" style="height:6px;font-size:0;line-height:0;background-color:#c026d3;background-image:linear-gradient(90deg,#7c3aed,#c026d3);">&nbsp;</td></tr>
+    <!-- Header: always dark. Brand mark (a flat square + a one-pixel RGB split), then what this letter is about -->
+    <tr><td class="px" bgcolor="#0A0C10" style="background-color:#0A0C10;padding:20px 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td align="right" valign="middle">
+          <table role="presentation" dir="ltr" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td width="36" height="36" align="center" valign="middle" bgcolor="#3D6BFF" style="width:36px;height:36px;background-color:#3D6BFF;border-radius:9px;font-family:Arial,Helvetica,sans-serif;font-size:21px;line-height:36px;font-weight:800;color:#FFFFFF;text-shadow:2px 0 #FF4D5E,-2px 0 #35E0F2;">Q</td>
+            <td valign="middle" style="padding-left:12px;font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:36px;font-weight:800;letter-spacing:3px;color:#FFFFFF;">GLITCH&nbsp;Q</td>
+          </tr></table>
+        </td>
+        <td align="left" valign="middle" style="font-family:${F};font-size:12.5px;line-height:1.6;color:#9AA3B5;text-align:left;">${escHtml(label)}</td>
+      </tr></table>
+    </td></tr>
 
-    <!-- Header -->
-    <tr><td align="center" bgcolor="#4c1d95" style="background-color:#4c1d95;padding:34px 24px 30px;">
-      <div style="font-family:${font};font-size:30px;line-height:1.2;font-weight:800;letter-spacing:6px;color:#ffffff;direction:ltr;">GLITCH <span style="color:#f5d0fe;">Q</span></div>
-      <div style="font-family:${font};font-size:13px;line-height:1.6;color:#ede9fe;margin-top:8px;">عالم الجيمينج بلا حدود</div>
+    <!-- Accent strip: this letter's colour, then the two split channels -->
+    <tr><td style="font-size:0;line-height:0;height:4px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td width="88%" height="4" bgcolor="${t.bar}" style="height:4px;font-size:0;line-height:0;background-color:${t.bar};">&nbsp;</td>
+        <td width="6%" height="4" bgcolor="#FF4D5E" style="height:4px;font-size:0;line-height:0;background-color:#FF4D5E;">&nbsp;</td>
+        <td width="6%" height="4" bgcolor="#35E0F2" style="height:4px;font-size:0;line-height:0;background-color:#35E0F2;">&nbsp;</td>
+      </tr></table>
     </td></tr>
 
     <!-- Body -->
-    <tr><td align="center" bgcolor="#ffffff" style="background-color:#ffffff;padding:34px 32px 8px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
-        <td align="center" valign="middle" width="68" height="68" bgcolor="#f3e8ff" style="width:68px;height:68px;background-color:#f3e8ff;border-radius:34px;font-size:30px;line-height:68px;text-align:center;">&#128272;</td>
-      </tr></table>
-      <h1 style="font-family:${font};margin:20px 0 10px;font-size:23px;line-height:1.5;font-weight:800;color:#1e1b3a;text-align:center;">إعادة تعيين كلمة المرور</h1>
-      <p style="font-family:${font};margin:0 0 6px;font-size:15px;line-height:2;color:#4b4668;text-align:center;">وصلنا طلب لإعادة تعيين كلمة المرور الخاصة بحسابك في <strong style="color:#7c3aed;">Glitch Q</strong>.<br>اضغط الزر أدناه لاختيار كلمة مرور جديدة.</p>
-    </td></tr>
-
-    <!-- Button -->
-    <tr><td align="center" bgcolor="#ffffff" style="background-color:#ffffff;padding:22px 32px 10px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
-        <td align="center" bgcolor="#7c3aed" style="background-color:#7c3aed;border-radius:12px;">
-          <a href="${link}" target="_blank" style="display:inline-block;font-family:${font};font-size:16px;line-height:1.4;font-weight:800;color:#ffffff;text-decoration:none;padding:16px 46px;border-radius:12px;">إعادة تعيين كلمة المرور</a>
-        </td>
-      </tr></table>
-    </td></tr>
-
-    <!-- Expiry note -->
-    <tr><td align="center" bgcolor="#ffffff" style="background-color:#ffffff;padding:18px 32px 6px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td align="center" bgcolor="#faf5ff" style="background-color:#faf5ff;border:1px solid #e9d5ff;border-radius:12px;padding:12px 16px;font-family:${font};font-size:13px;line-height:1.8;color:#5b21b6;text-align:center;">&#9201; الرابط صالح لمدة <strong>ساعة واحدة</strong> ويعمل مرة واحدة فقط.</td>
-      </tr></table>
-    </td></tr>
-
-    <!-- Fallback link -->
-    <tr><td bgcolor="#ffffff" style="background-color:#ffffff;padding:18px 32px 6px;">
-      <p style="font-family:${font};margin:0 0 6px;font-size:12px;line-height:1.8;color:#6b6585;text-align:center;">إذا لم يعمل الزر، انسخ الرابط التالي والصقه في المتصفح:</p>
-      <p style="font-family:Consolas,Menlo,monospace;margin:0;font-size:11px;line-height:1.7;color:#7c3aed;text-align:center;word-break:break-all;direction:ltr;"><a href="${link}" target="_blank" style="color:#7c3aed;text-decoration:underline;">${link}</a></p>
-    </td></tr>
-
-    <!-- Security -->
-    <tr><td bgcolor="#ffffff" style="background-color:#ffffff;padding:22px 32px 30px;">
-      <div style="height:1px;line-height:1px;font-size:1px;background-color:#ece6f8;margin-bottom:18px;">&nbsp;</div>
-      <p style="font-family:${font};margin:0;font-size:13px;line-height:1.9;color:#6b6585;text-align:center;">&#128737; لم تطلب هذا؟ تجاهل هذه الرسالة وستبقى كلمة مرورك كما هي، ولن يتغير شيء في حسابك.</p>
+    <tr><td class="px" style="padding:36px 32px 14px;text-align:right;">
+${body}
     </td></tr>
 
     <!-- Footer -->
-    <tr><td align="center" bgcolor="#f8f5ff" style="background-color:#f8f5ff;border-top:1px solid #ece6f8;padding:20px 24px;">
-      <p style="font-family:${font};margin:0 0 4px;font-size:13px;line-height:1.7;font-weight:700;color:#4c1d95;">Glitch Q — بطاقات PlayStation في الجزائر</p>
-      <p style="font-family:${font};margin:0;font-size:11px;line-height:1.7;color:#8a85a0;">هذه رسالة تلقائية، يرجى عدم الرد عليها. &copy; ${year} Glitch Q</p>
+    <tr><td class="bg-foot bd px" bgcolor="#F5F7FB" style="background-color:#F5F7FB;border-top:1px solid #DDE2EC;padding:22px 32px 26px;">
+      <p class="t-dim" style="margin:0 0 10px;font-family:${F};font-size:12.5px;line-height:1.8;color:#6A7388;text-align:right;">${note}</p>
+      <p class="t-dim" style="margin:0;font-family:${F};font-size:11.5px;line-height:1.8;color:#6A7388;text-align:right;"><span dir="ltr" style="font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:2px;">GLITCH Q</span> &middot; بطاقات PlayStation في الجزائر &middot; رسالة تلقائية، يرجى عدم الرد عليها &middot; &copy; ${year}</p>
     </td></tr>
 
   </table>
@@ -1449,152 +1526,111 @@ function buildResetEmail(resetLink) {
 </html>`;
 }
 
-function buildLoginAlertEmail({ device, place, when }) {
-  const SITE = 'https://glitchqq.github.io/glitch-q/';
-  const year = new Date().getFullYear();
-  const font = "Tahoma,'Segoe UI',Arial,sans-serif";
-  const row = (label, value) => `<tr>
-        <td bgcolor="#faf5ff" style="background-color:#faf5ff;border-bottom:1px solid #ece6f8;padding:12px 16px;font-family:${font};font-size:13px;line-height:1.7;color:#6b6585;text-align:right;width:34%;">${label}</td>
-        <td bgcolor="#faf5ff" style="background-color:#faf5ff;border-bottom:1px solid #ece6f8;padding:12px 16px;font-family:${font};font-size:14px;line-height:1.7;font-weight:700;color:#1e1b3a;text-align:right;">${escHtml(value)}</td>
-      </tr>`;
-  return `<!DOCTYPE html>
-<html dir="rtl" lang="ar" xmlns="http://www.w3.org/1999/xhtml">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<meta name="supported-color-schemes" content="light dark">
-<title>تسجيل دخول جديد — Glitch Q</title>
-</head>
-<body style="margin:0;padding:0;background-color:#f4f1fb;" bgcolor="#f4f1fb">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f4f1fb;font-size:1px;line-height:1px;">تم تسجيل دخول إلى حسابك من جهاز جديد. إذا لم تكن أنت فأمّن حسابك الآن.&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f4f1fb" style="background-color:#f4f1fb;">
-<tr><td align="center" style="padding:28px 12px;">
-  <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="width:560px;max-width:100%;background-color:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #e4dcf5;">
-    <tr><td height="6" bgcolor="#c026d3" style="height:6px;font-size:0;line-height:0;background-color:#c026d3;background-image:linear-gradient(90deg,#7c3aed,#c026d3);">&nbsp;</td></tr>
-    <tr><td align="center" bgcolor="#4c1d95" style="background-color:#4c1d95;padding:30px 24px 26px;">
-      <div style="font-family:${font};font-size:28px;line-height:1.2;font-weight:800;letter-spacing:6px;color:#ffffff;direction:ltr;">GLITCH <span style="color:#f5d0fe;">Q</span></div>
-    </td></tr>
-    <tr><td align="center" bgcolor="#ffffff" style="background-color:#ffffff;padding:30px 32px 6px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
-        <td align="center" valign="middle" width="64" height="64" bgcolor="#fef3c7" style="width:64px;height:64px;background-color:#fef3c7;border-radius:32px;font-size:28px;line-height:64px;text-align:center;">&#128276;</td>
-      </tr></table>
-      <h1 style="font-family:${font};margin:18px 0 10px;font-size:22px;line-height:1.5;font-weight:800;color:#1e1b3a;text-align:center;">تسجيل دخول جديد إلى حسابك</h1>
-      <p style="font-family:${font};margin:0;font-size:15px;line-height:2;color:#4b4668;text-align:center;">لاحظنا تسجيل دخول إلى حسابك في <strong style="color:#7c3aed;">Glitch Q</strong> من جهاز لم نعرفه من قبل:</p>
-    </td></tr>
-    <tr><td bgcolor="#ffffff" style="background-color:#ffffff;padding:18px 32px 6px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #ece6f8;border-radius:12px;border-collapse:separate;overflow:hidden;">
-        ${row('الجهاز', device)}
-        ${row('الموقع التقريبي', place)}
-        ${row('الوقت', when)}
-      </table>
-    </td></tr>
-    <tr><td bgcolor="#ffffff" style="background-color:#ffffff;padding:16px 32px 4px;">
-      <p style="font-family:${font};margin:0;font-size:14px;line-height:2;color:#1e1b3a;text-align:center;"><strong>كنت أنت؟</strong> لا تحتاج لفعل أي شيء.</p>
-    </td></tr>
-    <tr><td bgcolor="#ffffff" style="background-color:#ffffff;padding:8px 32px 6px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td bgcolor="#fef2f2" style="background-color:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:14px 16px;font-family:${font};font-size:13px;line-height:1.9;color:#991b1b;text-align:right;"><strong>لم تكن أنت؟</strong><br>1) ادخل إلى حسابك ← <strong>إعدادات الحساب</strong> وغيّر كلمة المرور فوراً.<br>2) اضغط <strong>تسجيل الخروج من كل الأجهزة</strong>.</td>
-      </tr></table>
-    </td></tr>
-    <tr><td align="center" bgcolor="#ffffff" style="background-color:#ffffff;padding:20px 32px 28px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
-        <td align="center" bgcolor="#7c3aed" style="background-color:#7c3aed;border-radius:12px;">
-          <a href="${SITE}" target="_blank" style="display:inline-block;font-family:${font};font-size:15px;line-height:1.4;font-weight:800;color:#ffffff;text-decoration:none;padding:14px 40px;border-radius:12px;">فتح Glitch Q</a>
-        </td>
-      </tr></table>
-    </td></tr>
-    <tr><td align="center" bgcolor="#f8f5ff" style="background-color:#f8f5ff;border-top:1px solid #ece6f8;padding:18px 24px;">
-      <p style="font-family:${font};margin:0 0 4px;font-size:12px;line-height:1.7;color:#6b6585;">وصلتك هذه الرسالة لأنك فعّلت «تنبيه الدخول من جهاز جديد» في إعدادات حسابك، ويمكنك إيقافه في أي وقت.</p>
-      <p style="font-family:${font};margin:0;font-size:11px;line-height:1.7;color:#8a85a0;">هذه رسالة تلقائية، يرجى عدم الرد عليها. &copy; ${year} Glitch Q</p>
-    </td></tr>
-  </table>
-</td></tr>
-</table>
-</body>
-</html>`;
+/* ── 1) password reset ───────────────────────────────────────────────── */
+function buildResetEmail(resetLink) {
+  const link = escHtml(resetLink);
+  const t = MAIL_TONE.cobalt;
+  const body = [
+    mH1('إعادة تعيين كلمة المرور'),
+    mP('وصلنا طلب لتعيين كلمة مرور جديدة لحسابك في Glitch Q. اضغط الزر أدناه واختر كلمة المرور الجديدة.'),
+    mButton(link, 'اختيار كلمة مرور جديدة', t),
+    mGap(24),
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="box bd" bgcolor="#F5F7FB" style="background-color:#F5F7FB;border:1px solid #DDE2EC;border-radius:12px;border-collapse:separate;"><tr>
+      <td class="bd" width="50%" valign="top" style="border-left:1px solid #DDE2EC;padding:14px 18px;font-family:${MAIL_FONT};text-align:right;">
+        <div class="t-dim" style="font-size:12px;line-height:1.6;color:#6A7388;">مدة الصلاحية</div>
+        <div class="t-h" style="font-size:15px;line-height:1.7;font-weight:700;color:#10131A;">ساعة واحدة</div>
+      </td>
+      <td width="50%" valign="top" style="padding:14px 18px;font-family:${MAIL_FONT};text-align:right;">
+        <div class="t-dim" style="font-size:12px;line-height:1.6;color:#6A7388;">الاستخدام</div>
+        <div class="t-h" style="font-size:15px;line-height:1.7;font-weight:700;color:#10131A;">مرة واحدة فقط</div>
+      </td>
+    </tr></table>`,
+    mGap(24),
+    mSmall('إذا لم يعمل الزر، انسخ هذا الرابط والصقه في المتصفح:'),
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="box bd" bgcolor="#F5F7FB" style="background-color:#F5F7FB;border:1px solid #DDE2EC;border-radius:10px;padding:12px 14px;font-family:${MAIL_MONO};font-size:11.5px;line-height:1.7;direction:ltr;text-align:left;word-break:break-all;"><a class="ink" href="${link}" target="_blank" style="color:${t.ink};text-decoration:underline;">${link}</a></td></tr></table>`,
+    mGap(28),
+    mHr(),
+    mGap(22),
+    `<p class="t-h" style="margin:0 0 4px;font-family:${MAIL_FONT};font-size:15px;line-height:1.8;font-weight:800;color:#10131A;text-align:right;">لم تطلب هذا؟</p>`,
+    mP('تجاهل الرسالة؛ كلمة مرورك لن تتغير ولن يحدث شيء في حسابك. وإن وصلتك رسائل كهذه باستمرار فغيّر كلمة مرور بريدك الإلكتروني.', 'font-size:14px;'),
+    mP('<strong>Glitch Q لن يطلب منك كلمة المرور أبداً</strong> — لا عبر الإيميل ولا واتساب ولا أي رسالة أخرى.', 'font-size:14px;'),
+  ].join('\n');
+  return mailShell({
+    tone: 'cobalt',
+    label: 'أمان الحساب',
+    title: 'إعادة تعيين كلمة المرور — Glitch Q',
+    preheader: 'اضغط الزر لاختيار كلمة مرور جديدة — الرابط صالح لمدة ساعة واحدة ويعمل مرة واحدة فقط.',
+    body,
+    note: 'وصلتك هذه الرسالة لأن أحداً طلب إعادة تعيين كلمة المرور لحساب مرتبط بهذا البريد.',
+  });
 }
 
-function buildLoginAlertText({ device, place, when }) {
-  return `تسجيل دخول جديد إلى حسابك — Glitch Q
+function buildResetText(resetLink) {
+  return `إعادة تعيين كلمة المرور — Glitch Q
 
-لاحظنا تسجيل دخول إلى حسابك من جهاز لم نعرفه من قبل:
-الجهاز: ${device}
-الموقع التقريبي: ${place}
-الوقت: ${when}
+وصلنا طلب لتعيين كلمة مرور جديدة لحسابك في Glitch Q.
+افتح الرابط التالي واختر كلمة المرور الجديدة:
 
-كنت أنت؟ لا تحتاج لفعل أي شيء.
-لم تكن أنت؟ ادخل إلى حسابك ← إعدادات الحساب، غيّر كلمة المرور فوراً ثم اضغط «تسجيل الخروج من كل الأجهزة».
+${resetLink}
 
-وصلتك هذه الرسالة لأنك فعّلت «تنبيه الدخول من جهاز جديد» ويمكنك إيقافه في أي وقت.
+- الرابط صالح لمدة ساعة واحدة ويعمل مرة واحدة فقط.
+
+لم تطلب هذا؟
+تجاهل الرسالة؛ كلمة مرورك لن تتغير ولن يحدث شيء في حسابك. وإن وصلتك رسائل كهذه باستمرار فغيّر كلمة مرور بريدك الإلكتروني.
+
+Glitch Q لن يطلب منك كلمة المرور أبداً — لا عبر الإيميل ولا واتساب ولا أي رسالة أخرى.
+
 Glitch Q`;
 }
 
+/* ── 2) order delivered: the code ────────────────────────────────────── */
 function buildCodeEmail({ product, code, orderId }) {
-  const SITE = 'https://glitchqq.github.io/glitch-q/';
-  const year = new Date().getFullYear();
-  const font = "Tahoma,'Segoe UI',Arial,sans-serif";
-  return `<!DOCTYPE html>
-<html dir="rtl" lang="ar" xmlns="http://www.w3.org/1999/xhtml">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<meta name="supported-color-schemes" content="light dark">
-<title>طلبك جاهز — Glitch Q</title>
-</head>
-<body style="margin:0;padding:0;background-color:#f4f1fb;" bgcolor="#f4f1fb">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f4f1fb;font-size:1px;line-height:1px;">كودك جاهز للاستخدام.&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f4f1fb" style="background-color:#f4f1fb;">
-<tr><td align="center" style="padding:28px 12px;">
-  <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="width:560px;max-width:100%;background-color:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #e4dcf5;">
-    <tr><td height="6" bgcolor="#c026d3" style="height:6px;font-size:0;line-height:0;background-color:#c026d3;background-image:linear-gradient(90deg,#7c3aed,#c026d3);">&nbsp;</td></tr>
-    <tr><td align="center" bgcolor="#4c1d95" style="background-color:#4c1d95;padding:30px 24px 26px;">
-      <div style="font-family:${font};font-size:28px;line-height:1.2;font-weight:800;letter-spacing:6px;color:#ffffff;direction:ltr;">GLITCH <span style="color:#f5d0fe;">Q</span></div>
-    </td></tr>
-    <tr><td align="center" bgcolor="#ffffff" style="background-color:#ffffff;padding:30px 32px 6px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
-        <td align="center" valign="middle" width="64" height="64" bgcolor="#dcfce7" style="width:64px;height:64px;background-color:#dcfce7;border-radius:32px;font-size:28px;line-height:64px;text-align:center;">&#9989;</td>
-      </tr></table>
-      <h1 style="font-family:${font};margin:18px 0 10px;font-size:22px;line-height:1.5;font-weight:800;color:#1e1b3a;text-align:center;">طلبك جاهز!</h1>
-      <p style="font-family:${font};margin:0;font-size:15px;line-height:2;color:#4b4668;text-align:center;">شكراً لثقتك بـ <strong style="color:#7c3aed;">Glitch Q</strong>. هذا هو الكود الخاص بطلبك:</p>
-    </td></tr>
-    <tr><td bgcolor="#ffffff" style="background-color:#ffffff;padding:16px 32px 4px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #ece6f8;border-radius:12px;border-collapse:separate;overflow:hidden;">
-        <tr><td bgcolor="#faf5ff" style="background-color:#faf5ff;border-bottom:1px solid #ece6f8;padding:12px 16px;font-family:${font};font-size:13px;color:#6b6585;text-align:right;width:30%;">المنتج</td>
-            <td bgcolor="#faf5ff" style="background-color:#faf5ff;border-bottom:1px solid #ece6f8;padding:12px 16px;font-family:${font};font-size:14px;font-weight:700;color:#1e1b3a;text-align:right;">${escHtml(product || '—')}</td></tr>
-        ${orderId ? `<tr><td bgcolor="#faf5ff" style="background-color:#faf5ff;padding:12px 16px;font-family:${font};font-size:13px;color:#6b6585;text-align:right;width:30%;">رقم الطلب</td>
-            <td bgcolor="#faf5ff" style="background-color:#faf5ff;padding:12px 16px;font-family:${font};font-size:13px;font-weight:700;color:#1e1b3a;text-align:right;direction:ltr;">${escHtml(orderId)}</td></tr>` : ''}
-      </table>
-    </td></tr>
-    <tr><td align="center" bgcolor="#ffffff" style="background-color:#ffffff;padding:14px 32px 6px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td align="center" bgcolor="#1e1b3a" style="background-color:#1e1b3a;border-radius:12px;padding:20px 12px;">
-          <div style="font-family:${font};font-size:12px;color:#c4b5fd;margin-bottom:8px;">الكود</div>
-          <div style="font-family:'Courier New',Courier,monospace;font-size:22px;line-height:1.5;font-weight:800;letter-spacing:2px;color:#ffffff;direction:ltr;word-break:break-all;">${escHtml(code)}</div>
-        </td>
-      </tr></table>
-    </td></tr>
-    <tr><td bgcolor="#ffffff" style="background-color:#ffffff;padding:12px 32px 6px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td bgcolor="#fffbeb" style="background-color:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:14px 16px;font-family:${font};font-size:13px;line-height:1.9;color:#92400e;text-align:right;"><strong>تنبيه:</strong> لا تشارك الكود مع أي شخص، وفعّله في أقرب وقت. إن واجهت أي مشكلة تواصل معنا عبر الدعم في الموقع.</td>
-      </tr></table>
-    </td></tr>
-    <tr><td align="center" bgcolor="#ffffff" style="background-color:#ffffff;padding:20px 32px 28px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
-        <td align="center" bgcolor="#7c3aed" style="background-color:#7c3aed;border-radius:12px;">
-          <a href="${SITE}" target="_blank" style="display:inline-block;font-family:${font};font-size:15px;line-height:1.4;font-weight:800;color:#ffffff;text-decoration:none;padding:14px 40px;border-radius:12px;">فتح Glitch Q</a>
-        </td>
-      </tr></table>
-    </td></tr>
-    <tr><td align="center" bgcolor="#f8f5ff" style="background-color:#f8f5ff;border-top:1px solid #ece6f8;padding:18px 24px;">
-      <p style="font-family:${font};margin:0;font-size:11px;line-height:1.7;color:#8a85a0;">هذه رسالة تلقائية، يرجى عدم الرد عليها. &copy; ${year} Glitch Q</p>
-    </td></tr>
-  </table>
-</td></tr>
-</table>
-</body>
-</html>`;
+  const t = MAIL_TONE.mint;
+  const raw = String(code == null ? '' : code);
+  const longest = Math.max(1, ...raw.split(/\r?\n/).map((l) => l.length));
+  const size = longest <= 19 ? 26 : longest <= 30 ? 20 : 16;
+  const ticket = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0A0C10" style="background-color:#0A0C10;border:1px solid #252B38;border-radius:14px;border-collapse:separate;">
+      <tr><td align="center" style="padding:20px 22px 16px;font-family:${MAIL_FONT};">
+        <div style="font-size:12px;line-height:1.6;color:#9AA3B5;">المنتج</div>
+        <div style="font-size:17px;line-height:1.7;font-weight:700;color:#F2F4F8;">${escHtml(product || '—')}</div>
+      </td></tr>
+      <tr><td style="padding:0 22px;"><div style="height:0;line-height:0;font-size:0;border-top:1px dashed #323A4B;">&nbsp;</div></td></tr>
+      <tr><td align="center" style="padding:18px 22px 22px;font-family:${MAIL_FONT};">
+        <div style="font-size:12px;line-height:1.6;color:#9AA3B5;margin-bottom:6px;">الكود</div>
+        <div class="${size === 26 ? 'code-lg' : ''}" dir="ltr" style="font-family:${MAIL_MONO};font-size:${size}px;line-height:1.5;font-weight:700;letter-spacing:${size === 26 ? 2 : 1}px;color:#3DDC9F;text-align:center;white-space:pre-wrap;word-break:break-all;-webkit-user-select:all;user-select:all;">${escHtml(raw)}</div>
+      </td></tr>${orderId ? `
+      <tr><td align="center" bgcolor="#11141B" style="background-color:#11141B;border-top:1px solid #252B38;border-radius:0 0 13px 13px;padding:11px 22px;font-family:${MAIL_FONT};font-size:12px;line-height:1.7;color:#9AA3B5;">رقم الطلب &nbsp;<span dir="ltr" style="font-family:${MAIL_MONO};color:#D5DAE6;">${escHtml(orderId)}</span></td></tr>` : ''}
+    </table>`;
+  const body = [
+    mH1('طلبك جاهز'),
+    mP('شكراً لشرائك من Glitch Q. هذا هو الكود الخاص بطلبك، وهو جاهز للاستخدام الآن.'),
+    ticket,
+    mGap(10),
+    mSmall('لتنسخ الكود: اضغط عليه مطولاً على الجوال، أو حدّده بالماوس على الكمبيوتر.'),
+    mGap(14),
+    mNote(MAIL_TONE.gold, '<strong>لا تشارك الكود مع أحد</strong> — من يملكه يستطيع استخدامه.'),
+    mGap(26),
+    `<p class="t-h" style="margin:0 0 14px;font-family:${MAIL_FONT};font-size:16px;line-height:1.6;font-weight:800;color:#10131A;text-align:right;">طريقة التفعيل على PlayStation</p>`,
+    mSteps([
+      'افتح <strong>PlayStation Store</strong> من جهازك أو من المتصفح.',
+      'اختر <strong>«استرداد الرموز»</strong> (Redeem Codes).',
+      'أدخل الكود أعلاه ثم أكّد.',
+    ], t),
+    mGap(6),
+    mNote(t, '<strong>تأكد من المنطقة:</strong> بطاقات PlayStation مرتبطة بمنطقة محددة، فيجب أن تطابق منطقة حسابك منطقة البطاقة قبل إدخال الكود.'),
+    mGap(26),
+    mP(`الكود لا يعمل؟ راسلنا من صفحة الدعم في الموقع${orderId ? ' وأرسل رقم الطلب' : ''}، وسنتابع معك.`, 'font-size:14px;'),
+    mButton(MAIL_SITE, 'فتح Glitch Q', t),
+    mGap(10),
+  ].join('\n');
+  return mailShell({
+    tone: 'mint',
+    label: 'تسليم الطلب',
+    title: 'طلبك جاهز — Glitch Q',
+    preheader: 'كودك جاهز. افتح الرسالة لنسخه وتفعيله.',
+    body,
+    note: 'وصلتك هذه الرسالة لأن طلباً مرتبطاً بهذا البريد تم تسليمه من متجر Glitch Q.',
+  });
 }
 
 function buildCodeText({ product, code, orderId }) {
@@ -1605,20 +1641,71 @@ function buildCodeText({ product, code, orderId }) {
 الكود:
 ${code}
 
-تنبيه: لا تشارك الكود مع أي شخص وفعّله في أقرب وقت. إن واجهت مشكلة تواصل معنا عبر الدعم في الموقع.
+لا تشارك الكود مع أحد — من يملكه يستطيع استخدامه.
+
+طريقة التفعيل على PlayStation:
+1) افتح PlayStation Store من جهازك أو من المتصفح.
+2) اختر «استرداد الرموز» (Redeem Codes).
+3) أدخل الكود ثم أكّد.
+
+تأكد من المنطقة: بطاقات PlayStation مرتبطة بمنطقة محددة، فيجب أن تطابق منطقة حسابك منطقة البطاقة قبل إدخال الكود.
+
+الكود لا يعمل؟ راسلنا من صفحة الدعم في الموقع${orderId ? ' وأرسل رقم الطلب' : ''}.
 
 Glitch Q`;
 }
 
-function buildResetText(resetLink) {
-  return `إعادة تعيين كلمة المرور — Glitch Q
+/* ── 3) new-device login alert ───────────────────────────────────────── */
+function buildLoginAlertEmail({ device, place, when }) {
+  const t = MAIL_TONE.gold;
+  const red = MAIL_TONE.red;
+  const body = [
+    mH1('تسجيل دخول جديد إلى حسابك'),
+    mP('سُجّل دخول إلى حسابك في Glitch Q من جهاز لم نتعرّف عليه من قبل:'),
+    mFacts([
+      ['الجهاز', escHtml(device)],
+      ['الموقع التقريبي', escHtml(place)],
+      ['الوقت', escHtml(when)],
+    ]),
+    mGap(8),
+    mSmall('الموقع تقريبي ويُستنتج من عنوان الشبكة، وقد لا يطابق مكانك الفعلي.'),
+    mGap(16),
+    mBox(`<div class="t-h" style="font-size:15px;line-height:1.8;font-weight:800;color:#10131A;">كنت أنت؟</div><div class="t-p" style="font-size:14px;line-height:1.9;color:#3A4357;">لا تحتاج لأي إجراء.</div>`),
+    mGap(12),
+    mTintBox(red, `<div class="rink" style="font-size:15px;line-height:1.8;font-weight:800;color:${red.ink};margin-bottom:12px;">لم تكن أنت؟ تحرّك الآن</div>${mSteps([
+      'افتح حسابك ← <strong>إعدادات الحساب</strong> وغيّر كلمة المرور.',
+      'اضغط <strong>«تسجيل الخروج من كل الأجهزة»</strong>.',
+      'إن كنت تستخدم كلمة المرور نفسها في مكان آخر، فغيّرها هناك أيضاً.',
+    ], red)}`),
+    mGap(26),
+    mButton(MAIL_SITE, 'فتح حسابي', t),
+    mGap(10),
+  ].join('\n');
+  return mailShell({
+    tone: 'gold',
+    label: 'تنبيه أمني',
+    title: 'تسجيل دخول جديد — Glitch Q',
+    preheader: 'سُجّل دخول إلى حسابك من جهاز جديد. إن لم تكن أنت فأمّن حسابك الآن.',
+    body,
+    note: 'وصلتك هذه الرسالة لأنك فعّلت «تنبيه الدخول من جهاز جديد» في إعدادات حسابك، ويمكنك إيقافه في أي وقت.',
+  });
+}
 
-وصلنا طلب لإعادة تعيين كلمة المرور الخاصة بحسابك في Glitch Q.
-افتح الرابط التالي لاختيار كلمة مرور جديدة (صالح لمدة ساعة واحدة ويعمل مرة واحدة فقط):
+function buildLoginAlertText({ device, place, when }) {
+  return `تسجيل دخول جديد إلى حسابك — Glitch Q
 
-${resetLink}
+سُجّل دخول إلى حسابك من جهاز لم نتعرّف عليه من قبل:
+الجهاز: ${device}
+الموقع التقريبي: ${place} (يُستنتج من عنوان الشبكة وقد لا يطابق مكانك الفعلي)
+الوقت: ${when}
 
-لم تطلب هذا؟ تجاهل هذه الرسالة وستبقى كلمة مرورك كما هي.
+كنت أنت؟ لا تحتاج لأي إجراء.
 
+لم تكن أنت؟
+1) افتح حسابك ← إعدادات الحساب وغيّر كلمة المرور.
+2) اضغط «تسجيل الخروج من كل الأجهزة».
+3) إن كنت تستخدم كلمة المرور نفسها في مكان آخر، فغيّرها هناك أيضاً.
+
+وصلتك هذه الرسالة لأنك فعّلت «تنبيه الدخول من جهاز جديد» ويمكنك إيقافه في أي وقت.
 Glitch Q`;
 }

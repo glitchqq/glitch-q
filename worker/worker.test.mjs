@@ -456,5 +456,34 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
 { const ip = '7.7.7.7'; calls = []; for (let i = 0; i < 10; i++) await call('/reset-password', { email: `v${i}@x.com` }, { ip });
   ck('reset-password: per-IP cap (exactly 5 mails from one IP, 10 attempts)', fs.brevo.length === 5, fs.brevo.length); }
 
+/* ───────── e-mail templates (pure functions: pulled out of worker.js and called directly) ───────── */
+{
+  const src = readFileSync(new URL('./worker.js', import.meta.url), 'utf8');
+  const start = src.lastIndexOf('/* ═══', src.indexOf('function escHtml'));
+  const T = new Function(src.slice(start) + ';return {buildResetEmail,buildResetText,buildCodeEmail,buildCodeText,buildLoginAlertEmail,buildLoginAlertText};')();
+  const evil = '<img src=x onerror=alert(1)>"&';
+  const link = 'https://glitch-q.web.app/reset.html?mode=resetPassword&oobCode=abc123';
+  const reset = T.buildResetEmail(link), code = T.buildCodeEmail({ product: evil, code: 'AAAA-BBBB\n<b>CCCC</b>', orderId: evil });
+  const alert = T.buildLoginAlertEmail({ device: evil, place: '<script>x</script>', when: evil });
+  const all = { reset, code, alert };
+
+  for (const [n, h] of Object.entries(all)) {
+    ck(`mail ${n}: RTL Arabic document, dark-mode block, preheader`, /<html dir="rtl" lang="ar"/.test(h) && /prefers-color-scheme:dark/.test(h) && /display:none;max-height:0/.test(h));
+    ck(`mail ${n}: no scripts, remote images or plain-http links`, !/<script|<img|<iframe|http:\/\//i.test(h.replace(/xmlns="http:\/\/www\.w3\.org\/1999\/xhtml"/, '')));
+    ck(`mail ${n}: every href is https`, [...h.matchAll(/href="([^"]*)"/g)].every(m => m[1].startsWith('https://')));
+    ck(`mail ${n}: old purple palette is gone`, !/7c3aed|c026d3|4c1d95/i.test(h));
+  }
+  ck('mail reset: link is in the button, the fallback and the text version', (reset.match(/href="https:\/\/glitch-q\.web\.app\/reset\.html\?mode=resetPassword&amp;oobCode=abc123"/g) || []).length === 2 && T.buildResetText(link).includes(link));
+  ck('mail reset: states the 1-hour / single-use rule and the never-ask-for-password promise', /ساعة واحدة/.test(reset) && /مرة واحدة فقط/.test(reset) && /لن يطلب منك كلمة المرور أبداً/.test(reset));
+  ck('mail code: product, order id and code are escaped (no live markup)', !/<img src=x|<b>CCCC/.test(code) && /&lt;img src=x onerror=alert\(1\)&gt;&quot;&amp;/.test(code) && /&lt;b&gt;CCCC&lt;\/b&gt;/.test(code));
+  ck('mail code: multi-line codes keep their line breaks', /white-space:pre-wrap/.test(code) && /AAAA-BBBB\n&lt;b&gt;/.test(code));
+  ck('mail code: the preheader never contains the code', !/AAAA-BBBB/.test(code.slice(0, code.indexOf('</div>'))));
+  ck('mail code: numbered redemption steps + region reminder', /استرداد الرموز/.test(code) && /تأكد من المنطقة/.test(code));
+  { const plain = T.buildCodeEmail({ product: 'PSN 10 EUR', code: 'ZZZZ-1111-2222' }); ck('mail code: without an order id the order row is omitted', !/رقم الطلب/.test(plain.replace(/وأرسل رقم الطلب/g, ''))); }
+  ck('mail alert: device / place / time are escaped', !/<script>x|<img src=x/.test(alert) && /&lt;script&gt;x&lt;\/script&gt;/.test(alert));
+  ck('mail alert: says the place is approximate and gives the "not you" steps', /الموقع تقريبي/.test(alert) && /تسجيل الخروج من كل الأجهزة/.test(alert));
+  ck('mail text versions carry the same facts', T.buildCodeText({ product: 'P', code: 'C-1', orderId: 'O1' }).includes('C-1') && T.buildLoginAlertText({ device: 'D', place: 'Pl', when: 'W' }).includes('الجهاز: D'));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
