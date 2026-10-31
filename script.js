@@ -70,7 +70,8 @@ const T={
     co_baridimob:'BaridiMob',co_hand:'يد بيد',
     co_rip:'RIP للتحويل',co_name:'الاسم الكامل (كما في بريدي موب)',
     co_upload:'ارفع صورة الوصل (max 5MB)',
-    co_hand_note:'التسليم يد بيد في ولاية تلمسان فقط',
+    co_hand_note:'التسليم يد بيد في ولاية تلمسان فقط. اكتب رقم هاتفك وسنتواصل معك للاتفاق على مكان التسليم.',
+    co_hand_phone:'رقم هاتفك للتواصل والاتفاق على مكان التسليم',
     co_phone:'رقم هاتفك',co_email_recv:'البريد لاستلام الكود',
     co_submit:'إرسال الطلب',co_email_tab:'إيميل',co_phone_tab:'هاتف',
     login_title:'تسجيل الدخول',login_sub:'سجل دخولك لتجميع النقاط والمكافآت',
@@ -202,7 +203,8 @@ const T={
     co_baridimob:'BaridiMob',co_hand:'Hand Delivery',
     co_rip:'Transfer RIP',co_name:'Full Name (as in BaridiMob)',
     co_upload:'Upload receipt image (max 5MB)',
-    co_hand_note:'Hand delivery in Tlemcen only',
+    co_hand_note:'Hand delivery in Tlemcen only. Enter your phone number and we will contact you to agree on the meeting place.',
+    co_hand_phone:'Your phone number (to agree on the meeting place)',
     co_phone:'Your phone number',co_email_recv:'Email to receive code',
     co_submit:'Submit Order',co_email_tab:'Email',co_phone_tab:'Phone',
     login_title:'Sign In',login_sub:'Sign in to collect points and rewards',
@@ -346,7 +348,7 @@ function applyTranslations(){
   // Home sections
   st('featuredTitle',t('sec_featured'));st('seeAllBtn',t('see_all'));
   st('catsTitle',t('sec_cats'));st('leadersTitle',t('sec_leaders'));
-  st('missionsTitle',t('sec_missions'));st('offerTitle',t('offer_title'));
+  st('missionsTitle',t('sec_missions'));st('offerTitle',t('offer_title'));renderOffer();
   st('offerShopBtn',t('offer_shop'));st('allMissionsBtn',t('all_missions'));
   st('spinForPtsBtn',t('leaders_spin'));
 
@@ -410,7 +412,7 @@ function applyTranslations(){
   st('coTitle',t('co_title'));sp('cpnInp','placeholder',t('co_cpn'));st('applyBtn',t('co_apply'));
   st('ripLabel',t('co_rip'));st('handLabel',t('co_hand'));
   sp('senderN','placeholder',t('co_name'));st('uploadHint',t('co_upload'));
-  st('handNote',t('co_hand_note'));sp('handPhone','placeholder',t('co_phone'));
+  st('handNote',t('co_hand_note'));sp('handPhone','placeholder',t('co_hand_phone'));
   sp('recvEmail','placeholder',t('co_email_recv'));sp('recvPhone','placeholder',t('co_phone'));
   st('emailLabel',t('co_email_tab'));st('phoneLabel',t('co_phone_tab'));
   const submitLbl=document.getElementById('submitLabel');if(submitLbl)submitLbl.textContent=t('co_submit');
@@ -780,11 +782,11 @@ window.rejectConsent=function(){
 /* ══ LOADER ══ */
 function runLoader(){
   const bar=$('ldBar'),txt=$('ldTxt');let p=0;
-  const iv=setInterval(()=>{p+=Math.random()*18+6;if(p>100)p=100;
+  const iv=setInterval(()=>{p+=Math.random()*25+15;if(!S.ready&&p>90)p=90;if(p>100)p=100;   /* waits at 90% until the store has rendered */
     if(bar)bar.style.width=p+'%';
     if(txt)txt.textContent=p<25?t('loading_txt'):p<55?t('loading_init'):p<85?t('loading_data'):t('loading_done');
-    if(p>=100){clearInterval(iv);setTimeout(()=>$('loader')?.classList.add('gone'),600);}
-  },100);
+    if(p>=100){clearInterval(iv);setTimeout(()=>$('loader')?.classList.add('gone'),250);}
+  },90);
 }
 
 /* ══ PARTICLES ══ */
@@ -803,15 +805,22 @@ function fireConfetti(n=60){
 /* ══════════════════════════════════════════
    SETTINGS & FIREBASE
 ══════════════════════════════════════════ */
+/* The last good copy of the public catalogue is kept on the device: the next visit paints instantly from it
+   while the fresh copy is fetched in the background (display only — the Worker always prices orders itself). */
+const SETTINGS_CACHE_KEY='gq_settings_v1';
+function readSettingsCache(){try{const c=JSON.parse(localStorage.getItem(SETTINGS_CACHE_KEY)||'null');if(c&&Array.isArray(c.cats)&&Array.isArray(c.prods)&&c.prods.length&&Date.now()-c.ts<7*864e5)return c;}catch(e){}return null;}
+function writeSettingsCache(){try{localStorage.setItem(SETTINGS_CACHE_KEY,JSON.stringify({ts:Date.now(),cats:CATS,prods:PRODS,disc:DISC}));}catch(e){}}
 async function loadSettings(){
   /* all documents are fetched in parallel (was one-by-one: up to ~6s on slow networks) */
   const get=n=>db.collection('settings').doc(n).get().catch(()=>null);
   const [dCats,dProds,dDisc,dMaint,dReg]=await Promise.all(['categories','products','discount','maintenance','regions'].map(get));   /* the coupon list is never downloaded: codes are checked by the server */
   try{CATS=dCats&&dCats.exists&&Array.isArray(dCats.data().categories)?dCats.data().categories:DEFAULT_CATS;}catch(e){CATS=DEFAULT_CATS;}
-  try{if(dProds&&dProds.exists&&Array.isArray(dProds.data().products)&&dProds.data().products.length)PRODS=dProds.data().products;else PRODS=DEFAULT_PRODS;}catch(e){PRODS=DEFAULT_PRODS;}
+  let realCatalog=false;
+  try{if(dProds&&dProds.exists&&Array.isArray(dProds.data().products)&&dProds.data().products.length){PRODS=dProds.data().products;realCatalog=true;}else PRODS=DEFAULT_PRODS;}catch(e){PRODS=DEFAULT_PRODS;}
   try{const d=dDisc;if(d&&d.exists){const x=d.data(),td=new Date().toISOString().split('T')[0];DISC=(x.active&&(!x.expiry||x.expiry>=td)&&x.value>0&&x.value<=100)?{active:true,value:x.value}:{active:false,value:0};}}catch(e){}
   try{if(dReg){const cfg=normRegCfg(dReg.exists?dReg.data():null);try{localStorage.setItem('gq_regcfg',JSON.stringify(cfg));}catch(e){}applyRegionConfig(cfg);}}catch(e){}
   try{const d=dMaint;if(d&&d.exists&&d.data().active){document.body.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0015;color:#a78bca;font-family:Cairo,sans-serif;text-align:center"><div><div style="font-size:60px;margin-bottom:20px">🔧</div><h2 style="color:#00E5FF;font-family:Orbitron,sans-serif;margin-bottom:10px">GLITCH Q</h2><p style="font-size:16px">${t('t_maintenance')}</p></div></div>`;return false;}}catch(e){}
+  if(realCatalog)writeSettingsCache();
   return true;
 }
 
@@ -827,7 +836,7 @@ function getValText(prod){if(prod.cur==='month')return`${prod.val} ${t('month')}
 ══════════════════════════════════════════ */
 function renderHome(){
   renderHomeProds();renderHomeCats();renderLeaderboard();
-  renderMissions('missionsWrap');initOfferCountdown();initMissionTimer();
+  renderMissions('missionsWrap');initOffer();initMissionTimer();
 }
 
 function renderHomeProds(){
@@ -925,7 +934,7 @@ function openCheckoutForProd(prodId){
   const ci=$('coProdInfo');
   if(ci)ci.innerHTML=`<div class="co-pname">${san(prod.name)} — ${san(valText)}</div><div class="co-pprice">${san(prod.sub||'')} · ${price.toLocaleString()} دج</div>`;
   setText('coTotal',price.toLocaleString()+' دج');
-  const cr=$('cpnRes');if(cr)cr.textContent='';const ci2=$('cpnInp');if(ci2)ci2.value='';
+  const cr=$('cpnRes');if(cr)cr.textContent='';const ci2=$('cpnInp');if(ci2)ci2.value='';if(S._offerCode&&ci2)ci2.value=S._offerCode;
   openM('checkoutModal');
 }
 window.openCheckoutForProd=openCheckoutForProd;
@@ -1010,7 +1019,7 @@ function goCheckout(){
   const ci=$('coProdInfo');
   if(ci)ci.innerHTML=`<div class="co-pname">${S.cart.map(c=>`${san(c.name||'')} x${c.qty||1}`).join(' + ')}</div><div class="co-pprice">${tot.toLocaleString()} دج</div>`;
   setText('coTotal',tot.toLocaleString()+' دج');
-  const cr=$('cpnRes');if(cr)cr.textContent='';const ci2=$('cpnInp');if(ci2)ci2.value='';
+  const cr=$('cpnRes');if(cr)cr.textContent='';const ci2=$('cpnInp');if(ci2)ci2.value='';if(S._offerCode&&ci2)ci2.value=S._offerCode;
   openM('checkoutModal');
 }
 window.goCheckout=goCheckout;
@@ -1036,12 +1045,15 @@ window.applyCpn=async()=>{
     res.innerHTML=`<span style="color:var(--red)">${r.status===429?t('t_too_many'):t('t_coupon_invalid')}</span>`;
   }
 };
-window.applyOfferCode=()=>{if(S.cart.length){goCheckout();}else{goPage('shop');toast(t('t_choose_prod'),'twarn');}};
+window.applyOfferCode=()=>{if(S._offer)S._offerCode=S._offer.code;try{navigator.clipboard.writeText(S._offerCode||'');}catch(e){}if(S.cart.length){goCheckout();}else{goPage('shop');toast(t('t_choose_prod'),'twarn');}};
 
 /* ══════════════════════════════════════════
    PAYMENT
 ══════════════════════════════════════════ */
-window.setPay=m=>{if(!['baridimob','hand'].includes(m))return;S.pay=m;$('tabBaridi').classList.toggle('on',m==='baridimob');$('tabHand').classList.toggle('on',m==='hand');$('baridiF').classList.toggle('hidden',m!=='baridimob');$('handF').classList.toggle('hidden',m!=='hand');};
+window.setPay=m=>{if(!['baridimob','hand'].includes(m))return;S.pay=m;$('tabBaridi').classList.toggle('on',m==='baridimob');$('tabHand').classList.toggle('on',m==='hand');$('baridiF').classList.toggle('hidden',m!=='baridimob');$('handF').classList.toggle('hidden',m!=='hand');
+  /* hand delivery: the only contact needed is ONE phone number, so the e-mail/phone choice and its fields are hidden */
+  const hand=m==='hand';$('recvTabs').classList.toggle('hidden',hand);
+  $('emailF').classList.toggle('hidden',hand||S.recv!=='email');$('phoneF').classList.toggle('hidden',hand||S.recv!=='phone');};
 window.setRecv=m=>{if(!['email','phone'].includes(m))return;S.recv=m;$('recvEM').classList.toggle('on',m==='email');$('recvPH').classList.toggle('on',m==='phone');$('emailF').classList.toggle('hidden',m!=='email');$('phoneF').classList.toggle('hidden',m!=='phone');};
 window.copyRIP=()=>navigator.clipboard.writeText('00799999004390466974').then(()=>toast(t('t_rip_copied'),'tok')).catch(()=>{});
 window.onFile=ev=>{const f=ev.target.files[0];if(!f)return;$('upH').classList.add('hidden');$('upD').classList.remove('hidden');setText('upDN',f.name.slice(0,30));};
@@ -1065,9 +1077,10 @@ window.submitOrder=async()=>{
   if(!items.length)return;
   const rE=($('recvEmail')?.value||'').trim().slice(0,254);
   const rP=($('recvPhone')?.value||'').trim().slice(0,20);
-  const data={items,coupon:S.cpn?.code||'',pay:S.pay,recv:S.recv};
+  const hand=S.pay==='hand';
+  const data={items,coupon:S.cpn?.code||'',pay:S.pay,recv:hand?'phone':S.recv};
   let files={};
-  if(S.recv==='email'){if(!isValidEmail(rE)){toast(t('t_email_invalid'),'terr');return;}data.email=rE;}
+  if(!hand&&S.recv==='email'){if(!isValidEmail(rE)){toast(t('t_email_invalid'),'terr');return;}data.email=rE;}
   if(S.pay==='baridimob'){
     const name=san(($('senderN')?.value||'').trim()).slice(0,100);
     const fi=$('recFile');
@@ -1593,14 +1606,36 @@ async function checkAbuse(){
 /* ══════════════════════════════════════════
    TIMERS
 ══════════════════════════════════════════ */
-function initOfferCountdown(){
-  let end=localStorage.getItem('gq_offerEnd');
-  if(!end||Date.now()>parseInt(end)){end=String(Date.now()+48*3600000);localStorage.setItem('gq_offerEnd',end);}
-  setInterval(()=>{
-    const rem=Math.max(0,parseInt(end)-Date.now());
+/* The home-page offer shows ONLY a coupon the owner marked "featured" in the admin panel (real code, real discount, real expiry). */
+let _offerTimer=null;
+async function initOffer(){
+  try{const r=await wkCall('/offer',{},{auth:false});S._offer=(r.data&&r.data.ok)?r.data:null;}catch(e){S._offer=null;}
+  renderOffer();
+}
+function renderOffer(){
+  const card=$('offerCard');if(!card)return;
+  clearInterval(_offerTimer);
+  const o=S._offer;
+  if(!o){card.classList.add('hidden');return;}
+  const en=S.lang==='en';
+  const endMs=o.expiry?Date.parse(o.expiry+'T23:59:59+01:00'):0;
+  if(endMs&&Date.now()>endMs){card.classList.add('hidden');return;}
+  card.classList.remove('hidden');
+  setText('offerPct',o.type==='percent'?o.value+'%':Number(o.value).toLocaleString()+(en?' DZD':' دج'));
+  setText('offerCode',o.code);
+  const d=$('offerDesc');
+  if(d){d.innerHTML=String(t('offer_desc')).split('\n').join('<br>');
+    if(typeof o.left==='number'&&o.left>0&&o.left<=50)d.appendChild(Object.assign(document.createElement('div'),{textContent:en?`Only ${o.left} uses left`:`متبقي ${o.left} استخدام فقط`,style:'margin-top:4px;color:var(--gold,#f59e0b);font-size:12px'}));}
+  const cnt=$('offerCnt');if(!cnt)return;
+  if(!endMs){cnt.classList.add('hidden');return;}
+  cnt.classList.remove('hidden');
+  const tick=()=>{
+    const rem=endMs-Date.now();
+    if(rem<=0){card.classList.add('hidden');clearInterval(_offerTimer);return;}
     const h=Math.floor(rem/3600000),m=Math.floor((rem%3600000)/60000),s=Math.floor((rem%60000)/1000);
     setText('offerCnt',`${String(h).padStart(2,'0')} : ${String(m).padStart(2,'0')} : ${String(s).padStart(2,'0')}`);
-  },1000);
+  };
+  tick();_offerTimer=setInterval(tick,1000);
 }
 
 function initMissionTimer(){
@@ -1802,14 +1837,18 @@ window.addEventListener('DOMContentLoaded',async()=>{
   initConsent();
   applyRegionConfig(REG_CFG);
 
-  /* Load settings from Firebase */
-  try{
-    const ok=await Promise.race([
-      loadSettings(),
-      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
-    ]);
-    if(ok===false)return;
-  }catch(e){PRODS=DEFAULT_PRODS;CATS=DEFAULT_CATS;}
+  /* Catalogue: paint at once from the last visit if we have one; otherwise wait up to 2.5s for Firebase.
+     The fresh copy always keeps loading in the background and replaces what is on screen when it arrives. */
+  const cached=readSettingsCache();
+  if(cached){CATS=cached.cats;PRODS=cached.prods;if(cached.disc)DISC=cached.disc;}
+  const live=loadSettings().catch(()=>false);
+  let late=!!cached;
+  if(!cached){
+    const ok=await Promise.race([live,new Promise(r=>setTimeout(()=>r('slow'),2500))]);
+    if(ok===false)return;                                   /* maintenance page is already showing */
+    if(ok==='slow'){PRODS=DEFAULT_PRODS;CATS=DEFAULT_CATS;late=true;}
+  }
+  if(late)live.then(ok=>{if(ok===false)return;try{renderHome();if(S.currentPage==='shop'){renderCatFilterBar();renderShopProds();}}catch(e){}});
 
   S.ready=true;updateCartBadge();updHeaderUI();
 

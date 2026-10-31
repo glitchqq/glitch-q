@@ -63,13 +63,14 @@ export default {
 
     try {
       const routes = {
-        '/health':                 () => json({ ok: true, v: 4 }, 200, cors),
+        '/health':                 () => json({ ok: true, v: 5 }, 200, cors),
         '/maintenance':            () => handleMaintenance(request, env, cors),
         '/ticker':                 () => handleTicker(request, env, cors),
         '/stats/visit':            () => handleVisit(request, env, cors),
         '/reset-password':         () => handleResetPassword(request, env, cors),
         '/leaderboard':            () => handleLeaderboard(request, env, cors),
         '/coupon/validate':        () => handleCouponValidate(request, env, cors),
+        '/offer':                  () => handleOffer(request, env, cors),
         '/order/create':           () => handleOrderCreate(request, env, cors),
         '/order/track':            () => handleOrderTrack(request, env, cors),
         '/report/create':          () => handleReportCreate(request, env, cors),
@@ -84,6 +85,7 @@ export default {
         '/account/login-alert':    () => handleLoginAlert(request, env, cors),
         '/support/ping':           () => handleSupportPing(request, env, cors),
         '/admin/notify':           () => handleAdminNotify(request, env, cors),
+        '/admin/send-code':        () => handleAdminSendCode(request, env, cors),
       };
       const h = Object.prototype.hasOwnProperty.call(routes, path) ? routes[path] : null;
       if (!h) return json({ error: 'Not found' }, 404, cors);
@@ -455,6 +457,33 @@ async function handleCouponValidate(request, env, cors) {
 }
 
 /* ═══════════════════════════════════════
+   HOME-PAGE OFFER — only a coupon the owner explicitly marked "featured" is ever shown.
+   Every other coupon code stays private.
+═══════════════════════════════════════ */
+let _offer = { at: 0, v: null };
+async function handleOffer(request, env, cors) {
+  if (request.method !== 'GET' && request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  if (hit('offer:' + clientIp(request), 60, 60000)) return json({ error: 'Too many requests' }, 429, cors);
+  const td = dzDay();
+  if (!_offer.v || Date.now() - _offer.at > 60000) {
+    const d = await fsGet(env, 'settings/coupons');
+    const list = Array.isArray(d.data.coupons) ? d.data.coupons : [];
+    const c = list.find(x => x && x.featured === true && couponMatches(x, String(x.code || '').toUpperCase().trim(), td));
+    _offer = { at: Date.now(), v: c ? {
+      ok: true,
+      code: cleanCode(c.code),
+      type: c.type === 'percent' ? 'percent' : 'fixed',
+      value: Number(c.value) || 0,
+      expiry: /^\d{4}-\d{2}-\d{2}$/.test(String(c.expiry || '')) ? c.expiry : null,
+      left: c.maxUses ? Math.max(0, Number(c.maxUses) - (Number(c.usedCount) || 0)) : null,
+    } : { ok: false } };
+  }
+  const v = _offer.v;
+  if (v.ok && v.expiry && v.expiry < td) return json({ ok: false }, 200, cors);   // expired since the cached read
+  return json(v, 200, cors);
+}
+
+/* ═══════════════════════════════════════
    CREATE ORDER — price, coupon, receipt and notification are all handled here
 ═══════════════════════════════════════ */
 async function handleOrderCreate(request, env, cors) {
@@ -534,6 +563,7 @@ async function handleOrderCreate(request, env, cors) {
     date: dzDate(),
     awarded: false,
   };
+  if (claims && RE_EMAIL.test(String(claims.email || ''))) doc.accountEmail = String(claims.email).toLowerCase();
   if (pay === 'hand') doc.phone = phone;
   if (pay === 'baridimob') doc.senderName = senderName;
 
@@ -837,6 +867,76 @@ async function handleAdminNotify(request, env, cors) {
   if (!isAdminClaims(a.claims, env)) return json({ error: 'Forbidden' }, 403, cors);
   const ok = await tgSend(env, cleanText(body.text, 1500));
   return json({ ok }, ok ? 200 : 502, cors);
+}
+
+/* ═══════════════════════════════════════
+   E-MAIL A DELIVERED CODE TO THE CUSTOMER (store owner only)
+   The recipient comes from the stored order / profile, never from the browser,
+   unless the owner is sending a one-off code with no order or customer attached.
+═══════════════════════════════════════ */
+const RE_UID = /^[A-Za-z0-9_-]{1,128}$/;
+function maskEmail(e) {
+  const [u, d] = String(e).split('@');
+  return (u.length <= 2 ? u[0] + '*' : u.slice(0, 2) + '***') + '@' + d;
+}
+async function sendBrevo(env, { to, subject, html, text }) {
+  if (!env.BREVO_API_KEY) return { ok: false, why: 'Email not configured' };
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: { 'api-key': env.BREVO_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sender: { name: 'Glitch Q', email: 'glitchq1q@gmail.com' }, to: [{ email: to }], subject, htmlContent: html, textContent: text }),
+  });
+  if (!res.ok) {
+    const eb = await res.json().catch(() => ({}));
+    console.error('CODE_BREVO_ERROR status=' + res.status + ' body=' + JSON.stringify(eb));
+    return { ok: false, why: 'Email provider refused the message' };
+  }
+  return { ok: true };
+}
+async function handleAdminSendCode(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  const body = await readJson(request, 4096);
+  if (!body) return json({ error: 'Invalid data' }, 400, cors);
+  const a = await who(body.idToken, env, cors, false);
+  if (a.err) return a.err;
+  if (!isAdminClaims(a.claims, env)) return json({ error: 'Forbidden' }, 403, cors);
+  if (hit('sendcode', 60, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+
+  const code = cleanText(body.code, 300);
+  if (!code) return json({ error: 'Code required' }, 400, cors);
+  let product = cleanText(body.product, 200);
+  const orderId = RE_UID.test(String(body.orderId || '')) ? String(body.orderId) : '';
+  const userId = RE_UID.test(String(body.userId || '')) ? String(body.userId) : '';
+  const okMail = v => RE_EMAIL.test(String(v || '').trim().toLowerCase()) ? String(v).trim().toLowerCase() : '';
+
+  let to = '';
+  if (orderId) {
+    const o = await fsGet(env, `orders/${orderId}`);
+    if (!o.exists) return json({ error: 'Order not found' }, 404, cors);
+    const d = o.data;
+    product = product || cleanText(d.product, 200);
+    if (d.receiveMethod === 'email') to = okMail(d.receiveContact);
+    if (!to) to = okMail(d.accountEmail);
+    if (!to && RE_UID.test(String(d.userId || '')) && d.userId !== 'guest') {
+      const u = await fsGet(env, `users/${d.userId}`);
+      if (u.exists) to = okMail(u.data.email);
+    }
+  } else if (userId) {
+    const u = await fsGet(env, `users/${userId}`);
+    if (u.exists) to = okMail(u.data.email);
+  } else {
+    to = okMail(body.to);
+  }
+  if (!to) return json({ error: 'No email address for this customer' }, 422, cors);
+
+  const sent = await sendBrevo(env, {
+    to,
+    subject: 'طلبك جاهز — الكود الخاص بك 🔑 Glitch Q',
+    html: buildCodeEmail({ product, code, orderId }),
+    text: buildCodeText({ product, code, orderId }),
+  });
+  if (!sent.ok) return json({ error: sent.why }, 502, cors);
+  return json({ ok: true, to: maskEmail(to) }, 200, cors);
 }
 /* ═══════════════════════════════════════
    PASSWORD RESET — Firebase link + Brevo email
@@ -1427,6 +1527,86 @@ function buildLoginAlertText({ device, place, when }) {
 لم تكن أنت؟ ادخل إلى حسابك ← إعدادات الحساب، غيّر كلمة المرور فوراً ثم اضغط «تسجيل الخروج من كل الأجهزة».
 
 وصلتك هذه الرسالة لأنك فعّلت «تنبيه الدخول من جهاز جديد» ويمكنك إيقافه في أي وقت.
+Glitch Q`;
+}
+
+function buildCodeEmail({ product, code, orderId }) {
+  const SITE = 'https://glitchqq.github.io/glitch-q/';
+  const year = new Date().getFullYear();
+  const font = "Tahoma,'Segoe UI',Arial,sans-serif";
+  return `<!DOCTYPE html>
+<html dir="rtl" lang="ar" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>طلبك جاهز — Glitch Q</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f1fb;" bgcolor="#f4f1fb">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f4f1fb;font-size:1px;line-height:1px;">كودك جاهز للاستخدام.&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f4f1fb" style="background-color:#f4f1fb;">
+<tr><td align="center" style="padding:28px 12px;">
+  <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="width:560px;max-width:100%;background-color:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #e4dcf5;">
+    <tr><td height="6" bgcolor="#c026d3" style="height:6px;font-size:0;line-height:0;background-color:#c026d3;background-image:linear-gradient(90deg,#7c3aed,#c026d3);">&nbsp;</td></tr>
+    <tr><td align="center" bgcolor="#4c1d95" style="background-color:#4c1d95;padding:30px 24px 26px;">
+      <div style="font-family:${font};font-size:28px;line-height:1.2;font-weight:800;letter-spacing:6px;color:#ffffff;direction:ltr;">GLITCH <span style="color:#f5d0fe;">Q</span></div>
+    </td></tr>
+    <tr><td align="center" bgcolor="#ffffff" style="background-color:#ffffff;padding:30px 32px 6px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
+        <td align="center" valign="middle" width="64" height="64" bgcolor="#dcfce7" style="width:64px;height:64px;background-color:#dcfce7;border-radius:32px;font-size:28px;line-height:64px;text-align:center;">&#9989;</td>
+      </tr></table>
+      <h1 style="font-family:${font};margin:18px 0 10px;font-size:22px;line-height:1.5;font-weight:800;color:#1e1b3a;text-align:center;">طلبك جاهز!</h1>
+      <p style="font-family:${font};margin:0;font-size:15px;line-height:2;color:#4b4668;text-align:center;">شكراً لثقتك بـ <strong style="color:#7c3aed;">Glitch Q</strong>. هذا هو الكود الخاص بطلبك:</p>
+    </td></tr>
+    <tr><td bgcolor="#ffffff" style="background-color:#ffffff;padding:16px 32px 4px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #ece6f8;border-radius:12px;border-collapse:separate;overflow:hidden;">
+        <tr><td bgcolor="#faf5ff" style="background-color:#faf5ff;border-bottom:1px solid #ece6f8;padding:12px 16px;font-family:${font};font-size:13px;color:#6b6585;text-align:right;width:30%;">المنتج</td>
+            <td bgcolor="#faf5ff" style="background-color:#faf5ff;border-bottom:1px solid #ece6f8;padding:12px 16px;font-family:${font};font-size:14px;font-weight:700;color:#1e1b3a;text-align:right;">${escHtml(product || '—')}</td></tr>
+        ${orderId ? `<tr><td bgcolor="#faf5ff" style="background-color:#faf5ff;padding:12px 16px;font-family:${font};font-size:13px;color:#6b6585;text-align:right;width:30%;">رقم الطلب</td>
+            <td bgcolor="#faf5ff" style="background-color:#faf5ff;padding:12px 16px;font-family:${font};font-size:13px;font-weight:700;color:#1e1b3a;text-align:right;direction:ltr;">${escHtml(orderId)}</td></tr>` : ''}
+      </table>
+    </td></tr>
+    <tr><td align="center" bgcolor="#ffffff" style="background-color:#ffffff;padding:14px 32px 6px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td align="center" bgcolor="#1e1b3a" style="background-color:#1e1b3a;border-radius:12px;padding:20px 12px;">
+          <div style="font-family:${font};font-size:12px;color:#c4b5fd;margin-bottom:8px;">الكود</div>
+          <div style="font-family:'Courier New',Courier,monospace;font-size:22px;line-height:1.5;font-weight:800;letter-spacing:2px;color:#ffffff;direction:ltr;word-break:break-all;">${escHtml(code)}</div>
+        </td>
+      </tr></table>
+    </td></tr>
+    <tr><td bgcolor="#ffffff" style="background-color:#ffffff;padding:12px 32px 6px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td bgcolor="#fffbeb" style="background-color:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:14px 16px;font-family:${font};font-size:13px;line-height:1.9;color:#92400e;text-align:right;"><strong>تنبيه:</strong> لا تشارك الكود مع أي شخص، وفعّله في أقرب وقت. إن واجهت أي مشكلة تواصل معنا عبر الدعم في الموقع.</td>
+      </tr></table>
+    </td></tr>
+    <tr><td align="center" bgcolor="#ffffff" style="background-color:#ffffff;padding:20px 32px 28px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>
+        <td align="center" bgcolor="#7c3aed" style="background-color:#7c3aed;border-radius:12px;">
+          <a href="${SITE}" target="_blank" style="display:inline-block;font-family:${font};font-size:15px;line-height:1.4;font-weight:800;color:#ffffff;text-decoration:none;padding:14px 40px;border-radius:12px;">فتح Glitch Q</a>
+        </td>
+      </tr></table>
+    </td></tr>
+    <tr><td align="center" bgcolor="#f8f5ff" style="background-color:#f8f5ff;border-top:1px solid #ece6f8;padding:18px 24px;">
+      <p style="font-family:${font};margin:0;font-size:11px;line-height:1.7;color:#8a85a0;">هذه رسالة تلقائية، يرجى عدم الرد عليها. &copy; ${year} Glitch Q</p>
+    </td></tr>
+  </table>
+</td></tr>
+</table>
+</body>
+</html>`;
+}
+
+function buildCodeText({ product, code, orderId }) {
+  return `طلبك جاهز — Glitch Q
+
+المنتج: ${product || '—'}${orderId ? `\nرقم الطلب: ${orderId}` : ''}
+
+الكود:
+${code}
+
+تنبيه: لا تشارك الكود مع أي شخص وفعّله في أقرب وقت. إن واجهت مشكلة تواصل معنا عبر الدعم في الموقع.
+
 Glitch Q`;
 }
 

@@ -68,7 +68,7 @@ globalThis.fetch = async (url, init = {}) => {
   if (url.includes('oauth2.googleapis.com/token')) return J({ access_token: 'tok' });
   if (url.includes('sendOobCode')) return J({ oobLink: 'https://glitch-q.firebaseapp.com/__/auth/action?mode=resetPassword&oobCode=abc' });
   if (url.includes('accounts:update')) return J({});
-  if (url.includes('api.brevo.com')) { fs.brevo.push(JSON.parse(init.body)); return J({ messageId: 'm' }, 201); }
+  if (url.includes('api.brevo.com')) { if (fs.failBrevo) return J({ message: 'no' }, 400); fs.brevo.push(JSON.parse(init.body)); return J({ messageId: 'm' }, 201); }
   if (url.includes('api.telegram.org')) {
     if (fs.failTelegram) return J({ ok: false }, 500);
     const isPhoto = url.endsWith('/sendPhoto');
@@ -116,6 +116,7 @@ async function order(data, { token, photo, ip } = {}) {
 }
 
 let pass = 0, fail = 0;
+let _skew = 0; const _realNow = Date.now.bind(Date); Date.now = () => _realNow() + _skew; const _bump = () => { _skew += 120000; };
 const ck = (n, c, x = '') => { console.log((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  → ' + x)); c ? pass++ : fail++; };
 
 function seed() {
@@ -148,6 +149,9 @@ function seed() {
   const w = readFileSync(new URL('./worker.js', import.meta.url), 'utf8');
   const wRates = vm.runInNewContext('(' + /const RATES = (\{[^}]+\})/.exec(w)[1] + ')');
   ck('RATES identical in worker and script.js', JSON.stringify(wRates) === JSON.stringify(ctx.RATES), JSON.stringify([wRates, ctx.RATES]));
+  const adminSrc = readFileSync(new URL('../admin.js', import.meta.url), 'utf8');
+  const aRates = vm.runInNewContext('(' + /const PF_RATES=(\{[^}]+\})/.exec(adminSrc)[1] + ')');
+  ck('RATES identical in worker and the admin price hint (admin.js)', JSON.stringify(aRates) === JSON.stringify(wRates), JSON.stringify([aRates, wRates]));
   const wMs = vm.runInNewContext(/const MILESTONES = (\[[\s\S]*?\n\]);/.exec(w)[1]);
   ck('MILESTONES (id/pts/minSpend) identical', JSON.stringify(wMs.map(m => [m.id, m.pts, m.minSpend])) === JSON.stringify(ctx.MILESTONES.map(m => [m.id, m.pts, m.minSpend])));
   const wSp = vm.runInNewContext(/const SPIN_SEGMENTS = (\[[\s\S]*?\n\]);/.exec(w)[1]);
@@ -384,6 +388,66 @@ const adm = (over = {}) => mk({ sub: 'adm', email: 'kadirom7k777@gmail.com', ema
 env.ADMIN_ALLOW_PASSWORD = 'true';
 [s] = await call('/admin/notify', { idToken: await adm({ firebase: { sign_in_provider: 'password' } }), text: 'x' }); ck('admin: ADMIN_ALLOW_PASSWORD=true relaxes provider check', s === 200, s);
 delete env.ADMIN_ALLOW_PASSWORD;
+
+/* ───────── e-mail a delivered code (owner only) ───────── */
+seed(); fs.brevo = [];
+put('users/u1', { email: 'acct1@x.com', points: 5 }); put('users/u2', { email: 'acct2@x.com', points: 5 });
+put('orders/oE', { product: 'PSN 10 EUR', userId: 'u1', receiveMethod: 'email', receiveContact: 'buyer@x.com', accountEmail: 'acct1@x.com', status: 'pending' });
+put('orders/oP', { product: 'Plus', userId: 'u1', receiveMethod: 'phone', receiveContact: '0555123456', accountEmail: 'acct1@x.com', status: 'pending' });
+put('orders/oOld', { product: 'Legacy', userId: 'u2', receiveMethod: 'phone', receiveContact: '0555000000', status: 'pending' });
+put('orders/oG', { product: 'Guest', userId: 'guest', receiveMethod: 'phone', receiveContact: '0555000001', status: 'pending' });
+[s] = await call('/admin/send-code', { orderId: 'oE', code: 'AAAA-BBBB' }); ck('send-code: no token → 401', s === 401);
+[s] = await call('/admin/send-code', { idToken: await tok('u1'), orderId: 'oE', code: 'AAAA' }); ck('send-code: ordinary customer → 403', s === 403);
+[s] = await call('/admin/send-code', { idToken: await adm({ firebase: { sign_in_provider: 'password' } }), orderId: 'oE', code: 'AAAA' }); ck('send-code: password-login admin → 403', s === 403);
+ck('send-code: refused calls send no e-mail', fs.brevo.length === 0, fs.brevo.length);
+[s, j] = await call('/admin/send-code', { idToken: await adm(), orderId: 'oE', code: 'AAAA-BBBB-CCCC' });
+ck('send-code: e-mail order → goes to the e-mail the customer typed', s === 200 && j.ok && fs.brevo.length === 1 && fs.brevo[0].to[0].email === 'buyer@x.com', JSON.stringify([s, fs.brevo.map(m => m.to)]));
+ck('send-code: reply masks the address', j.to === 'bu***@x.com', j.to);
+ck('send-code: mail has the code, product and order id', /AAAA-BBBB-CCCC/.test(fs.brevo[0].htmlContent) && /PSN 10 EUR/.test(fs.brevo[0].htmlContent) && /oE/.test(fs.brevo[0].htmlContent) && /AAAA-BBBB-CCCC/.test(fs.brevo[0].textContent));
+ck('send-code: sender is the store address', fs.brevo[0].sender.email === 'glitchq1q@gmail.com');
+[s, j] = await call('/admin/send-code', { idToken: await adm(), orderId: 'oE', code: 'X', to: 'attacker@evil.com' });
+ck('send-code: a "to" in the request cannot redirect an order\'s code', s === 200 && fs.brevo[1].to[0].email === 'buyer@x.com', fs.brevo[1] && fs.brevo[1].to[0].email);
+await call('/admin/send-code', { idToken: await adm(), orderId: 'oP', code: 'PH-1' });
+ck('send-code: phone-contact order → account e-mail saved on the order', fs.brevo[2].to[0].email === 'acct1@x.com', fs.brevo[2] && fs.brevo[2].to[0].email);
+await call('/admin/send-code', { idToken: await adm(), orderId: 'oOld', code: 'OLD-1' });
+ck('send-code: legacy order without saved e-mail → falls back to the customer profile', fs.brevo[3].to[0].email === 'acct2@x.com', fs.brevo[3] && fs.brevo[3].to[0].email);
+[s, j] = await call('/admin/send-code', { idToken: await adm(), orderId: 'oG', code: 'G-1' }); ck('send-code: guest phone order with no e-mail anywhere → 422, nothing sent', s === 422 && fs.brevo.length === 4, [s, fs.brevo.length]);
+[s] = await call('/admin/send-code', { idToken: await adm(), orderId: 'nope', code: 'G-1' }); ck('send-code: unknown order → 404', s === 404, s);
+[s] = await call('/admin/send-code', { idToken: await adm(), orderId: '../users/u1', code: 'G-1' }); ck('send-code: path-like order id is ignored (no path traversal) → 422', s === 422, s);
+[s] = await call('/admin/send-code', { idToken: await adm(), orderId: 'oE', code: '   ' }); ck('send-code: empty code → 400', s === 400, s);
+await call('/admin/send-code', { idToken: await adm(), orderId: 'oE', code: '<img src=x onerror=alert(1)>', product: '<b>Hi</b>' });
+{ const m = fs.brevo[fs.brevo.length - 1]; ck('send-code: HTML in code/product is escaped in the mail', !/<img src=x|<b>Hi/.test(m.htmlContent) && /&lt;img/.test(m.htmlContent)); }
+await call('/admin/send-code', { idToken: await adm(), userId: 'u2', code: 'U-1', product: 'Manual' });
+ck('send-code: manual send by customer id uses the profile e-mail', fs.brevo[fs.brevo.length - 1].to[0].email === 'acct2@x.com');
+const nb = fs.brevo.length;
+await call('/admin/send-code', { idToken: await adm(), to: 'someone@x.com', code: 'M-1' });
+ck('send-code: one-off to a typed address works for the owner', fs.brevo.length === nb + 1 && fs.brevo[nb].to[0].email === 'someone@x.com');
+[s] = await call('/admin/send-code', { idToken: await adm(), to: 'not-an-email', code: 'M-1' }); ck('send-code: invalid typed address → 422', s === 422, s);
+fs.failBrevo = true; [s] = await call('/admin/send-code', { idToken: await adm(), orderId: 'oE', code: 'F-1' }); fs.failBrevo = false;
+ck('send-code: mail provider failure is reported (502), not hidden', s === 502, s);
+
+/* ───────── order stores the verified account e-mail; home-page offer ───────── */
+seed();
+{ const t1 = await mk({ sub: 'u1', email: 'Acct1@X.com', email_verified: true });
+  [s, j] = await order({ ...base }, { token: t1 }); const o = get('orders/' + j.orderId) || {};
+  ck('order: verified account e-mail is stored on the order (lower-cased) for code delivery', s === 200 && o.accountEmail === 'acct1@x.com', JSON.stringify([s, o.accountEmail])); }
+seed(); _bump();
+put('settings/coupons', { coupons: [
+  { code: 'SECRET1', type: 'percent', value: 10, active: true },
+  { code: 'WINTER', type: 'percent', value: 25, active: true, featured: true, expiry: '2999-01-01', maxUses: 10, usedCount: 4, created: '2026-01-01', note: 'internal' },
+  { code: 'OLDF', type: 'percent', value: 90, active: true, featured: true, expiry: '2020-01-01' },
+] });
+[s, j] = await call('/offer', null, { method: 'GET' });
+ck('offer: only the featured, valid coupon is shown', s === 200 && j.ok && j.code === 'WINTER' && j.type === 'percent' && j.value === 25 && j.expiry === '2999-01-01' && j.left === 6, JSON.stringify(j));
+ck('offer: no other coupon code or internal field leaks', !/SECRET1|OLDF|internal|usedCount|created/.test(JSON.stringify(j)), JSON.stringify(j));
+seed(); _bump();
+[s, j] = await call('/offer', null, { method: 'GET' }); ck('offer: nothing featured → ok:false (the page hides the card)', s === 200 && j.ok === false, JSON.stringify(j));
+seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'OFFX', type: 'fixed', value: 300, active: false, featured: true }] });
+[s, j] = await call('/offer', null, { method: 'GET' }); ck('offer: featured but switched off → ok:false', j.ok === false, JSON.stringify(j));
+seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'FULL', type: 'fixed', value: 300, active: true, featured: true, maxUses: 2, usedCount: 2 }] });
+[s, j] = await call('/offer', null, { method: 'GET' }); ck('offer: featured but fully used → ok:false', j.ok === false, JSON.stringify(j));
+{ const ip = '9.9.9.9'; let last = 0; for (let i = 0; i < 70; i++) [last] = await call('/offer', null, { method: 'GET', ip }); ck('offer: per-IP rate limit', last === 429, last); }
+[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v5', j.v === 5, JSON.stringify(j));
 
 /* ───────── reset-password limiter, maintenance/ticker ───────── */
 seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { text: 'hello' });

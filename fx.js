@@ -1,10 +1,31 @@
 /* Glitch Q — visual FX layer (GSAP + Lenis).
-   Loaded after script.js. Purely cosmetic: if GSAP/Lenis fail to load or the
-   user prefers reduced motion, the site works exactly as before. */
+   Purely cosmetic. GSAP and Lenis are fetched here, asynchronously, AFTER the app has started, so a slow
+   or blocked CDN can never delay the store. If they are not ready within 2.5s (or the user prefers
+   reduced motion) the effects are skipped and the site works exactly the same. */
 (function () {
   'use strict';
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduce || !window.gsap) return;
+  if (reduce) return;
+  var t0 = Date.now();
+  function load(src, cb) {
+    var s = document.createElement('script');
+    s.src = src; s.async = true;
+    s.onload = function () { cb(true); };
+    s.onerror = function () { cb(false); };
+    document.head.appendChild(s);
+  }
+  function go() {
+    load('https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js', function (ok) {
+      if (!ok || !window.gsap) return;
+      load('https://cdn.jsdelivr.net/npm/lenis@1/dist/lenis.min.js', function () {
+        if (Date.now() - t0 > 2500) return;   // too late: an animation starting now would flash content
+        start();
+      });
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+
+  function start() {
 
   /* ---------- Smooth scroll (Lenis) ---------- */
   var lenis = null;
@@ -73,4 +94,5 @@
     muts.forEach(function (m) { m.addedNodes.forEach(scan); });
   }).observe(wrap, { childList: true, subtree: true });
   scan(wrap);
+  }
 })();

@@ -15,12 +15,11 @@
 <style id="antiClick">html{display:none!important}</style>
 <script>if(window.top===window.self){document.getElementById('antiClick').remove();}else{try{window.top.location=window.self.location;}catch(e){}}</script>
 <title>Glitch Q 🎮 | بطاقات PlayStation</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<!-- icon font and Google Fonts no longer block the first paint (they swap in when ready) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" media="print" onload="this.media='all'">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="style.css">
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -271,7 +270,7 @@
       <div class="info-ban mt8"><i class="fa-solid fa-location-dot"></i> <span id="handNote">التسليم يد بيد في <strong>ولاية تلمسان فقط</strong></span></div>
       <div class="iw mt8"><i class="fa-solid fa-phone"></i><input type="tel" id="handPhone" placeholder="رقم هاتفك" maxlength="20"></div>
     </div>
-    <div class="pay-tabs mt8">
+    <div class="pay-tabs mt8" id="recvTabs">
       <button class="pay-tab on" id="recvEM" onclick="setRecv('email')"><i class="fa-solid fa-envelope"></i> <span id="emailLabel">إيميل</span></button>
       <button class="pay-tab" id="recvPH" onclick="setRecv('phone')"><i class="fa-solid fa-phone"></i> <span id="phoneLabel">هاتف</span></button>
     </div>
@@ -643,12 +642,12 @@
           <div class="missions" id="missionsWrap"></div>
           <button onclick="goPage('rewards')" class="btn-v w100 mt8" id="allMissionsBtn">عرض جميع المهام</button>
         </div>
-        <div class="b3-card offer-card">
+        <div class="b3-card offer-card hidden" id="offerCard">
           <div class="offer-ttl" id="offerTitle">⏰ عرض خاص</div>
-          <div class="offer-cnt" id="offerCnt">47 : 15 : 02</div>
-          <div class="offer-pct">10%</div>
+          <div class="offer-cnt hidden" id="offerCnt"></div>
+          <div class="offer-pct" id="offerPct"></div>
           <div class="offer-desc" id="offerDesc">خصم على جميع البطاقات<br>استخدم الكود:</div>
-          <div class="offer-code" onclick="applyOfferCode()">GLITCH10 <i class="fa-solid fa-chevron-left"></i></div>
+          <div class="offer-code" onclick="applyOfferCode()"><span id="offerCode"></span> <i class="fa-solid fa-chevron-left"></i></div>
           <button onclick="goPage('shop')" class="btn-v w100 mt8" id="offerShopBtn">تسوق الآن</button>
         </div>
       </div>
@@ -853,8 +852,10 @@
   <div class="f-bottom"><span id="fCopy">GLITCH Q 2026 © جميع الحقوق محفوظة</span></div>
 </footer>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/lenis@1/dist/lenis.min.js" defer></script>
+<!-- deferred scripts run in this order, after the page is parsed. GSAP/Lenis (cosmetic) are loaded later by fx.js and can never delay the app. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js" defer></script>
 <script src="script.js" defer></script>
 <script src="account.js" defer></script>
 <script src="fx.js" defer></script>
