@@ -240,6 +240,10 @@ function openConfirmModal(orderId,product,contact){
 }
 function closeConfirmModal(){document.getElementById('confirmModal').classList.add('hidden');currentOrderForDelivery=null;}
 
+/* Code validity (store policy): from the day of delivery until the LAST DAY of that calendar month, Algeria time (UTC+1).
+   Same arithmetic as monthEndISO() in worker.js; worker.test.mjs checks the two agree. */
+function codeUntil(ms){const d=new Date((ms||Date.now())+3600000);const y=d.getUTCFullYear(),m=d.getUTCMonth();const last=new Date(Date.UTC(y,m+1,0)).getUTCDate();return `${y}-${String(m+1).padStart(2,'0')}-${String(last).padStart(2,'0')}`;}
+
 /* Marks an order done and pays the customer ONCE (points = 1 per 1000 DZD, order count, total spent,
    and the one-time referral reward). The `awarded` flag makes a second call harmless. */
 /* referral reward only for a real purchase (set to 0 to reward any completed first order) */
@@ -256,7 +260,9 @@ async function completeOrder(orderId,notif){
       const u=us.exists?us.data():null;
       if(u&&u.referredBy&&u.referredBy!==uid&&!u.refRewarded&&(Number(o.totalDZD)||0)>=REF_MIN_ORDER_DZD){rref=db.collection('users').doc(u.referredBy);rs=await tx.get(rref);}
     }
-    tx.update(oref,o.awarded===false?{status:'done',awarded:true}:{status:'done'});
+    /* the deadline is fixed the first time the order is delivered; a later re-send never extends it */
+    const upd0=o.awarded===false?{status:'done',awarded:true}:{status:'done'};if(!o.codeValidUntil)upd0.codeValidUntil=(notif&&notif.until)||codeUntil();
+    tx.update(oref,upd0);
     if(us&&us.exists){
       const total=Math.max(0,Number(o.totalDZD)||0);
       const upd={points:FV.increment(Math.floor(total/1000)),orders:FV.increment(1),totalSpend:FV.increment(total)};
@@ -274,7 +280,7 @@ async function confirmDelivery(){
   if(!code){aToast('أدخل الكود','❌');return;}
   const{orderId,product,contact}=currentOrderForDelivery||{};if(!orderId)return;
   try{
-    const notif={title:`✅ طلبك جاهز — ${product}`,code:`🔑 الكود: ${code}`,date:new Date().toLocaleDateString('ar'),read:false};
+    const notif={title:`✅ طلبك جاهز — ${product}`,code:`🔑 الكود: ${code}`,date:new Date().toLocaleDateString('ar'),until:codeUntil(),read:false};
     await completeOrder(orderId,notif);
     allOrders=allOrders.map(o=>o.id===orderId?{...o,status:'done'}:o);renderOrders();
     const m=await adminSendCode({orderId,code,product});
@@ -666,7 +672,7 @@ async function sendCodeManual(){
   if(orderId)mp.orderId=orderId;else if(userId)mp.userId=userId;else if(contact.includes('@'))mp.to=contact;
   if(!mp.orderId&&!mp.userId&&!mp.to){aToast('أدخل رقم الطلب أو UID أو إيميل العميل','❌');return;}
   try{
-    const notif=(userId||orderId)?{title:`✅ ${product||'طلبك جاهز'}`,code:`🔑 الكود: ${code}`,date:new Date().toLocaleDateString('ar'),read:false}:null;
+    const notif=(userId||orderId)?{title:`✅ ${product||'طلبك جاهز'}`,code:`🔑 الكود: ${code}`,date:new Date().toLocaleDateString('ar'),until:codeUntil(),read:false}:null;
     if(orderId)await completeOrder(orderId,notif);
     else if(userId)await db.collection('users').doc(userId).update({notifications:firebase.firestore.FieldValue.arrayUnion(notif)});
     const m=await adminSendCode(mp);

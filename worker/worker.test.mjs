@@ -394,6 +394,8 @@ seed(); fs.brevo = [];
 put('users/u1', { email: 'acct1@x.com', points: 5 }); put('users/u2', { email: 'acct2@x.com', points: 5 });
 put('orders/oE', { product: 'PSN 10 EUR', userId: 'u1', receiveMethod: 'email', receiveContact: 'buyer@x.com', accountEmail: 'acct1@x.com', status: 'pending' });
 put('orders/oP', { product: 'Plus', userId: 'u1', receiveMethod: 'phone', receiveContact: '0555123456', accountEmail: 'acct1@x.com', status: 'pending' });
+const farD = new Date(Date.now() + 40 * 864e5 + 36e5), farEnd = new Date(Date.UTC(farD.getUTCFullYear(), farD.getUTCMonth() + 1, 0)), farISO = farEnd.getUTCFullYear() + '-' + String(farEnd.getUTCMonth() + 1).padStart(2, '0') + '-' + String(farEnd.getUTCDate()).padStart(2, '0');
+put('orders/oV', { product: 'Valid', userId: 'u1', receiveMethod: 'email', receiveContact: 'val@x.com', status: 'done', codeValidUntil: farISO });
 put('orders/oOld', { product: 'Legacy', userId: 'u2', receiveMethod: 'phone', receiveContact: '0555000000', status: 'pending' });
 put('orders/oG', { product: 'Guest', userId: 'guest', receiveMethod: 'phone', receiveContact: '0555000001', status: 'pending' });
 [s] = await call('/admin/send-code', { orderId: 'oE', code: 'AAAA-BBBB' }); ck('send-code: no token → 401', s === 401);
@@ -407,6 +409,9 @@ ck('send-code: mail has the code, product and order id', /AAAA-BBBB-CCCC/.test(f
 ck('send-code: sender is the store address', fs.brevo[0].sender.email === 'glitchq1q@gmail.com');
 [s, j] = await call('/admin/send-code', { idToken: await adm(), orderId: 'oE', code: 'X', to: 'attacker@evil.com' });
 ck('send-code: a "to" in the request cannot redirect an order\'s code', s === 200 && fs.brevo[1].to[0].email === 'buyer@x.com', fs.brevo[1] && fs.brevo[1].to[0].email);
+{ const n0 = fs.brevo.length; await call('/admin/send-code', { idToken: await adm(), orderId: 'oV', code: 'VV-1' }); const m = fs.brevo[n0];
+  const MN = ['جانفي', 'فيفري', 'مارس', 'أفريل', 'ماي', 'جوان', 'جويلية', 'أوت', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'][farEnd.getUTCMonth()];
+  ck('send-code: the deadline stored on the order is the one in the mail (HTML + text)', !!m && m.htmlContent.includes(`صالح للاستخدام حتى نهاية ${MN}`) && m.htmlContent.includes(`${farEnd.getUTCDate()} ${MN} ${farEnd.getUTCFullYear()}`) && m.textContent.includes(`آخر موعد ${farEnd.getUTCDate()} ${MN}`), m && m.textContent.slice(0, 400)); fs.brevo.splice(n0, 1); /* keep later index-based checks aligned */ }
 await call('/admin/send-code', { idToken: await adm(), orderId: 'oP', code: 'PH-1' });
 ck('send-code: phone-contact order → account e-mail saved on the order', fs.brevo[2].to[0].email === 'acct1@x.com', fs.brevo[2] && fs.brevo[2].to[0].email);
 await call('/admin/send-code', { idToken: await adm(), orderId: 'oOld', code: 'OLD-1' });
@@ -460,7 +465,7 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
 {
   const src = readFileSync(new URL('./worker.js', import.meta.url), 'utf8');
   const start = src.lastIndexOf('/* ═══', src.indexOf('function escHtml'));
-  const T = new Function(src.slice(start) + ';return {buildResetEmail,buildResetText,buildCodeEmail,buildCodeText,buildLoginAlertEmail,buildLoginAlertText};')();
+  const T = new Function(src.slice(start) + ';return {buildResetEmail,buildResetText,buildCodeEmail,buildCodeText,buildLoginAlertEmail,buildLoginAlertText,codeValidity,monthEndISO,arDays};')();
   const evil = '<img src=x onerror=alert(1)>"&';
   const link = 'https://glitch-q.web.app/reset.html?mode=resetPassword&oobCode=abc123';
   const reset = T.buildResetEmail(link), code = T.buildCodeEmail({ product: evil, code: 'AAAA-BBBB\n<b>CCCC</b>', orderId: evil });
@@ -482,6 +487,35 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
   { const plain = T.buildCodeEmail({ product: 'PSN 10 EUR', code: 'ZZZZ-1111-2222' }); ck('mail code: without an order id the order row is omitted', !/رقم الطلب/.test(plain.replace(/وأرسل رقم الطلب/g, ''))); }
   ck('mail alert: device / place / time are escaped', !/<script>x|<img src=x/.test(alert) && /&lt;script&gt;x&lt;\/script&gt;/.test(alert));
   ck('mail alert: says the place is approximate and gives the "not you" steps', /الموقع تقريبي/.test(alert) && /تسجيل الخروج من كل الأجهزة/.test(alert));
+  /* validity: delivered in month X → valid to the LAST day of X, Algeria time (UTC+1) */
+  const at = (iso) => Date.parse(iso);
+  { const v = T.codeValidity('', at('2026-11-05T12:00:00Z'));
+    ck('validity: delivered in November → until 30 November, 25 days left on the 5th', v.iso === '2026-11-30' && v.monthName === 'نوفمبر' && v.lastDay === 30 && v.daysLeft === 25, JSON.stringify(v)); }
+  ck('validity: January has 31 days', T.codeValidity('', at('2027-01-10T08:00:00Z')).iso === '2027-01-31');
+  ck('validity: leap-year February → 29', T.monthEndISO(at('2028-02-10T08:00:00Z')) === '2028-02-29' && T.monthEndISO(at('2027-02-10T08:00:00Z')) === '2027-02-28');
+  ck('validity: 23:30 UTC on 31 Jan is already 1 Feb in Algiers → deadline is end of February', T.monthEndISO(at('2027-01-31T23:30:00Z')) === '2027-02-28');
+  ck('validity: 22:30 UTC on 31 Dec is still 31 Dec in Algiers → last day, 0 left', (() => { const v = T.codeValidity('', at('2026-12-31T22:30:00Z')); return v.iso === '2026-12-31' && v.daysLeft === 0; })());
+  { const v = T.codeValidity('2026-11-30', at('2026-12-02T10:00:00Z')); ck('validity: a stored deadline is kept on re-send (not extended into the new month)', v.iso === '2026-11-30' && v.daysLeft === -2, JSON.stringify(v)); }
+  ck('validity: a garbage stored date falls back to this month\'s end', T.codeValidity('2026-13-45', at('2026-11-05T12:00:00Z')).iso === '2026-11-30');
+  ck('validity: Arabic day plurals', [T.arDays(1), T.arDays(2), T.arDays(5), T.arDays(25)].join('|') === 'يوم واحد|يومان|5 أيام|25 يوماً');
+  { const m = T.buildCodeEmail({ product: 'P', code: 'ZZZZ-1', orderId: 'o1', validity: T.codeValidity('', at('2026-11-05T12:00:00Z')) });
+    ck('mail code: shows the deadline, days left and the "after this it is expired" rule', /30 نوفمبر 2026/.test(m) && /يتبقى 25 يوماً/.test(m) && /صالح للاستخدام حتى نهاية نوفمبر/.test(m) && /يُعتبر الكود منتهياً/.test(m));
+    ck('mail code: preheader carries the deadline but not the code', /صالح حتى 30 نوفمبر 2026/.test(m.slice(0, m.indexOf('</div>'))) && !/ZZZZ-1/.test(m.slice(0, m.indexOf('</div>'))));
+    ck('mail code: calendar tile shows the last day number', />30<\/div>/.test(m));
+    ck('mail code text: has the deadline', T.buildCodeText({ product: 'P', code: 'ZZZZ-1', validity: T.codeValidity('', at('2026-11-05T12:00:00Z')) }).includes('آخر موعد 30 نوفمبر 2026')); }
+  { const warn = T.buildCodeEmail({ product: 'P', code: 'C', validity: T.codeValidity('', at('2026-11-28T12:00:00Z')) });
+    const last = T.buildCodeEmail({ product: 'P', code: 'C', validity: T.codeValidity('', at('2026-11-30T12:00:00Z')) });
+    const gone = T.buildCodeEmail({ product: 'P', code: 'C', validity: T.codeValidity('2026-11-30', at('2026-12-02T12:00:00Z')) });
+    ck('mail code: 2 days left → warning tone, "يومان"', /يتبقى يومان/.test(warn) && /FFF6E0/i.test(warn.slice(warn.indexOf('طلبك جاهز</h1>'))));
+    ck('mail code: last day → "today is the last day"', /اليوم آخر يوم لصلاحية الكود/.test(last) && /FFF0F1/i.test(last.slice(last.indexOf('طلبك جاهز</h1>'))));
+    ck('mail code: already past the deadline → says expired', /انتهت مدة صلاحية هذا الكود/.test(gone) && !/يتبقى/.test(gone)); }
+  { /* admin.js computes the same date for the notification the customer sees */
+    const adm = readFileSync(new URL('../admin.js', import.meta.url), 'utf8');
+    const fn = /function codeUntil\(ms\)\{[^\n]*\}/.exec(adm);
+    const codeUntil = fn && new Function(fn[0] + ';return codeUntil;')();
+    const probes = ['2026-01-31T23:30:00Z', '2026-02-10T08:00:00Z', '2028-02-29T22:59:00Z', '2028-02-29T23:00:00Z', '2026-11-30T23:30:00Z', '2026-12-31T22:59:59Z', '2026-12-31T23:00:00Z', '2027-06-15T12:00:00Z'];
+    ck('validity: admin.js codeUntil() agrees with the Worker on every probe date', !!codeUntil && probes.every(d => codeUntil(Date.parse(d)) === T.monthEndISO(Date.parse(d))), probes.map(d => codeUntil && codeUntil(Date.parse(d)) + '/' + T.monthEndISO(Date.parse(d))).join(' ')); 
+    ck('validity: completing an order stores the deadline once (never overwritten)', /if\(!o\.codeValidUntil\)upd0\.codeValidUntil=\(notif&&notif\.until\)\|\|codeUntil\(\)/.test(adm)); }
   ck('mail text versions carry the same facts', T.buildCodeText({ product: 'P', code: 'C-1', orderId: 'O1' }).includes('C-1') && T.buildLoginAlertText({ device: 'D', place: 'Pl', when: 'W' }).includes('الجهاز: D'));
 }
 

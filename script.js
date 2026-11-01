@@ -1383,13 +1383,22 @@ function renderMissions(containerId){
 }
 
 /* ══ NOTIFICATIONS ══ */
+
+/* Delivered codes are valid until the last day of the delivery month (Algeria time). `until` = "YYYY-MM-DD" saved with the notification. */
+const DZ_MONTHS_AR=['جانفي','فيفري','مارس','أفريل','ماي','جوان','جويلية','أوت','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+function codeUntilHTML(iso){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso||''));if(!m)return '';
+  const dz=new Date(Date.now()+3600000),today=dz.getUTCFullYear()+'-'+String(dz.getUTCMonth()+1).padStart(2,'0')+'-'+String(dz.getUTCDate()).padStart(2,'0');
+  const txt=`${+m[3]} ${DZ_MONTHS_AR[+m[2]-1]||''} ${m[1]}`;
+  return String(iso)<today?`<div class="ni-until exp">⛔ انتهت صلاحية الكود (${san(txt)})</div>`:`<div class="ni-until">⏳ صالح حتى ${san(txt)}</div>`;
+}
 function loadNotifs(){
   if(!S.user||!S.udata)return;const notifs=S.udata.notifications||[];
   const unread=notifs.filter(n=>!n.read).length;
   const b=$('notifBadge');if(b){b.textContent=unread;b.classList.toggle('hidden',unread===0);}
   const list=$('notifList');if(!list)return;list.innerHTML='';
   if(!notifs.length){list.innerHTML=`<div class="ni-empty">${t('notif_empty')}</div>`;return;}
-  [...notifs].reverse().forEach(n=>{const d=document.createElement('div');d.className='ni'+(n.read?'':' unread');d.innerHTML=`<div class="ni-ttl">${san(n.title||'')}</div>${n.code?`<div class="ni-code">${san(n.code)}</div>`:''}<div class="ni-date">📅 ${san(n.date||'')}</div>`;list.appendChild(d);});
+  [...notifs].reverse().forEach(n=>{const d=document.createElement('div');d.className='ni'+(n.read?'':' unread');d.innerHTML=`<div class="ni-ttl">${san(n.title||'')}</div>${n.code?`<div class="ni-code">${san(n.code)}</div>`:''}${codeUntilHTML(n.until)}<div class="ni-date">📅 ${san(n.date||'')}</div>`;list.appendChild(d);});
 }
 function toggleNotif(){$('notifPanel')?.classList.toggle('hidden');}
 function closeNotif(){$('notifPanel')?.classList.add('hidden');}

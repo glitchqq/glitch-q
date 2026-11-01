@@ -910,10 +910,12 @@ async function handleAdminSendCode(request, env, cors) {
   const okMail = v => RE_EMAIL.test(String(v || '').trim().toLowerCase()) ? String(v).trim().toLowerCase() : '';
 
   let to = '';
+  let until = '';
   if (orderId) {
     const o = await fsGet(env, `orders/${orderId}`);
     if (!o.exists) return json({ error: 'Order not found' }, 404, cors);
     const d = o.data;
+    until = String(d.codeValidUntil || '');   /* set when the order was delivered, so a re-send never extends the deadline */
     product = product || cleanText(d.product, 200);
     if (d.receiveMethod === 'email') to = okMail(d.receiveContact);
     if (!to) to = okMail(d.accountEmail);
@@ -932,8 +934,8 @@ async function handleAdminSendCode(request, env, cors) {
   const sent = await sendBrevo(env, {
     to,
     subject: 'طلبك جاهز — الكود الخاص بك | Glitch Q',
-    html: buildCodeEmail({ product, code, orderId }),
-    text: buildCodeText({ product, code, orderId }),
+    html: buildCodeEmail({ product, code, orderId, validity: codeValidity(until) }),
+    text: buildCodeText({ product, code, orderId, validity: codeValidity(until) }),
   });
   if (!sent.ok) return json({ error: sent.why }, 502, cors);
   return json({ ok: true, to: maskEmail(to) }, 200, cors);
@@ -1375,6 +1377,29 @@ function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+/* Code validity (store policy): a delivered code is valid from the day it is delivered until the LAST DAY of
+   that calendar month, Algeria time (UTC+1, no daylight saving). Delivered in November → valid to 30 November;
+   delivered in January → to 31 January; from the 1st of the next month it counts as expired.
+   admin.js has the same arithmetic for the in-site notification (parity is checked in worker.test.mjs). */
+const DZ_MONTHS = ['جانفي', 'فيفري', 'مارس', 'أفريل', 'ماي', 'جوان', 'جويلية', 'أوت', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+function algNow(ms) { const d = new Date(ms + 3600000); return { y: d.getUTCFullYear(), m: d.getUTCMonth(), d: d.getUTCDate() }; }
+function monthEndISO(ms = Date.now()) {
+  const t = algNow(ms);
+  const last = new Date(Date.UTC(t.y, t.m + 1, 0)).getUTCDate();
+  return `${t.y}-${String(t.m + 1).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+}
+// `untilISO` is the date stored on the order when it was delivered (so a re-send never extends it); without it, this month's end.
+function codeValidity(untilISO, ms = Date.now()) {
+  let iso = String(untilISO || '');
+  const ok = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!ok || +ok[2] < 1 || +ok[2] > 12 || +ok[3] < 28 || +ok[3] > 31) iso = monthEndISO(ms);
+  const [y, m, d] = iso.split('-').map(Number);
+  const t = algNow(ms);
+  const daysLeft = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(t.y, t.m, t.d)) / 86400000);
+  return { iso, year: y, monthName: DZ_MONTHS[m - 1], lastDay: d, daysLeft };
+}
+function arDays(n) { return n === 1 ? 'يوم واحد' : n === 2 ? 'يومان' : n <= 10 ? `${n} أيام` : `${n} يوماً`; }
+
 const MAIL_SITE = 'https://glitchqq.github.io/glitch-q/';
 const MAIL_FONT = "-apple-system,'Segoe UI',Tahoma,'Noto Sans Arabic',Arial,sans-serif";
 const MAIL_MONO = "'SF Mono',Consolas,Menlo,'Courier New',monospace";
@@ -1385,7 +1410,7 @@ const MAIL_TONE = {
   cobalt: { bar: '#3D6BFF', btn: '#2F5BEA', btnText: '#FFFFFF', btnDk: '#2F5BEA', btnTextDk: '#FFFFFF', ink: '#2748C4', tint: '#EEF2FF', line: '#D3DDFB', inkDk: '#8FAAFF', tintDk: '#141C3D', lineDk: '#26335F', c: { tint: 'tint', ink: 'ink' } },
   mint:   { bar: '#28C88A', btn: '#0B7A50', btnText: '#FFFFFF', btnDk: '#28C88A', btnTextDk: '#06140E', ink: '#0B7A50', tint: '#E8F8F1', line: '#BFE9D6', inkDk: '#3DDC9F', tintDk: '#0F2A22', lineDk: '#1D4A3A', c: { tint: 'tint', ink: 'ink' } },
   gold:   { bar: '#F4B63E', btn: '#F4B63E', btnText: '#1A1300', btnDk: '#F4B63E', btnTextDk: '#1A1300', ink: '#8A5A00', tint: '#FFF6E0', line: '#F6DFA6', inkDk: '#F4B63E', tintDk: '#2B2210', lineDk: '#5A4518', c: { tint: 'gtint', ink: 'gink' } },
-  red:    { ink: '#B3243A', tint: '#FFF0F1', line: '#FBC9CF', c: { tint: 'rtint', ink: 'rink' } },
+  red:    { ink: '#B3243A', tint: '#FFF0F1', line: '#FBC9CF', inkDk: '#FF8A96', c: { tint: 'rtint', ink: 'rink' } },
 };
 
 // ── small building blocks (all take trusted html) ────────────────────────
@@ -1584,8 +1609,23 @@ Glitch Q`;
 }
 
 /* ── 2) order delivered: the code ────────────────────────────────────── */
-function buildCodeEmail({ product, code, orderId }) {
+function validityCopy(v) {
+  const full = `${v.lastDay} ${v.monthName} ${v.year}`;
+  if (v.daysLeft < 0) return { tone: 'red', title: 'انتهت مدة صلاحية هذا الكود', sub: `كانت تنتهي بنهاية ${v.monthName} ${v.year}. تواصل مع الدعم إن احتجت مساعدة.`, full };
+  if (v.daysLeft === 0) return { tone: 'red', title: 'اليوم آخر يوم لصلاحية الكود', sub: 'فعّله قبل منتصف الليل (توقيت الجزائر)، وبعدها يُعتبر الكود منتهياً.', full };
+  return {
+    tone: v.daysLeft <= 3 ? 'gold' : 'mint',
+    title: `صالح للاستخدام حتى نهاية ${v.monthName}`,
+    sub: `يتبقى ${arDays(v.daysLeft)} — آخر موعد ${full}. بعد هذا التاريخ يُعتبر الكود منتهياً.`,
+    full,
+  };
+}
+
+function buildCodeEmail({ product, code, orderId, validity }) {
   const t = MAIL_TONE.mint;
+  const v = validity || codeValidity();
+  const vc = validityCopy(v);
+  const vt = MAIL_TONE[vc.tone];
   const raw = String(code == null ? '' : code);
   const longest = Math.max(1, ...raw.split(/\r?\n/).map((l) => l.length));
   const size = longest <= 19 ? 26 : longest <= 30 ? 20 : 16;
@@ -1601,6 +1641,23 @@ function buildCodeEmail({ product, code, orderId }) {
       </td></tr>${orderId ? `
       <tr><td align="center" bgcolor="#11141B" style="background-color:#11141B;border-top:1px solid #252B38;border-radius:0 0 13px 13px;padding:11px 22px;font-family:${MAIL_FONT};font-size:12px;line-height:1.7;color:#9AA3B5;">رقم الطلب &nbsp;<span dir="ltr" style="font-family:${MAIL_MONO};color:#D5DAE6;">${escHtml(orderId)}</span></td></tr>` : ''}
     </table>`;
+  // validity band: a dark calendar tile with the last day of the month + what it means
+  const tileInk = vt.inkDk || vt.ink;
+  const validityBand = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td class="${vt.c.tint}" bgcolor="${vt.tint}" style="background-color:${vt.tint};border:1px solid ${vt.line};border-radius:12px;padding:14px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+          <td width="64" valign="middle" style="width:64px;">
+            <table role="presentation" width="56" cellpadding="0" cellspacing="0" border="0" bgcolor="#0A0C10" style="width:56px;background-color:#0A0C10;border-radius:10px;border-collapse:separate;"><tr><td align="center" style="padding:7px 0 8px;font-family:${MAIL_FONT};">
+              <div style="font-size:11px;line-height:1.4;font-weight:700;color:${tileInk};">${escHtml(v.monthName)}</div>
+              <div style="font-size:24px;line-height:1.15;font-weight:800;color:#FFFFFF;">${v.lastDay}</div>
+            </td></tr></table>
+          </td>
+          <td valign="middle" style="padding-right:4px;font-family:${MAIL_FONT};text-align:right;">
+            <div class="${vt.c.ink}" style="font-size:15px;line-height:1.7;font-weight:800;color:${vt.ink};">${escHtml(vc.title)}</div>
+            <div class="t-p" style="font-size:13px;line-height:1.8;color:#3A4357;">${escHtml(vc.sub)}</div>
+          </td>
+        </tr></table>
+      </td></tr></table>`;
   const body = [
     mH1('طلبك جاهز'),
     mP('شكراً لشرائك من Glitch Q. هذا هو الكود الخاص بطلبك، وهو جاهز للاستخدام الآن.'),
@@ -1608,6 +1665,8 @@ function buildCodeEmail({ product, code, orderId }) {
     mGap(10),
     mSmall('لتنسخ الكود: اضغط عليه مطولاً على الجوال، أو حدّده بالماوس على الكمبيوتر.'),
     mGap(14),
+    validityBand,
+    mGap(12),
     mNote(MAIL_TONE.gold, '<strong>لا تشارك الكود مع أحد</strong> — من يملكه يستطيع استخدامه.'),
     mGap(26),
     `<p class="t-h" style="margin:0 0 14px;font-family:${MAIL_FONT};font-size:16px;line-height:1.6;font-weight:800;color:#10131A;text-align:right;">طريقة التفعيل على PlayStation</p>`,
@@ -1627,19 +1686,23 @@ function buildCodeEmail({ product, code, orderId }) {
     tone: 'mint',
     label: 'تسليم الطلب',
     title: 'طلبك جاهز — Glitch Q',
-    preheader: 'كودك جاهز. افتح الرسالة لنسخه وتفعيله.',
+    preheader: v.daysLeft >= 0 ? `كودك جاهز وصالح حتى ${vc.full}. افتح الرسالة لنسخه وتفعيله.` : 'كودك جاهز. افتح الرسالة لنسخه وتفعيله.',
     body,
     note: 'وصلتك هذه الرسالة لأن طلباً مرتبطاً بهذا البريد تم تسليمه من متجر Glitch Q.',
   });
 }
 
-function buildCodeText({ product, code, orderId }) {
+function buildCodeText({ product, code, orderId, validity }) {
+  const vc = validityCopy(validity || codeValidity());
   return `طلبك جاهز — Glitch Q
 
 المنتج: ${product || '—'}${orderId ? `\nرقم الطلب: ${orderId}` : ''}
 
 الكود:
 ${code}
+
+${vc.title}
+${vc.sub}
 
 لا تشارك الكود مع أحد — من يملكه يستطيع استخدامه.
 
