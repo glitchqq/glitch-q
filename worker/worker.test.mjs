@@ -474,7 +474,7 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
 
   for (const [n, h] of Object.entries(all)) {
     ck(`mail ${n}: RTL Arabic document, dark-mode block, preheader`, /<html dir="rtl" lang="ar"/.test(h) && /prefers-color-scheme:dark/.test(h) && /display:none;max-height:0/.test(h));
-    ck(`mail ${n}: no scripts, remote images or plain-http links`, !/<script|<img|<iframe|http:\/\//i.test(h.replace(/xmlns="http:\/\/www\.w3\.org\/1999\/xhtml"/, '')));
+    ck(`mail ${n}: no scripts, iframes or plain-http links; the only image is the store logo with alt text`, !/<script|<iframe|http:\/\//i.test(h.replace(/xmlns="http:\/\/www\.w3\.org\/1999\/xhtml"/, '')) && [...h.matchAll(/<img\b[^>]*>/g)].every(m => /src="https:\/\/glitchqq\.github\.io\/glitch-q\/assets\/logo\/logo-email\.png"/.test(m[0]) && /alt="GLITCH Q"/.test(m[0])) && (h.match(/<img\b/g) || []).length === 1);
     ck(`mail ${n}: every href is https`, [...h.matchAll(/href="([^"]*)"/g)].every(m => m[1].startsWith('https://')));
     ck(`mail ${n}: old purple palette is gone`, !/7c3aed|c026d3|4c1d95/i.test(h));
   }

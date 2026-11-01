@@ -1401,6 +1401,7 @@ function codeValidity(untilISO, ms = Date.now()) {
 function arDays(n) { return n === 1 ? 'يوم واحد' : n === 2 ? 'يومان' : n <= 10 ? `${n} أيام` : `${n} يوماً`; }
 
 const MAIL_SITE = 'https://glitchqq.github.io/glitch-q/';
+const MAIL_LOGO = MAIL_SITE + 'assets/logo/logo-email.png';   // the only image in any mail; alt text keeps the header readable when images are blocked
 const MAIL_FONT = "-apple-system,'Segoe UI',Tahoma,'Noto Sans Arabic',Arial,sans-serif";
 const MAIL_MONO = "'SF Mono',Consolas,Menlo,'Courier New',monospace";
 
@@ -1510,14 +1511,11 @@ function mailShell({ tone, label, title, preheader, body, note }) {
 
   <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="bg-card bd" bgcolor="#FFFFFF" style="width:600px;max-width:100%;background-color:#FFFFFF;border:1px solid #DDE2EC;border-radius:16px;border-collapse:separate;overflow:hidden;">
 
-    <!-- Header: always dark. Brand mark (a flat square + a one-pixel RGB split), then what this letter is about -->
+    <!-- Header: always dark. The Glitch Q lockup (PNG, alt text as fallback), then what this letter is about -->
     <tr><td class="px" bgcolor="#0A0C10" style="background-color:#0A0C10;padding:20px 32px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
         <td align="right" valign="middle">
-          <table role="presentation" dir="ltr" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td width="36" height="36" align="center" valign="middle" bgcolor="#3D6BFF" style="width:36px;height:36px;background-color:#3D6BFF;border-radius:9px;font-family:Arial,Helvetica,sans-serif;font-size:21px;line-height:36px;font-weight:800;color:#FFFFFF;text-shadow:2px 0 #FF4D5E,-2px 0 #35E0F2;">Q</td>
-            <td valign="middle" style="padding-left:12px;font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:36px;font-weight:800;letter-spacing:3px;color:#FFFFFF;">GLITCH&nbsp;Q</td>
-          </tr></table>
+          <a href="${MAIL_SITE}" target="_blank" style="text-decoration:none;"><img src="${MAIL_LOGO}" width="170" height="33" alt="GLITCH Q" style="display:block;border:0;outline:none;width:170px;height:33px;font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:33px;font-weight:800;letter-spacing:3px;color:#FFFFFF;text-align:left;"></a>
         </td>
         <td align="left" valign="middle" style="font-family:${F};font-size:12.5px;line-height:1.6;color:#9AA3B5;text-align:left;">${escHtml(label)}</td>
       </tr></table>
