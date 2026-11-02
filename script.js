@@ -47,25 +47,32 @@ const T={
   ar:{
     nav_home:'الرئيسية',nav_shop:'المتجر',nav_subs:'الاشتراكات',
     nav_games:'شحن الألعاب',nav_rewards:'النقاط والمكافآت',nav_support:'الدعم',
-    hero_welcome:'مرحباً بك في',hero_tagline:'عالم الجيمينج بلا حدود',
-    hero_desc:'بطاقات PlayStation الأصلية • شحن فوري • دفع آمن',
-    hero_shop:'تسوق الآن',hero_explore:'استكشف المتجر',
-    feat_pay:'دفع 100% آمن',feat_pay_sub:'حماية ببياناتك',
-    feat_fast:'شحن فوري',feat_fast_sub:'خلال ثوانٍ',
-    feat_orig:'منتجات أصلية',feat_orig_sub:'100% معتمدة',
-    feat_sup:'دعم 24/7',feat_sup_sub:'نحن هنا لمساعدتك',
+    hero_welcome:'Glitch Q · متجر PlayStation الرقمي في الجزائر',hero_h1a:'بطاقات PlayStation',hero_h1b:'بالدينار الجزائري',
+    hero_tagline:'اختر البطاقة، ادفع عبر بريدي موب أو يدًا بيد، ويصلك الكود على حسابك وبريدك.',
+    hero_desc:'التسليم خلال 5 إلى 60 دقيقة بعد التحقق من الدفع.',
+    hero_shop:'تسوق الآن',hero_explore:'كيف يعمل الشراء',
+    feat_pay:'بريدي موب أو يد بيد',feat_pay_sub:'يد بيد في تلمسان فقط',
+    feat_fast:'تسليم خلال 5–60 دقيقة',feat_fast_sub:'بعد التحقق من الدفع',
+    feat_orig:'أكواد أصلية',feat_orig_sub:'تصلك على حسابك وبريدك',
+    feat_sup:'دعم عبر واتساب',feat_sup_sub:'نتابع معك برقم طلبك',
     feat_pts:'نقاط مكافآت',feat_pts_sub:'اكسب كل عملية شراء',
+    sec_how:'كيف يعمل الشراء',
+    how1_t:'اختر البطاقة',how1_s:'حدّد القيمة والريجن المناسبين لحسابك على PlayStation.',
+    how2_t:'ادفع وارفع الوصل',how2_s:'عبر بريدي موب، أو يدًا بيد في تلمسان، ثم أرفق صورة الوصل.',
+    how3_t:'استلم الكود',how3_s:'يصلك على حسابك وبريدك. الكود صالح حتى آخر يوم من شهر الاستلام.',
+    nav_account:'حسابي',nav_points:'النقاط',
+    terms_agree:'أوافق على',terms_link:'الشروط والأحكام',terms_and:'و',privacy_link:'سياسة الخصوصية',
     sec_featured:'بطاقات مميزة',sec_cats:'تصفح الفئات',
     sec_leaders:'أفضل المتصدرين',sec_missions:'مهام يومية',
-    sec_offer:'⏰ عرض خاص',see_all:'عرض الكل',
-    shop_title:'🛒 المتجر',shop_sub:'اختر من بين مجموعة واسعة من المنتجات',
+    sec_offer:'عرض خاص',see_all:'عرض الكل',
+    shop_title:'المتجر',shop_sub:'اختر من بين مجموعة واسعة من المنتجات',
     shop_all:'الكل',shop_empty:'لا توجد منتجات في هذه الفئة',
     shop_search_empty:'لا نتائج لـ',
     prod_oos:'نفذ مؤقتاً',prod_order:'اطلب الآن',prod_cart:'أضف للسلة',
     prod_val:'القيمة',month:'شهر',copy:'نسخة رقمية',
-    cart_title:'🛒 السلة',cart_empty:'السلة فارغة',
+    cart_title:'السلة',cart_empty:'السلة فارغة',
     cart_total:'المجموع',cart_checkout:'متابعة الشراء',
-    co_title:'🧾 إتمام الطلب',co_cpn:'كوبون الخصم (اختياري)',
+    co_title:'إتمام الطلب',co_cpn:'كوبون الخصم (اختياري)',
     co_apply:'تطبيق',co_total:'المبلغ الإجمالي',
     co_baridimob:'BaridiMob',co_hand:'يد بيد',
     co_rip:'RIP للتحويل',co_name:'الاسم الكامل (كما في بريدي موب)',
@@ -86,20 +93,20 @@ const T={
     verify_sub:'أرسلنا لك رابط التفعيل. افتح بريدك واضغط الرابط.',
     verify_resend:'إعادة الإرسال',verify_login:'تسجيل الدخول',
     region_title:'اختر ريجنك',region_sub:'حدد ريجن PlayStation لعرض الأسعار الصحيحة',
-    rw_title:'⭐ النقاط والمكافآت',rw_pts_hint:'كل 1000 دج = نقطة · 500 نقطة = خصم 5%',
+    rw_title:'النقاط والمكافآت',rw_pts_hint:'كل 1000 دج = نقطة · 500 نقطة = خصم 5%',
     rw_ms_desc:'اجمع النقاط واحصل على بطاقات مجانية!',
-    ref_link_title:'🔗 رابط الدعوة الخاص بك',
+    ref_link_title:'رابط الدعوة الخاص بك',
     ref_desc:'شارك رابطك مع أصدقائك. عند تسجيلهم تحصل على 1000 نقطة لكل صديق!',
-    ref_warning:'⚠️ لا يعمل مع حسابات من نفس الجهاز أو الشبكة',
+    ref_warning:'لا يعمل مع حسابات من نفس الجهاز أو الشبكة',
     ref_copy:'نسخ',ref_friends:'صديق مدعو',ref_pts_label:'نقطة من الدعوات',
     ref_login_hint:'سجل دخولك لعرض رابطك',
-    prof_title:'👤 حسابي',prof_login:'سجل دخولك',
+    prof_title:'حسابي',prof_login:'سجل دخولك',
     prof_login_sub:'لتجميع النقاط وتتبع طلباتك',
-    prof_login_btn:'دخول / تسجيل',prof_orders:'📦 آخر طلباتك',
+    prof_login_btn:'دخول / تسجيل',prof_orders:'آخر طلباتك',
     prof_logout:'تسجيل الخروج',prof_track:'تتبع',
     prof_region:'الريجن',prof_rate:'تقييم',prof_rewards:'مكافآت',
     pts_label:'نقطة',
-    sup_title:'🎧 الدعم الفني',sup_sub:'نحن هنا لمساعدتك في أي وقت',
+    sup_title:'الدعم الفني',sup_sub:'نحن هنا لمساعدتك في أي وقت',
     sup_card1:'الدعم الفني',sup_card1s:'تحدث مع بوت الدعم الذكي',
     sup_card2:'الإبلاغ عن مشكلة',sup_card2s:'أرسل بلاغاً مفصلاً للإدارة',
     sup_card3:'تتبع الطلبات',sup_card3s:'تتبع حالة طلبك برقم الطلب',
@@ -107,9 +114,9 @@ const T={
     sup_card5:'واتساب',sup_card5s:'تواصل معنا مباشرة — يفتح المحادثة فوراً',
     sup_card6:'البريد الإلكتروني',sup_card6s:'glitchq1q@gmail.com',
     consent_title:'مرحباً بك في Glitch Q!',
-    consent_accept:'✅ قبول والمتابعة',consent_reject:'رفض',
+    consent_accept:'قبول والمتابعة',consent_reject:'رفض',
     spin_title:'Lucky Spin',spin_sub:'دوّر العجلة واربح نقاطاً! سبين واحد يومياً',
-    spin_btn:'أدِر العجلة 🎲',
+    spin_btn:'أدِر العجلة',
     bot_title:'مساعد الدعم الفني',bot_sub:'سأساعدك في حل مشكلتك',
     human_btn:'تواصل مع الدعم البشري',
     report_title:'الإبلاغ عن مشكلة',report_sub:'سيتم إرسال بلاغك مباشرة إلى الإدارة',
@@ -117,50 +124,50 @@ const T={
     rating_title:'قيّم تجربتك',rating_comment:'تعليق اختياري...',
     rating_submit:'إرسال التقييم',rating_skip:'تخطي',
     track_title:'تتبع طلبك',track_placeholder:'رقم الطلب...',track_btn:'تتبع',
-    track_not_found:'❌ رقم الطلب غير موجود',track_error:'حدث خطأ',
-    faq_title:'❓ الأسئلة الشائعة',
+    track_not_found:'رقم الطلب غير موجود',track_error:'حدث خطأ',
+    faq_title:'الأسئلة الشائعة',
     nl_title:'اشترك في نشرتنا البريدية',
     nl_sub:'احصل على آخر العروض والخصومات الحصرية',
-    nl_placeholder:'بريدك الإلكتروني...',nl_btn:'اشتراك ✓',
-    notif_title:'🔔 الإشعارات',notif_empty:'لا توجد إشعارات',
+    nl_placeholder:'بريدك الإلكتروني...',nl_btn:'اشتراك',
+    notif_title:'الإشعارات',notif_empty:'لا توجد إشعارات',
     choose_region:'اختر الريجن',
     f_copy:'GLITCH Q 2026 © جميع الحقوق محفوظة',
-    f_brand:'المتجر الأول لعشاق الجيمينج في الجزائر.',
-    offer_title:'⏰ عرض خاص',offer_desc:'خصم على جميع البطاقات\nاستخدم الكود:',
+    f_brand:'متجر بطاقات PlayStation الرقمية في الجزائر، من تلمسان.',
+    offer_title:'عرض خاص',offer_desc:'خصم على جميع البطاقات\nاستخدم الكود:',
     offer_shop:'تسوق الآن',all_missions:'عرض جميع المهام',
     leaders_spin:'Lucky Spin للنقاط',
     my_acc:'حسابي',my_pts:'نقاطي',track_order:'تتبع طلب',logout_txt:'خروج',
     loading_txt:'جاري التحميل...',loading_init:'تهيئة المتجر...',
-    loading_data:'تحميل البيانات...',loading_done:'أهلاً بك! 🎮',
-    order_pend:'🆕 قيد المراجعة',order_proc:'⚙️ قيد المعالجة',
-    order_done:'✅ تم التسليم',order_rej:'❌ مرفوض',
+    loading_data:'تحميل البيانات...',loading_done:'أهلاً بك!',
+    order_pend:'🆕 قيد المراجعة',order_proc:'قيد المعالجة',
+    order_done:'تم التسليم',order_rej:'مرفوض',
     or_text:'أو',send_support_placeholder:'اكتب مشكلتك...',
-    t_added_cart:'✅ أضيف للسلة',t_oos:'المنتج نفذ مؤقتاً',
-    t_login_first:'سجل دخولك أولاً',t_region_done:'✅ ريجن',
+    t_added_cart:'أضيف للسلة',t_oos:'المنتج نفذ مؤقتاً',
+    t_login_first:'سجل دخولك أولاً',t_region_done:'ريجن',
     t_copied:'تم النسخ',t_spin_daily:'سبين واحد يومياً فقط!',
     t_spin_next:'السبين القادم بعد',t_sending:'جاري الإرسال...',
-    t_order_sent:'🎉 تم إرسال طلبك! سيصلك الكود قريباً',
+    t_order_sent:'تم إرسال طلبك! سيصلك الكود قريباً',
     t_pts:'نقطة',t_lang_changed:'تم تغيير اللغة',
-    t_consent_ok:'شكراً على موافقتك! مرحباً بك في Glitch Q 🎮',
-    t_subscribed:'تم الاشتراك! ✅',t_email_invalid:'أدخل إيميلاً صحيحاً',
+    t_consent_ok:'شكراً على موافقتك! مرحباً بك في Glitch Q',
+    t_subscribed:'تم الاشتراك!',t_email_invalid:'أدخل إيميلاً صحيحاً',
     t_terms_required:'يجب الموافقة على الشروط والأحكام',
     t_name_required:'أدخل الاسم واللقب',t_pass_mismatch:'كلمة المرور غير متطابقة',
     t_pass_short:'6 أحرف على الأقل',t_email_exists:'الإيميل مسجل مسبقاً',
     t_weak_pass:'كلمة مرور ضعيفة',t_login_error:'خطأ في البريد أو كلمة المرور',
     t_verify_first:'فعّل حسابك من إيميلك أولاً',
-    t_reg_done:'تم التسجيل! تحقق من إيميلك 📧',
+    t_reg_done:'تم التسجيل! تحقق من إيميلك',
     t_reset_sent:'تم إرسال رابط التعيين',t_reset_error:'إيميل غير موجود',
     t_no_email:'أدخل إيميلك',t_logged_out:'تم تسجيل الخروج',
-    t_welcome:'أهلاً بك! 🎉',t_coupon_invalid:'❌ كوبون غير صحيح',
-    t_enter_cpn:'أدخل الكوبون',t_rip_copied:'تم نسخ الـ RIP ✅',
+    t_welcome:'أهلاً بك!',t_coupon_invalid:'كوبون غير صحيح',
+    t_enter_cpn:'أدخل الكوبون',t_rip_copied:'تم نسخ الـ RIP',
     t_name_full:'أدخل اسمك الكامل',t_upload_receipt:'أرفق صورة الوصل',
     t_img_invalid:'صورة غير صالحة',t_phone_required:'أدخل رقم هاتفك',
     t_too_many:'طلبات كثيرة، حاول بعد دقيقة',t_conn_error:'تحقق من الاتصال',
     t_streak_done:'استلمت مكافأتك اليوم بالفعل!',
-    t_streak_reward:'✅ مكافأة اليوم!',t_badge_new:'شارة جديدة',
-    t_ref_copied:'تم نسخ رابط الدعوة! 🎉',
+    t_streak_reward:'مكافأة اليوم!',t_badge_new:'شارة جديدة',
+    t_ref_copied:'تم نسخ رابط الدعوة!',
     t_ref_self:'لا يمكن الإحالة من نفس الجهاز',
-    t_ref_done:'تم تسجيل دعوتك! 🎉 صاحبك ربح 1000 نقطة',
+    t_ref_done:'تم تسجيل دعوتك! صاحبك ربح 1000 نقطة',
     t_ms_pts:'تحتاج نقاط للحصول على هذه المكافأة',
     t_ms_claimed:'استلمت هذه المكافأة مسبقاً',
     t_ms_spend:'يجب أن تصرف على الأقل',
@@ -169,36 +176,43 @@ const T={
     t_report_title_req:'أدخل عنوان المشكلة',
     t_report_cat_req:'اختر نوع المشكلة',
     t_report_desc_req:'أدخل وصفاً تفصيلياً (20 حرف على الأقل)',
-    t_report_sent:'✅ تم إرسال بلاغك! سنتواصل معك قريباً',
+    t_report_sent:'تم إرسال بلاغك! سنتواصل معك قريباً',
     t_report_error:'حدث خطأ، حاول مرة أخرى',
-    t_star_select:'اختر النجوم',t_rating_done:'شكراً! ⭐',
+    t_star_select:'اختر النجوم',t_rating_done:'شكراً!',
     t_choose_prod:'اختر منتجاً أولاً',
-    t_maintenance:'الموقع في وضع الصيانة. نعود قريباً 🔧',
+    t_maintenance:'الموقع في وضع الصيانة. نعود قريباً',
     t_error:'حدث خطأ',t_banned:'تم تعليق حسابك.',
     t_processing:'جاري المعالجة...',
   },
   en:{
     nav_home:'Home',nav_shop:'Shop',nav_subs:'Subscriptions',
     nav_games:'Game Credits',nav_rewards:'Points & Rewards',nav_support:'Support',
-    hero_welcome:'Welcome to',hero_tagline:'Gaming World Without Limits',
-    hero_desc:'Original PlayStation Cards • Instant Delivery • Secure Payment',
-    hero_shop:'Shop Now',hero_explore:'Explore Store',
-    feat_pay:'100% Secure Payment',feat_pay_sub:'Your data is protected',
-    feat_fast:'Instant Delivery',feat_fast_sub:'Within seconds',
-    feat_orig:'Original Products',feat_orig_sub:'100% certified',
-    feat_sup:'24/7 Support',feat_sup_sub:'We are here to help',
-    feat_pts:'Reward Points',feat_pts_sub:'Earn on every purchase',
+    hero_welcome:'Glitch Q · PlayStation digital store, Algeria',hero_h1a:'PlayStation cards',hero_h1b:'priced in DZD',
+    hero_tagline:'Pick a card, pay with BaridiMob or in person, and get your code in your account and inbox.',
+    hero_desc:'Delivered 5 to 60 minutes after your payment is verified.',
+    hero_shop:'Shop now',hero_explore:'How buying works',
+    feat_pay:'BaridiMob or in person',feat_pay_sub:'In person in Tlemcen only',
+    feat_fast:'Delivered in 5–60 min',feat_fast_sub:'After payment is verified',
+    feat_orig:'Genuine codes',feat_orig_sub:'Sent to your account and inbox',
+    feat_sup:'Support on WhatsApp',feat_sup_sub:'We follow up with your order no.',
+    feat_pts:'Reward points',feat_pts_sub:'Earn on every order',
+    sec_how:'How buying works',
+    how1_t:'Pick a card',how1_s:'Choose the value and the region that matches your PlayStation account.',
+    how2_t:'Pay and upload the receipt',how2_s:'BaridiMob, or in person in Tlemcen, then attach a photo of the receipt.',
+    how3_t:'Get your code',how3_s:'It arrives in your account and inbox. The code is valid until the last day of the month you receive it.',
+    nav_account:'Account',nav_points:'Points',
+    terms_agree:'I agree to the',terms_link:'Terms',terms_and:'and',privacy_link:'Privacy Policy',
     sec_featured:'Featured Cards',sec_cats:'Browse Categories',
     sec_leaders:'Top Players',sec_missions:'Daily Missions',
-    sec_offer:'⏰ Special Offer',see_all:'View All',
-    shop_title:'🛒 Shop',shop_sub:'Choose from a wide range of products',
+    sec_offer:'Special Offer',see_all:'View All',
+    shop_title:'Shop',shop_sub:'Choose from a wide range of products',
     shop_all:'All',shop_empty:'No products in this category',
     shop_search_empty:'No results for',
     prod_oos:'Out of Stock',prod_order:'Order Now',prod_cart:'Add to Cart',
     prod_val:'Value',month:'Month',copy:'Digital Copy',
-    cart_title:'🛒 Cart',cart_empty:'Cart is empty',
+    cart_title:'Cart',cart_empty:'Cart is empty',
     cart_total:'Total',cart_checkout:'Proceed to Checkout',
-    co_title:'🧾 Complete Order',co_cpn:'Discount Coupon (optional)',
+    co_title:'Complete Order',co_cpn:'Discount Coupon (optional)',
     co_apply:'Apply',co_total:'Total Amount',
     co_baridimob:'BaridiMob',co_hand:'Hand Delivery',
     co_rip:'Transfer RIP',co_name:'Full Name (as in BaridiMob)',
@@ -219,20 +233,20 @@ const T={
     verify_sub:'We sent you a verification link. Open your email and click it.',
     verify_resend:'Resend Email',verify_login:'Sign In',
     region_title:'Choose Your Region',region_sub:'Select your PlayStation region',
-    rw_title:'⭐ Points & Rewards',rw_pts_hint:'Every 1000 DZD = 1 point · 500 points = 5% discount',
+    rw_title:'Points & Rewards',rw_pts_hint:'Every 1000 DZD = 1 point · 500 points = 5% discount',
     rw_ms_desc:'Collect points and get free cards!',
-    ref_link_title:'🔗 Your Referral Link',
+    ref_link_title:'Your Referral Link',
     ref_desc:'Share your link with friends. Get 1000 points per friend!',
-    ref_warning:'⚠️ Does not work with accounts from the same device',
+    ref_warning:'Does not work with accounts from the same device',
     ref_copy:'Copy',ref_friends:'Friends invited',ref_pts_label:'Points from referrals',
     ref_login_hint:'Sign in to view your link',
-    prof_title:'👤 My Account',prof_login:'Sign In',
+    prof_title:'My Account',prof_login:'Sign In',
     prof_login_sub:'To collect points and track your orders',
-    prof_login_btn:'Sign In / Register',prof_orders:'📦 Recent Orders',
+    prof_login_btn:'Sign In / Register',prof_orders:'Recent Orders',
     prof_logout:'Sign Out',prof_track:'Track',
     prof_region:'Region',prof_rate:'Rate',prof_rewards:'Rewards',
     pts_label:'points',
-    sup_title:'🎧 Support',sup_sub:'We are here to help you anytime',
+    sup_title:'Support',sup_sub:'We are here to help you anytime',
     sup_card1:'Technical Support',sup_card1s:'Chat with our smart support bot',
     sup_card2:'Report an Issue',sup_card2s:'Send a detailed report to management',
     sup_card3:'Track Orders',sup_card3s:'Track your order status',
@@ -240,9 +254,9 @@ const T={
     sup_card5:'WhatsApp',sup_card5s:'Contact us directly',
     sup_card6:'Email',sup_card6s:'glitchq1q@gmail.com',
     consent_title:'Welcome to Glitch Q!',
-    consent_accept:'✅ Accept & Continue',consent_reject:'Decline',
+    consent_accept:'Accept & Continue',consent_reject:'Decline',
     spin_title:'Lucky Spin',spin_sub:'Spin the wheel and win points! One spin per day',
-    spin_btn:'Spin the Wheel 🎲',
+    spin_btn:'Spin the Wheel',
     bot_title:'Support Assistant',bot_sub:'I will help you solve your issue',
     human_btn:'Contact Human Support',
     report_title:'Report an Issue',report_sub:'Your report will be sent to management',
@@ -250,50 +264,50 @@ const T={
     rating_title:'Rate Your Experience',rating_comment:'Optional comment...',
     rating_submit:'Submit Rating',rating_skip:'Skip',
     track_title:'Track Your Order',track_placeholder:'Order number...',track_btn:'Track',
-    track_not_found:'❌ Order number not found',track_error:'An error occurred',
-    faq_title:'❓ FAQ',
+    track_not_found:'Order number not found',track_error:'An error occurred',
+    faq_title:'FAQ',
     nl_title:'Subscribe to our Newsletter',
     nl_sub:'Get the latest offers and exclusive discounts',
-    nl_placeholder:'Your email address...',nl_btn:'Subscribe ✓',
-    notif_title:'🔔 Notifications',notif_empty:'No notifications',
+    nl_placeholder:'Your email address...',nl_btn:'Subscribe',
+    notif_title:'Notifications',notif_empty:'No notifications',
     choose_region:'Choose Region',
     f_copy:'GLITCH Q 2026 © All Rights Reserved',
-    f_brand:'The #1 gaming store in Algeria.',
-    offer_title:'⏰ Special Offer',offer_desc:'Discount on all cards\nUse code:',
+    f_brand:'PlayStation digital cards for Algeria, from Tlemcen.',
+    offer_title:'Special Offer',offer_desc:'Discount on all cards\nUse code:',
     offer_shop:'Shop Now',all_missions:'View All Missions',
     leaders_spin:'Lucky Spin for Points',
     my_acc:'My Account',my_pts:'My Points',track_order:'Track Order',logout_txt:'Sign Out',
     loading_txt:'Loading...',loading_init:'Initializing store...',
-    loading_data:'Loading data...',loading_done:'Welcome! 🎮',
-    order_pend:'🆕 Under Review',order_proc:'⚙️ Processing',
-    order_done:'✅ Delivered',order_rej:'❌ Rejected',
+    loading_data:'Loading data...',loading_done:'Welcome!',
+    order_pend:'🆕 Under Review',order_proc:'Processing',
+    order_done:'Delivered',order_rej:'Rejected',
     or_text:'or',send_support_placeholder:'Type your issue...',
-    t_added_cart:'✅ Added to cart',t_oos:'Product is out of stock',
-    t_login_first:'Please sign in first',t_region_done:'✅ Region',
+    t_added_cart:'Added to cart',t_oos:'Product is out of stock',
+    t_login_first:'Please sign in first',t_region_done:'Region',
     t_copied:'Copied',t_spin_daily:'One spin per day only!',
     t_spin_next:'Next spin in',t_sending:'Sending...',
-    t_order_sent:'🎉 Order sent! Your code will arrive shortly',
+    t_order_sent:'Order sent! Your code will arrive shortly',
     t_pts:'points',t_lang_changed:'Language changed',
-    t_consent_ok:'Thank you! Welcome to Glitch Q 🎮',
-    t_subscribed:'Subscribed! ✅',t_email_invalid:'Enter a valid email',
+    t_consent_ok:'Thank you! Welcome to Glitch Q',
+    t_subscribed:'Subscribed!',t_email_invalid:'Enter a valid email',
     t_terms_required:'You must agree to the terms',
     t_name_required:'Enter first and last name',t_pass_mismatch:'Passwords do not match',
     t_pass_short:'At least 6 characters',t_email_exists:'Email already registered',
     t_weak_pass:'Weak password',t_login_error:'Invalid email or password',
     t_verify_first:'Please verify your email first',
-    t_reg_done:'Registered! Check your email 📧',
+    t_reg_done:'Registered! Check your email',
     t_reset_sent:'Password reset link sent',t_reset_error:'Email not found',
     t_no_email:'Enter your email',t_logged_out:'Signed out',
-    t_welcome:'Welcome! 🎉',t_coupon_invalid:'❌ Invalid coupon',
-    t_enter_cpn:'Enter coupon code',t_rip_copied:'RIP copied ✅',
+    t_welcome:'Welcome!',t_coupon_invalid:'Invalid coupon',
+    t_enter_cpn:'Enter coupon code',t_rip_copied:'RIP copied',
     t_name_full:'Enter your full name',t_upload_receipt:'Upload receipt image',
     t_img_invalid:'Invalid image',t_phone_required:'Enter your phone number',
     t_too_many:'Too many requests, try again in a minute',t_conn_error:'Check your connection',
     t_streak_done:"Already claimed today's reward!",
     t_streak_reward:"✅ Today's reward!",t_badge_new:'New Badge',
-    t_ref_copied:'Referral link copied! 🎉',
+    t_ref_copied:'Referral link copied!',
     t_ref_self:'Cannot refer from same device',
-    t_ref_done:'Referral registered! 🎉 Your friend earned 1000 points',
+    t_ref_done:'Referral registered! Your friend earned 1000 points',
     t_ms_pts:'You need points for this reward',
     t_ms_claimed:'Already claimed this reward',
     t_ms_spend:'You must spend at least',
@@ -302,11 +316,11 @@ const T={
     t_report_title_req:'Enter issue title',
     t_report_cat_req:'Select issue type',
     t_report_desc_req:'Enter detailed description (min 20 chars)',
-    t_report_sent:'✅ Report submitted! We will contact you soon',
+    t_report_sent:'Report submitted! We will contact you soon',
     t_report_error:'An error occurred, please try again',
-    t_star_select:'Select stars',t_rating_done:'Thank you! ⭐',
+    t_star_select:'Select stars',t_rating_done:'Thank you!',
     t_choose_prod:'Choose a product first',
-    t_maintenance:'Site is under maintenance. Back soon 🔧',
+    t_maintenance:'Site is under maintenance. Back soon',
     t_error:'An error occurred',t_banned:'Your account has been suspended.',
     t_processing:'Processing...',
   }
@@ -337,13 +351,18 @@ function applyTranslations(){
   st('heroWelcome',t('hero_welcome'));st('heroTagline',t('hero_tagline'));
   st('heroDesc',t('hero_desc'));st('heroShopBtn',t('hero_shop'));
   st('heroExploreBtn',t('hero_explore'));
+  st('heroH1a',t('hero_h1a'));st('heroH1b',t('hero_h1b'));
+  {const e=document.getElementById('heroH1b');if(e&&e.parentElement)e.parentElement.dataset.t=t('hero_h1b');}
+  st('howTitle',t('sec_how'));
+  {const e=document.getElementById('regTermsText');if(e)e.innerHTML=`${t('terms_agree')} <button type="button" onclick="openM('termsModal')" class="consent-link">${t('terms_link')}</button> ${t('terms_and')} <button type="button" onclick="openM('privacyModal')" class="consent-link">${t('privacy_link')}</button>`;}
+  [1,2,3].forEach(i=>{st('how'+i+'T',t('how'+i+'_t'));st('how'+i+'S',t('how'+i+'_s'));});
+  ['nav_home','nav_shop','nav_points','nav_support','nav_account'].forEach((k,i)=>st('tb'+i,t(k)));
 
   // Features
   st('feat1T',t('feat_pay'));st('feat1S',t('feat_pay_sub'));
   st('feat2T',t('feat_fast'));st('feat2S',t('feat_fast_sub'));
   st('feat3T',t('feat_orig'));st('feat3S',t('feat_orig_sub'));
   st('feat4T',t('feat_sup'));st('feat4S',t('feat_sup_sub'));
-  st('feat5T',t('feat_pts'));st('feat5S',t('feat_pts_sub'));
 
   // Home sections
   st('featuredTitle',t('sec_featured'));st('seeAllBtn',t('see_all'));
@@ -393,7 +412,7 @@ function applyTranslations(){
   st('loginBtn',t('login_btn'));st('forgotLbl',t('login_forgot'));applyResetTexts();try{window.acctApplyTexts&&window.acctApplyTexts();}catch(e){}st('profAcc',S.lang==='en'?'Settings':'الإعدادات');
   st('guestBtn',t('login_guest'));st('noAccText',t('login_no_acc'));st('goRegBtn',t('login_reg'));
   st('regTitle',t('reg_title'));st('regSub',t('reg_sub'));
-  sp('regFirst','placeholder',t('reg_first'));sp('regLast','placeholder',t('reg_last'));
+  sp('regEmail','placeholder',t('login_email'));sp('regFirst','placeholder',t('reg_first'));sp('regLast','placeholder',t('reg_last'));
   sp('regPass','placeholder',t('reg_pass'));sp('regConf','placeholder',t('reg_conf'));
   st('regBtn',t('reg_btn'));st('haveAccText',t('reg_have_acc'));st('goLoginBtn',t('reg_login'));
   st('verifyTitle',t('verify_title'));st('verifySub',t('verify_sub'));
@@ -522,6 +541,7 @@ const FAQ_DATA=[
   {q:'كيف أشتري بطاقة PlayStation؟',qEn:'How do I buy a PlayStation card?',a:'اختر البطاقة من المتجر، اضغط "اطلب الآن"، ادفع عبر BaridiMob أو يد بيد، وارفع وصل الدفع. سيصلك الكود خلال 5-60 دقيقة.',aEn:'Choose the card from the store, click "Order Now", pay via BaridiMob or hand delivery, and upload the receipt. The code will arrive within 5-60 minutes.'},
   {q:'ما هو الريجن وكيف أختاره؟',qEn:'What is a region and how do I choose it?',a:'الريجن هو منطقة حساب PlayStation. EU للأوروبية، US للأمريكية.',aEn:'The region is your PlayStation account region. EU for European, US for American.'},
   {q:'كم يستغرق استلام الكود؟',qEn:'How long does it take to receive the code?',a:'عادةً 5 إلى 60 دقيقة من التحقق من الدفع.',aEn:'Usually 5 to 60 minutes after payment verification.'},
+  {q:'ما مدة صلاحية الكود؟',qEn:'How long is a code valid?',a:'من يوم استلامه حتى آخر يوم من نفس الشهر. فإن وصلك الكود في نوفمبر فهو صالح حتى 30 نوفمبر، ومن غرة ديسمبر لا يعمل.',aEn:'From the day you receive it until the last day of that same month. A code received in November is valid until 30 November and stops working from 1 December.'},
   {q:'هل يمكن الاسترجاع بعد إرسال الكود؟',qEn:'Can I get a refund after the code is sent?',a:'لا. بمجرد إرسال الكود لا يتم الاسترجاع.',aEn:'No. Once the code is sent, no refunds are possible.'},
   {q:'ما هي طرق الدفع المتاحة؟',qEn:'What payment methods are available?',a:'BaridiMob: RIP 00799999004390466974\nيد بيد: في ولاية تلمسان فقط.',aEn:'BaridiMob: RIP 00799999004390466974\nHand delivery: In Tlemcen only.'},
   {q:'كيف أتواصل معكم؟',qEn:'How can I contact you?',a:'واتساب: 213658996502\nإيميل: glitchq1q@gmail.com',aEn:'WhatsApp: 213658996502\nEmail: glitchq1q@gmail.com'},
@@ -535,16 +555,16 @@ const MILESTONES=[
   {id:'m1000',pts:1000,icon:'🏆',name:'مكافأة 1000 نقطة',nameEn:'1000 Point Reward',desc:'PS Plus Extra 3 أشهر مجانية',descEn:'Free PS Plus Extra 3 Months',minSpend:600000,msg:'🎉 مبروك! ربحت PS Plus Extra 3 أشهر مجانية!',msgEn:'🎉 Congratulations! You won free PS Plus Extra 3 months!'},
 ];
 const SPIN_SEGMENTS=[
-  {pts:2,label:'2 نقاط',labelEn:'2 Points',color:'#4c1d95',prob:35},
-  {pts:3,label:'3 نقاط',labelEn:'3 Points',color:'#1e3a5f',prob:30},
-  {pts:5,label:'5 نقاط',labelEn:'5 Points',color:'#6d28d9',prob:20},
-  {pts:10,label:'10 نقاط',labelEn:'10 Points',color:'#78350f',prob:10},
-  {pts:20,label:'20 نقطة',labelEn:'20 Points',color:'#1e3a5f',prob:4},
-  {pts:50,label:'50 نقطة',labelEn:'50 Points',color:'#7c2d12',prob:1},
-  {pts:0,label:'حاول غداً',labelEn:'Try Tomorrow',color:'#1c1c2e',prob:0},
+  {pts:2,label:'2 نقاط',labelEn:'2 Points',color:'#1B2A5C',prob:35},
+  {pts:3,label:'3 نقاط',labelEn:'3 Points',color:'#141E30',prob:30},
+  {pts:5,label:'5 نقاط',labelEn:'5 Points',color:'#2146B5',prob:20},
+  {pts:10,label:'10 نقاط',labelEn:'10 Points',color:'#4A3410',prob:10},
+  {pts:20,label:'20 نقطة',labelEn:'20 Points',color:'#141E30',prob:4},
+  {pts:50,label:'50 نقطة',labelEn:'50 Points',color:'#5C1F2A',prob:1},
+  {pts:0,label:'حاول غداً',labelEn:'Try Tomorrow',color:'#161A22',prob:0},
 ];
 const SUPPORT_FLOWS={
-  start:{msg:'مرحباً! أنا بوت الدعم الفني لـ Glitch Q 🤖\nكيف يمكنني مساعدتك اليوم؟',msgEn:"Hello! I'm the Glitch Q support bot 🤖\nHow can I help you today?",opts:['لم أستلم كودي','كودي خاطئ','مشكلة في الدفع','سؤال عن الريجن','مشكلة في الحساب','أخرى'],optsEn:['Did not receive my code','Wrong code','Payment issue','Region question','Account issue','Other']},
+  start:{msg:'مرحباً! أنا بوت الدعم الفني لـ Glitch Q\nكيف يمكنني مساعدتك اليوم؟',msgEn:"Hello! I'm the Glitch Q support bot\nHow can I help you today?",opts:['لم أستلم كودي','كودي خاطئ','مشكلة في الدفع','سؤال عن الريجن','مشكلة في الحساب','أخرى'],optsEn:['Did not receive my code','Wrong code','Payment issue','Region question','Account issue','Other']},
   'لم أستلم كودي':{msg:'عذراً! الكود يصل عادةً خلال 5-60 دقيقة.\nهل مرّت أكثر من ساعة على تأكيد الدفع؟',msgEn:'Sorry! The code usually arrives within 5-60 minutes.\nHas more than an hour passed since payment confirmation?',opts:['نعم مرّت أكثر من ساعة','لا سأنتظر قليلاً','كيف أعرف حالة طلبي؟'],optsEn:['Yes, more than an hour','No, I will wait','How do I check my order?']},
   'نعم مرّت أكثر من ساعة':{msg:'يجب التواصل مع الدعم البشري مباشرة.',msgEn:'You need to contact human support directly.',opts:['التواصل مع الدعم البشري'],optsEn:['Contact human support'],human:true},
   'كيف أعرف حالة طلبي؟':{msg:'من قسم الدعم > تتبع الطلبات، أدخل رقم الطلب.',msgEn:'From Support > Track Orders, enter your order number.',opts:['شكراً فهمت','لا يزال عندي مشكلة'],optsEn:['Thanks','Still have an issue']},
@@ -564,14 +584,14 @@ const SUPPORT_FLOWS={
   'لم يصل إيميل التفعيل':{msg:'تحقق من مجلد Spam.',msgEn:'Check your Spam folder.',opts:['التواصل مع الدعم البشري','شكراً فهمت'],optsEn:['Contact human support','Thanks']},
   'لا أستطيع الدخول':{msg:'جرّب مسح ذاكرة التخزين المؤقت.',msgEn:'Try clearing your browser cache.',opts:['التواصل مع الدعم البشري','شكراً فهمت'],optsEn:['Contact human support','Thanks']},
   'أخرى':{msg:'اكتب مشكلتك في مربع النص.',msgEn:'Write your issue in the text box.',opts:['التواصل مع الدعم البشري'],optsEn:['Contact human support']},
-  'التواصل مع الدعم البشري':{msg:'سيتم تحويلك الآن للدعم البشري 🟢',msgEn:'You will now be redirected to human support 🟢',opts:[],optsEn:[],human:true},
-  'Contact human support':{msg:'سيتم تحويلك الآن 🟢',msgEn:'Redirecting to human support 🟢',opts:[],optsEn:[],human:true},
-  'شكراً فهمت':{msg:'على الرحب! أنا هنا إذا احتجت مساعدة 😊',msgEn:"You're welcome! I'm here if you need more help 😊",opts:['عودة للبداية'],optsEn:['Back to start']},
-  'نعم شكراً!':{msg:'يسعدني أنني ساعدتك! 🎮',msgEn:'Glad I could help! 🎮',opts:['عودة للبداية'],optsEn:['Back to start']},
+  'التواصل مع الدعم البشري':{msg:'سيتم تحويلك الآن للدعم البشري',msgEn:'You will now be redirected to human support',opts:[],optsEn:[],human:true},
+  'Contact human support':{msg:'سيتم تحويلك الآن',msgEn:'Redirecting to human support',opts:[],optsEn:[],human:true},
+  'شكراً فهمت':{msg:'على الرحب! أنا هنا إذا احتجت مساعدة',msgEn:"You're welcome! I'm here if you need more help",opts:['عودة للبداية'],optsEn:['Back to start']},
+  'نعم شكراً!':{msg:'يسعدني أنني ساعدتك!',msgEn:'Glad I could help!',opts:['عودة للبداية'],optsEn:['Back to start']},
   'حسناً':{msg:'بالتوفيق!',msgEn:'Good luck!',opts:['عودة للبداية'],optsEn:['Back to start']},
   'عودة للبداية':{msg:'كيف يمكنني مساعدتك؟',msgEn:'How can I help you?',opts:['لم أستلم كودي','كودي خاطئ','مشكلة في الدفع','سؤال عن الريجن','مشكلة في الحساب','أخرى'],optsEn:['Did not receive my code','Wrong code','Payment issue','Region question','Account issue','Other']},
-  'Yes, thanks!':{msg:'يسعدني أنني ساعدتك! 🎮',msgEn:'Glad I could help! 🎮',opts:['عودة للبداية'],optsEn:['Back to start']},
-  'Thanks':{msg:'على الرحب والسعة! 😊',msgEn:"You're welcome! 😊",opts:['عودة للبداية'],optsEn:['Back to start']},
+  'Yes, thanks!':{msg:'يسعدني أنني ساعدتك!',msgEn:'Glad I could help!',opts:['عودة للبداية'],optsEn:['Back to start']},
+  'Thanks':{msg:'على الرحب والسعة!',msgEn:"You're welcome!",opts:['عودة للبداية'],optsEn:['Back to start']},
   'Back to start':{msg:'كيف يمكنني مساعدتك؟',msgEn:'How can I help you?',opts:['لم أستلم كودي','كودي خاطئ','مشكلة في الدفع','سؤال عن الريجن','مشكلة في الحساب','أخرى'],optsEn:['Did not receive my code','Wrong code','Payment issue','Region question','Account issue','Other']},
   'Yes, more than an hour':{msg:'يجب التواصل مع الدعم البشري.',msgEn:'You need to contact human support.',opts:['التواصل مع الدعم البشري'],optsEn:['Contact human support'],human:true},
   'No, I will wait':{msg:'جيد! إذا لم يصل خلال ساعة تواصل معنا.',msgEn:"Okay! If it doesn't arrive, contact us.",opts:['حسناً'],optsEn:['Okay']},
@@ -671,6 +691,7 @@ function goPage(name){
   document.querySelectorAll('.nav-ul li').forEach(l=>l.classList.remove('on'));
   $(`pg-${name}`)?.classList.add('on');S.currentPage=name;
   window.scrollTo({top:0,behavior:'smooth'});
+  document.querySelectorAll('#tabbar button').forEach(b=>b.classList.toggle('on',b.dataset.pg===name));
   const map={home:0,shop:1,rewards:2,support:3};
   const idx=map[name];if(idx!==undefined)document.querySelectorAll('.nav-ul li')[idx]?.classList.add('on');
   if(name==='shop'){renderCatFilterBar();renderShopProds();}
@@ -775,7 +796,7 @@ window.rejectConsent=function(){
   const msg=S.lang==='en'?'If you decline, you cannot use the site. Are you sure?':'إذا رفضت لن تتمكن من استخدام الموقع. هل أنت متأكد؟';
   if(confirm(msg)){
     const notice=S.lang==='en'?'Cannot use site without agreeing.':'لا يمكن استخدام الموقع بدون الموافقة.';
-    document.body.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0015;color:#a78bca;font-family:Cairo,sans-serif;text-align:center"><div><p>${notice}</p><button onclick="location.reload()" style="margin-top:20px;padding:10px 24px;background:#9333ea;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:Cairo,sans-serif">إعادة</button></div></div>`;
+    document.body.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0A0C10;color:#9AA3B5;font-family:'IBM Plex Sans Arabic',sans-serif;text-align:center"><div><p>${notice}</p><button onclick="location.reload()" style="margin-top:20px;padding:10px 24px;background:#2F5BEA;color:#fff;border:none;border-radius:2px;cursor:pointer;font-family:'IBM Plex Sans Arabic',sans-serif">إعادة</button></div></div>`;
   }
 };
 
@@ -789,16 +810,9 @@ function runLoader(){
   },90);
 }
 
-/* ══ PARTICLES ══ */
-function initParticles(){
-  const c=$('heroPtcls');if(!c)return;
-  const COLS=['rgba(147,51,234,.6)','rgba(236,72,153,.5)','rgba(0,229,255,.4)','rgba(245,158,11,.4)'];
-  setInterval(()=>{const p=document.createElement('div');p.className='h-pt';const sz=Math.random()*4+2,dur=Math.random()*5+3;p.style.cssText=`width:${sz}px;height:${sz}px;left:${Math.random()*100}%;bottom:0;background:${COLS[Math.floor(Math.random()*COLS.length)]};animation-duration:${dur}s;animation-delay:${Math.random()}s`;c.appendChild(p);setTimeout(()=>p.remove(),(dur+1.5)*1000);},600);
-}
-
 /* ══ CONFETTI ══ */
 function fireConfetti(n=60){
-  const COLS=['#9333ea','#ec4899','#00E5FF','#f59e0b','#10b981'];
+  const COLS=['#3D6BFF','#F4B63E','#35E0F2','#28C88A','#FF4D5E'];
   if(!document.getElementById('cfKf')){const s=document.createElement('style');s.id='cfKf';s.textContent='@keyframes cfFall{to{transform:translateY(100vh) rotateZ(720deg);opacity:0}}';document.head.appendChild(s);}
   for(let i=0;i<Math.min(n,80);i++){setTimeout(()=>{const el=document.createElement('div');el.style.cssText=`position:fixed;width:8px;height:8px;border-radius:2px;pointer-events:none;z-index:99990;left:${Math.random()*100}vw;top:-20px;background:${COLS[Math.floor(Math.random()*COLS.length)]};animation:cfFall ${1.5+Math.random()*1.5}s ease-in ${Math.random()*.5}s forwards`;document.body.appendChild(el);setTimeout(()=>el.remove(),3500);},i*18);}
 }
@@ -819,7 +833,7 @@ async function loadSettings(){
   try{if(dProds&&dProds.exists&&Array.isArray(dProds.data().products)&&dProds.data().products.length){PRODS=dProds.data().products;realCatalog=true;}else PRODS=DEFAULT_PRODS;}catch(e){PRODS=DEFAULT_PRODS;}
   try{const d=dDisc;if(d&&d.exists){const x=d.data(),td=new Date().toISOString().split('T')[0];DISC=(x.active&&(!x.expiry||x.expiry>=td)&&x.value>0&&x.value<=100)?{active:true,value:x.value}:{active:false,value:0};}}catch(e){}
   try{if(dReg){const cfg=normRegCfg(dReg.exists?dReg.data():null);try{localStorage.setItem('gq_regcfg',JSON.stringify(cfg));}catch(e){}applyRegionConfig(cfg);}}catch(e){}
-  try{const d=dMaint;if(d&&d.exists&&d.data().active){document.body.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0015;color:#a78bca;font-family:Cairo,sans-serif;text-align:center"><div><div style="font-size:60px;margin-bottom:20px">🔧</div><h2 style="color:#00E5FF;font-family:Orbitron,sans-serif;margin-bottom:10px">GLITCH Q</h2><p style="font-size:16px">${t('t_maintenance')}</p></div></div>`;return false;}}catch(e){}
+  try{const d=dMaint;if(d&&d.exists&&d.data().active){document.body.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0A0C10;color:#9AA3B5;font-family:'IBM Plex Sans Arabic',sans-serif;text-align:center"><div><h2 style="color:#F4F6FB;font-family:'Reem Kufi',sans-serif;letter-spacing:.14em;margin-bottom:12px">GLITCH Q</h2><p style="font-size:16px">${t('t_maintenance')}</p></div></div>`;return false;}}catch(e){}
   if(realCatalog)writeSettingsCache();
   return true;
 }
@@ -835,7 +849,7 @@ function getValText(prod){if(prod.cur==='month')return`${prod.val} ${t('month')}
    HOME
 ══════════════════════════════════════════ */
 function renderHome(){
-  renderHomeProds();renderHomeCats();renderLeaderboard();
+  renderHeroFan();renderHomeProds();renderHomeCats();renderLeaderboard();
   renderMissions('missionsWrap');initOffer();initMissionTimer();
 }
 
@@ -845,6 +859,15 @@ function renderHomeProds(){
   PRODS.filter(p=>enabled.includes(p.cat)).slice(0,8).forEach(prod=>g.appendChild(buildProdCard(prod)));
 }
 
+/* A category's pictogram: the known ones get a brand glyph; anything an admin added keeps the icon they chose
+   (an <i> Font Awesome tag is allowed, a plain emoji is shown as text). */
+function catGlyph(cat){
+  if(cat.id==='psstore')return '<i class="fa-brands fa-playstation"></i>';
+  if(cat.id==='psplus')return '<span class="gf-plus">+</span>';
+  if(cat.id==='games')return '<i class="fa-solid fa-gamepad"></i>';
+  const ic=String(cat.icon||'');
+  return /^<i class="[a-z0-9 -]+"><\/i>$/i.test(ic)?ic:(san(ic)||'<i class="fa-solid fa-layer-group"></i>');
+}
 function renderHomeCats(){
   const g=$('homeCatsGrid');if(!g)return;g.innerHTML='';
   CATS.filter(c=>c.enabled).sort((a,b)=>(a.order||0)-(b.order||0)).forEach(cat=>{
@@ -852,7 +875,7 @@ function renderHomeCats(){
     const cnt=PRODS.filter(p=>p.cat===cat.id&&p.stock!==false).length;
     const name=S.lang==='en'?(cat.nameEn||cat.name):(cat.name||cat.id);
     const prod_word=S.lang==='en'?'products':'منتج';
-    el.innerHTML=`<div class="cat-ico" style="background:${san(cat.bg)}">${cat.icon||'📦'}</div><span>${san(name)}</span><small>${cnt} ${prod_word}</small>`;
+    el.innerHTML=`<div class="cat-ico">${catGlyph(cat)}</div><span>${san(name)}</span><small>${cnt} ${prod_word}</small>`;
     el.addEventListener('click',()=>{goPage('shop');filterByCat(cat.id);});
     g.appendChild(el);
   });
@@ -861,35 +884,60 @@ function renderHomeCats(){
 /* ══════════════════════════════════════════
    PRODUCT CARD
 ══════════════════════════════════════════ */
+/* The face of a card: a gift-card layout (value, category, brand glyph, one glitch band) so products read
+   as the thing they are even when the admin has not uploaded a picture. */
+function prodTone(prod){return prod.img==='ps'?'t-ps':prod.img==='plus'?'t-plus':'t-game';}
+function prodGlyph(prod){return prod.img==='ps'?'<i class="fa-brands fa-playstation"></i>':prod.img==='plus'?'<span class="gf-plus">+</span>':'<i class="fa-solid fa-gamepad"></i>';}
+function prodHasImg(prod){return !!(prod.imgUrl&&isValidUrl(prod.imgUrl));}
+function prodFaceHTML(prod){
+  if(prodHasImg(prod))return `<img src="${san(prod.imgUrl)}" alt="${san(prod.name)}" loading="lazy">`;
+  const v=String(getValText(prod)),m=v.match(/^\s*([\d.,]+)\s*(.*)$/);
+  const val=m?`<span class="n">${san(m[1])}</span>${m[2]?`<span class="u">${san(m[2])}</span>`:''}`:`<span class="n txt">${san(v)}</span>`;
+  return `<span class="gf-top">${san(getCatName(prod.cat))}</span><b class="gf-val">${val}</b><span class="gf-ico">${prodGlyph(prod)}</span><span class="gf-band"></span>`;
+}
+
 function buildProdCard(prod){
   const price=calcPrice(prod);const orig=prod.priceDZD||(prod.val*(RATES[prod.cur||'EUR']||220));
-  const valText=getValText(prod);
   const card=document.createElement('div');card.className='pc'+(prod.stock===false?' pc-unavail':'');
-  const bgCls=prod.img==='ps'?'pc-bg-ps':prod.img==='plus'?'pc-bg-plus':'pc-bg-game';
-  let imgContent='';
-  if(prod.imgUrl&&isValidUrl(prod.imgUrl))imgContent=`<img src="${san(prod.imgUrl)}" alt="${san(prod.name)}" loading="lazy" style="width:100%;height:100%;object-fit:cover">`;
-  else if(prod.img==='ps')imgContent=`<span class="pc-ico"><i class="fa-brands fa-playstation"></i></span>`;
-  else if(prod.img==='plus')imgContent=`<span class="pc-ico">👑</span>`;
-  else imgContent=`<span class="pc-ico">🎮</span>`;
-  const discBadge=DISC.active&&prod.stock!==false?`<div class="pc-badge" style="left:8px;right:auto;background:var(--green)">-${DISC.value}%</div>`:'';
+  const disc=DISC.active&&prod.stock!==false;
   card.innerHTML=`
-    <div class="pc-img ${bgCls}">
-      ${prod.badge?`<div class="pc-badge ${prod.badge==='Premium'?'gold':prod.badge==='New'?'new':''}">${san(prod.badge)}</div>`:''}
-      ${discBadge}
-      ${prod.stock===false?`<div class="pc-oos-overlay">${t('prod_oos')}</div>`:''}
-      ${imgContent}
+    <div class="pc-in">
+      <div class="pc-img gface ${prodTone(prod)}${prodHasImg(prod)?' has-img':''}">
+        ${prod.badge?`<div class="pc-badge ${prod.badge==='Premium'?'gold':prod.badge==='New'?'new':''}">${san(prod.badge)}</div>`:''}
+        ${disc?`<div class="pc-badge pc-disc">-${DISC.value}%</div>`:''}
+        ${prod.stock===false?`<div class="pc-oos-overlay">${t('prod_oos')}</div>`:''}
+        ${prodFaceHTML(prod)}
+      </div>
+      <div class="pc-body">
+        <div class="pc-type">${san(getCatName(prod.cat))}</div>
+        <div class="pc-name">${san(prod.name)}</div>
+        <div class="pc-sub">${san(prod.sub||'')}</div>
+        <div class="pc-dzd"><b>${price.toLocaleString()}</b> دج${disc?` <s>${orig.toLocaleString()}</s>`:''}</div>
+      </div>
+      ${prod.stock!==false?`<button class="pc-cart" onclick="event.stopPropagation();addToCart('${jsq(prod.id)}')" aria-label="${t('prod_cart')}"><i class="fa-solid fa-cart-shopping"></i></button>`:''}
     </div>
-    <div class="pc-body">
-      <div class="pc-type">${san(getCatName(prod.cat))}</div>
-      <div class="pc-name">${san(prod.name)}</div>
-      <div class="pc-sub">${san(prod.sub||'')}</div>
-      <div class="pc-orig">${san(valText)}</div>
-      <div class="pc-dzd">${price.toLocaleString()} دج${DISC.active&&prod.stock!==false?` <s style="opacity:.4;font-size:10px">${orig.toLocaleString()}</s>`:''}</div>
-    </div>
-    ${prod.stock!==false?`<button class="pc-cart" onclick="event.stopPropagation();addToCart('${jsq(prod.id)}')" aria-label="${t('prod_cart')}"><i class="fa-solid fa-cart-shopping"></i></button>`:''}
   `;
   card.addEventListener('click',()=>{if(prod.stock!==false)openProdDetail(prod);});
   return card;
+}
+
+/* Hero: a fan of three real, in-stock products from different categories when the catalogue is there;
+   otherwise the brand mark stands alone. */
+function renderHeroFan(){
+  const art=$('heroArt'),fan=$('heroFan');if(!art||!fan)return;
+  fan.innerHTML='';
+  const enabled=CATS.filter(c=>c.enabled).map(c=>c.id),seen=new Set(),pick=[];
+  PRODS.filter(p=>enabled.includes(p.cat)&&p.stock!==false).forEach(p=>{if(pick.length<3&&!seen.has(p.cat)){seen.add(p.cat);pick.push(p);}});
+  PRODS.filter(p=>enabled.includes(p.cat)&&p.stock!==false).forEach(p=>{if(pick.length<3&&!pick.includes(p))pick.push(p);});
+  art.classList.toggle('has-fan',pick.length>0);
+  const slots=pick.length===1?[0]:pick.length===2?[1,2]:[1,0,2];     /* 0 = centre, 1/2 = sides */
+  pick.forEach((p,i)=>{
+    const b=document.createElement('button');b.type='button';b.className='hf hf'+slots[i];
+    b.setAttribute('aria-label',p.name||'');
+    b.innerHTML=`<span class="gface ${prodTone(p)}${prodHasImg(p)?' has-img':''}">${prodFaceHTML(p)}</span><span class="hf-cap"><b>${san(p.name)}</b><i>${calcPrice(p).toLocaleString()} دج</i></span>`;
+    b.addEventListener('click',()=>openProdDetail(p));
+    fan.appendChild(b);
+  });
 }
 
 /* ══════════════════════════════════════════
@@ -899,29 +947,24 @@ function openProdDetail(prod){
   S.selProd=prod;
   const price=calcPrice(prod);const orig=prod.priceDZD||(prod.val*(RATES[prod.cur||'EUR']||220));
   const valText=getValText(prod);
-  const bgCls=prod.img==='ps'?'pc-bg-ps':prod.img==='plus'?'pc-bg-plus':'pc-bg-game';
   const desc=S.lang==='en'?(prod.descEn||prod.desc||''):(prod.desc||'');
   const mc=$('prodModalContent');if(!mc)return;
   mc.innerHTML=`
-    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;margin-bottom:20px">
-      <div class="pc-img ${bgCls}" style="width:110px;height:90px;border-radius:12px;flex-shrink:0;font-size:34px">
-        ${prod.imgUrl&&isValidUrl(prod.imgUrl)?`<img src="${san(prod.imgUrl)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px">`
-          :prod.img==='ps'?'<i class="fa-brands fa-playstation" style="color:rgba(255,255,255,.9)"></i>'
-          :prod.img==='plus'?'👑':'🎮'}
-      </div>
-      <div style="flex:1;min-width:180px">
-        <div style="font-size:10px;color:var(--mid);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">${san(getCatName(prod.cat))}</div>
-        <h3 style="font-size:18px;font-weight:800;margin-bottom:4px">${san(prod.name)}</h3>
-        <div style="font-size:13px;color:var(--mid);margin-bottom:10px">${san(prod.sub||'')}</div>
-        ${desc?`<p style="font-size:13px;color:var(--mid);line-height:1.7;margin-bottom:10px">${san(desc)}</p>`:''}
-        <div style="font-size:22px;font-weight:900;color:var(--cyan);font-family:'Orbitron',sans-serif">${price.toLocaleString()} دج</div>
-        ${DISC.active?`<div style="font-size:12px;text-decoration:line-through;color:var(--dim);margin-top:2px">${orig.toLocaleString()} دج</div>`:''}
-        <div style="font-size:13px;color:var(--mid);margin-top:6px">${t('prod_val')}: <strong style="color:var(--text)">${san(valText)}</strong></div>
+    <div class="pd-top">
+      <div class="pc-img gface pd-face ${prodTone(prod)}${prodHasImg(prod)?' has-img':''}">${prodFaceHTML(prod)}</div>
+      <div class="pd-info">
+        <div class="pd-cat">${san(getCatName(prod.cat))}</div>
+        <h3 class="pd-name">${san(prod.name)}</h3>
+        <div class="pd-sub">${san(prod.sub||'')}</div>
+        ${desc?`<p class="pd-desc">${san(desc)}</p>`:''}
+        <div class="pd-price">${price.toLocaleString()} دج</div>
+        ${DISC.active?`<div class="pd-old">${orig.toLocaleString()} دج</div>`:''}
+        <div class="pd-val">${t('prod_val')}: <strong>${san(valText)}</strong></div>
       </div>
     </div>
-    <div style="display:flex;gap:10px">
-      <button onclick="addToCart('${jsq(prod.id)}');closeM('prodModal')" class="btn-o" style="flex:1"><i class="fa-solid fa-cart-shopping"></i> ${t('prod_cart')}</button>
-      <button onclick="closeM('prodModal');openCheckoutForProd('${jsq(prod.id)}')" class="btn-p" style="flex:1"><i class="fa-solid fa-bolt"></i> ${t('prod_order')}</button>
+    <div class="pd-acts">
+      <button onclick="addToCart('${jsq(prod.id)}');closeM('prodModal')" class="btn-o"><i class="fa-solid fa-cart-shopping"></i> ${t('prod_cart')}</button>
+      <button onclick="closeM('prodModal');openCheckoutForProd('${jsq(prod.id)}')" class="btn-p"><i class="fa-solid fa-bolt"></i> ${t('prod_order')}</button>
     </div>
   `;
   openM('prodModal');
@@ -1442,21 +1485,19 @@ function drawWheel(canvas,rotation){
   SPIN_SEGMENTS.forEach((seg,i)=>{
     const startA=rotation+i*segAngle-Math.PI/2;const endA=startA+segAngle;const midA=startA+segAngle/2;
     ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,startA,endA);ctx.closePath();ctx.fillStyle=seg.color;ctx.fill();
-    const grad=ctx.createRadialGradient(cx,cy,0,cx,cy,r);grad.addColorStop(0,'rgba(255,255,255,.1)');grad.addColorStop(.6,'rgba(255,255,255,.02)');grad.addColorStop(1,'rgba(0,0,0,.25)');
-    ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,startA,endA);ctx.closePath();ctx.fillStyle=grad;ctx.fill();
-    ctx.strokeStyle='rgba(255,255,255,.2)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,startA,endA);ctx.closePath();ctx.stroke();
-    ctx.save();ctx.translate(cx,cy);ctx.rotate(midA);ctx.shadowColor='rgba(0,0,0,.9)';ctx.shadowBlur=8;ctx.fillStyle='#ffffff';
-    ctx.font=`900 ${Math.max(12,Math.floor(canvas.width/23))}px Cairo,sans-serif`;ctx.textAlign='right';ctx.textBaseline='middle';
+    ctx.strokeStyle='rgba(255,255,255,.14)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,startA,endA);ctx.closePath();ctx.stroke();
+    ctx.save();ctx.translate(cx,cy);ctx.rotate(midA);ctx.fillStyle='#F4F6FB';
+    ctx.font=`900 ${Math.max(12,Math.floor(canvas.width/23))}px 'IBM Plex Sans Arabic',sans-serif`;ctx.textAlign='right';ctx.textBaseline='middle';
     const label=S.lang==='en'?(seg.labelEn||seg.label):seg.label;
-    ctx.fillText(label,r*.82,0);if(seg.pts>0){ctx.font=`${Math.max(10,Math.floor(canvas.width/30))}px Arial`;ctx.fillStyle='rgba(255,220,100,.9)';ctx.fillText('⭐',r*.82+16,-1);}
+    ctx.fillText(label,r*.82,0);if(seg.pts>0){ctx.font=`${Math.max(10,Math.floor(canvas.width/30))}px Arial`;ctx.fillStyle='#F4B63E';ctx.fillText('★',r*.82+16,-1);}
     ctx.restore();
   });
-  const ringGrad=ctx.createLinearGradient(0,0,canvas.width,canvas.height);ringGrad.addColorStop(0,'#9333ea');ringGrad.addColorStop(.5,'#ec4899');ringGrad.addColorStop(1,'#9333ea');
+  const ringGrad=ctx.createLinearGradient(0,0,canvas.width,canvas.height);ringGrad.addColorStop(0,'#3D6BFF');ringGrad.addColorStop(.5,'#35E0F2');ringGrad.addColorStop(1,'#3D6BFF');
   ctx.beginPath();ctx.arc(cx,cy,r,0,2*Math.PI);ctx.strokeStyle=ringGrad;ctx.lineWidth=5;ctx.stroke();
   ctx.beginPath();ctx.arc(cx,cy,r-8,0,2*Math.PI);ctx.strokeStyle='rgba(255,255,255,.08)';ctx.lineWidth=1;ctx.stroke();
-  const cGrad=ctx.createRadialGradient(cx,cy,0,cx,cy,28);cGrad.addColorStop(0,'#2d1060');cGrad.addColorStop(1,'#1a003d');
-  ctx.beginPath();ctx.arc(cx,cy,28,0,2*Math.PI);ctx.fillStyle=cGrad;ctx.fill();ctx.strokeStyle='#9333ea';ctx.lineWidth=3;ctx.stroke();
-  ctx.beginPath();ctx.arc(cx,cy,28,0,2*Math.PI);ctx.strokeStyle='rgba(147,51,234,.5)';ctx.lineWidth=7;ctx.stroke();
+  const cGrad=ctx.createRadialGradient(cx,cy,0,cx,cy,28);cGrad.addColorStop(0,'#181C25');cGrad.addColorStop(1,'#0A0C10');
+  ctx.beginPath();ctx.arc(cx,cy,28,0,2*Math.PI);ctx.fillStyle=cGrad;ctx.fill();ctx.strokeStyle='#3D6BFF';ctx.lineWidth=3;ctx.stroke();
+  ctx.beginPath();ctx.arc(cx,cy,28,0,2*Math.PI);ctx.strokeStyle='rgba(61,107,255,.35)';ctx.lineWidth=7;ctx.stroke();
 }
 
 
@@ -1833,7 +1874,7 @@ window.addEventListener('DOMContentLoaded',async()=>{
   /* Safety timeout للـ loader */
   setTimeout(()=>{const l=$('loader');if(l&&!l.classList.contains('gone'))l.classList.add('gone');},10000);
 
-  runLoader();initParticles();initStars();
+  runLoader();initStars();
 
   /* Apply language */
   const html=$('htmlTag');
