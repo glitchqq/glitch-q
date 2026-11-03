@@ -1441,7 +1441,7 @@ function loadNotifs(){
   const b=$('notifBadge');if(b){b.textContent=unread;b.classList.toggle('hidden',unread===0);}
   const list=$('notifList');if(!list)return;list.innerHTML='';
   if(!notifs.length){list.innerHTML=`<div class="ni-empty">${t('notif_empty')}</div>`;return;}
-  [...notifs].reverse().forEach(n=>{const d=document.createElement('div');d.className='ni'+(n.read?'':' unread');d.innerHTML=`<div class="ni-ttl">${san(n.title||'')}</div>${n.code?`<div class="ni-code">${san(n.code)}</div>`:''}${codeUntilHTML(n.until)}<div class="ni-date">📅 ${san(n.date||'')}</div>`;list.appendChild(d);});
+  [...notifs].reverse().forEach(n=>{const d=document.createElement('div');d.className='ni'+(n.read?'':' unread');d.innerHTML=`<div class="ni-ttl">${san(n.title||'')}</div>${n.code?`<div class="ni-code">${san(n.code)}</div>`:''}${codeUntilHTML(n.until)}<div class="ni-date">${san(n.date||'')}</div>`;list.appendChild(d);});
 }
 function toggleNotif(){$('notifPanel')?.classList.toggle('hidden');}
 function closeNotif(){$('notifPanel')?.classList.add('hidden');}
