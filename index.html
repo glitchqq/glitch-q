@@ -13,21 +13,21 @@
 <meta property="og:image" content="https://glitchqq.github.io/glitch-q/assets/logo/og-image.png">
 <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#0A0C10">
+<meta name="theme-color" content="#050507">
 <link rel="preconnect" href="https://www.gstatic.com">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://apis.google.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; img-src 'self' https: data: blob:; connect-src https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://glitchq-proxy.kadirom7k777.workers.dev; frame-src https://*.firebaseapp.com https://apis.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src https://cdnjs.cloudflare.com https://fonts.gstatic.com data:; img-src 'self' https: data: blob:; connect-src https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://glitchq-proxy.kadirom7k777.workers.dev; frame-src https://*.firebaseapp.com https://apis.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
 <style id="antiClick">html{display:none!important}</style>
 <script>if(window.top===window.self){document.getElementById('antiClick').remove();}else{try{window.top.location=window.self.location;}catch(e){}}</script>
 <title>Glitch Q | بطاقات PlayStation في الجزائر</title>
 <!-- icon font and Google Fonts no longer block the first paint (they swap in when ready) -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" media="print" onload="this.media='all'">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Reem+Kufi:wght@500;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-<noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Reem+Kufi:wght@500;700&display=swap" rel="stylesheet"></noscript>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Reem+Kufi:wght@500;700&family=Lalezar&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Reem+Kufi:wght@500;700&family=Lalezar&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -539,10 +539,17 @@
 
   <!-- HOME -->
   <div id="pg-home" class="page on">
-    <section class="hero-sec">
-      <div class="hero-grid" aria-hidden="true"></div>
-      <div class="hero-in">
-        <div class="hero-cnt">
+    <section class="hs" id="heroScene" data-step="0">
+      <div class="hs-stick">
+        <canvas id="heroGL" aria-hidden="true"></canvas>
+        <div class="hs-vig" aria-hidden="true"></div>
+        <div class="hs-hud" aria-hidden="true">
+          <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
+          <span class="hs-meta a">GLITCH Q // DZ</span><span class="hs-meta b">ONLINE</span>
+          <div class="hs-rail"><i></i></div>
+          <span class="hs-read">PLAYSTATION · PS PLUS · GAMES</span>
+        </div>
+        <div class="hs-copy hero-cnt">
           <div class="hero-ey"><span id="heroWelcome">Glitch Q · متجر PlayStation الرقمي في الجزائر</span></div>
           <h1 class="hero-h1"><span id="heroH1a">بطاقات PlayStation</span> <em data-t="بالدينار الجزائري"><span id="heroH1b">بالدينار الجزائري</span></em></h1>
           <p class="hero-tagline" id="heroTagline">اختر البطاقة، ادفع عبر بريدي موب أو يدًا بيد، ويصلك الكود على حسابك وبريدك.</p>
@@ -552,18 +559,27 @@
           </div>
           <p class="hero-desc" id="heroDesc">التسليم خلال 5 إلى 60 دقيقة بعد التحقق من الدفع.</p>
         </div>
-        <div class="hero-art" id="heroArt">
+        <div class="hero-art hs-fan" id="heroArt">
           <svg class="hero-mark" viewBox="-12 -4 124 114" aria-hidden="true" focusable="false"><use href="#gq-mark"/></svg>
           <div class="hero-fan" id="heroFan"></div>
         </div>
-      </div>
-      <div class="feat-strip">
-        <div class="feat"><i class="fa-solid fa-wallet"></i><div><b id="feat1T">بريدي موب أو يد بيد</b><span id="feat1S">يد بيد في تلمسان فقط</span></div></div>
-        <div class="feat"><i class="fa-solid fa-clock"></i><div><b id="feat2T">تسليم خلال 5–60 دقيقة</b><span id="feat2S">بعد التحقق من الدفع</span></div></div>
-        <div class="feat"><i class="fa-solid fa-certificate"></i><div><b id="feat3T">أكواد أصلية</b><span id="feat3S">تصلك على حسابك وبريدك</span></div></div>
-        <div class="feat"><i class="fa-brands fa-whatsapp"></i><div><b id="feat4T">دعم عبر واتساب</b><span id="feat4S">نتابع معك برقم طلبك</span></div></div>
+        <ol class="hs-steps">
+          <li><b>01</b><span id="hs1T">اختر البطاقة</span><small id="hs1S"></small></li>
+          <li><b>02</b><span id="hs2T">ادفع وارفع الوصل</span><small id="hs2S"></small></li>
+          <li><b>03</b><span id="hs3T">استلم الكود</span><small id="hs3S"></small></li>
+        </ol>
+        <div class="hs-cue" aria-hidden="true">SCROLL<i></i></div>
       </div>
     </section>
+
+    <div class="mq" aria-hidden="true"><div class="mq-t"><span>PLAYSTATION CARDS</span><span>PS PLUS</span><span>DIGITAL GAMES</span><span>BARIDIMOB</span><span>CODE IN 5–60 MIN</span><span>PLAYSTATION CARDS</span><span>PS PLUS</span><span>DIGITAL GAMES</span><span>BARIDIMOB</span><span>CODE IN 5–60 MIN</span></div></div>
+
+    <div class="feat-strip">
+      <div class="feat"><i class="fa-solid fa-wallet"></i><div><b id="feat1T">بريدي موب أو يد بيد</b><span id="feat1S">يد بيد في تلمسان فقط</span></div></div>
+      <div class="feat"><i class="fa-solid fa-clock"></i><div><b id="feat2T">تسليم خلال 5–60 دقيقة</b><span id="feat2S">بعد التحقق من الدفع</span></div></div>
+      <div class="feat"><i class="fa-solid fa-certificate"></i><div><b id="feat3T">أكواد أصلية</b><span id="feat3S">تصلك على حسابك وبريدك</span></div></div>
+      <div class="feat"><i class="fa-brands fa-whatsapp"></i><div><b id="feat4T">دعم عبر واتساب</b><span id="feat4S">نتابع معك برقم طلبك</span></div></div>
+    </div>
 
     <section class="sec">
       <div class="sec-hdr">
@@ -810,6 +826,7 @@
       <p style="font-size:11px;color:var(--dim);margin-top:8px" id="fHandNote">يد بيد في ولاية تلمسان فقط</p>
     </div>
   </div>
+  <div class="f-mega" aria-hidden="true">GLITCH Q</div>
   <div class="f-bottom"><span id="fCopy">GLITCH Q 2026 © جميع الحقوق محفوظة</span></div>
 </footer>
 
@@ -823,11 +840,12 @@
   <button data-pg="profile" onclick="goPage('profile')"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span id="tb4">حسابي</span></button>
 </nav>
 
-<!-- deferred scripts run in this order, after the page is parsed. GSAP/Lenis (cosmetic) are loaded later by fx.js and can never delay the app. -->
+<!-- deferred scripts run in this order, after the page is parsed. gl.js (hero shader) and fx.js (motion) are cosmetic and never block the app. -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js" defer></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js" defer></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js" defer></script>
 <script src="script.js" defer></script>
+<script src="gl.js" defer></script>
 <script src="account.js" defer></script>
 <script src="fx.js" defer></script>
 </body>
