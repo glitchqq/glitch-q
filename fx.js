@@ -41,6 +41,65 @@
       .observe(wrap, { childList: true, subtree: true });
     scan(wrap);
 
+    /* ---------- the world behind the page: drifting embers + stars, and a scroll rail ---------- */
+    (function world() {
+      var coarse = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
+      var cv = doc.createElement('canvas');
+      cv.className = 'world'; cv.setAttribute('aria-hidden', 'true');
+      doc.body.insertBefore(cv, doc.body.firstChild);
+      var g = cv.getContext('2d');
+      if (!g) { cv.remove(); return; }
+      var rail = doc.createElement('div');
+      rail.className = 'rail'; rail.setAttribute('aria-hidden', 'true'); rail.innerHTML = '<i></i>';
+      doc.body.appendChild(rail);
+      var W = 0, H = 0, parts = [], stars = [], last = 0, scene = doc.getElementById('heroScene');
+      function mk(init) {
+        return { x: Math.random() * W, y: init ? Math.random() * H : H + 12, r: Math.random() * 2 + 0.7, vy: -(Math.random() * 0.32 + 0.1),
+                 sw: Math.random() * 6.28, a: Math.random() * 0.5 + 0.25, hot: Math.random() < 0.22 };
+      }
+      function seed() {
+        W = cv.width = innerWidth; H = cv.height = innerHeight;
+        var n = Math.min(coarse ? 24 : 60, Math.round(W * H / 28000));
+        parts = []; for (var i = 0; i < n; i++) parts.push(mk(true));
+        stars = []; for (var j = 0; j < (coarse ? 36 : 90); j++) stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1 + 0.25, tw: Math.random() * 6.28, d: Math.random() * 0.5 + 0.1 });
+      }
+      seed();
+      var rt = 0;
+      window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(seed, 200); });
+      function setRail() {
+        var max = Math.max(1, doc.documentElement.scrollHeight - innerHeight);
+        rail.style.setProperty('--sp', Math.min(1, Math.max(0, window.scrollY / max)).toFixed(4));
+      }
+      window.addEventListener('scroll', setRail, { passive: true }); setRail();
+      function frame(now) {
+        requestAnimationFrame(frame);
+        if (doc.hidden || now - last < 33) return;
+        last = now;
+        /* the pinned hero is opaque: nothing to paint while it covers the screen */
+        if (scene && scene.offsetParent) { var r = scene.getBoundingClientRect(); if (r.top <= 110 && r.bottom >= innerHeight) return; }
+        var sy = window.scrollY, t = now * 0.001;
+        g.clearRect(0, 0, W, H);
+        g.globalCompositeOperation = 'source-over';
+        for (var i = 0; i < stars.length; i++) {
+          var s = stars[i], y = ((s.y - sy * s.d * 0.08) % H + H) % H;
+          g.fillStyle = 'rgba(255,255,255,' + (0.12 + 0.3 * (0.5 + 0.5 * Math.sin(t * 1.3 + s.tw))).toFixed(3) + ')';
+          g.fillRect(s.x, y, s.r, s.r);
+        }
+        g.globalCompositeOperation = 'lighter';
+        for (var k = 0; k < parts.length; k++) {
+          var p = parts[k];
+          p.y += p.vy; p.x += Math.sin(t * 0.6 + p.sw) * 0.18;
+          if (p.y < -12) { parts[k] = p = mk(false); }
+          var col = p.hot ? '255,150,60' : '255,42,72';
+          g.fillStyle = 'rgba(' + col + ',' + (p.a * 0.12).toFixed(3) + ')';
+          g.beginPath(); g.arc(p.x, p.y, p.r * 4, 0, 6.2832); g.fill();
+          g.fillStyle = 'rgba(' + col + ',' + p.a.toFixed(3) + ')';
+          g.beginPath(); g.arc(p.x, p.y, p.r, 0, 6.2832); g.fill();
+        }
+      }
+      requestAnimationFrame(frame);
+    })();
+
     if (!fine) return;
 
     /* ---------- tilt: product cards lean toward the pointer ---------- */

@@ -4,3 +4,6 @@ firebase-service-account.json
 *.secret.js
 node_modules/
 .DS_Store
+
+# KO-Okies is a paid typeface (Protype Foundry): never commit it to this public repo, see assets/fonts/NOTICE.md
+assets/fonts/kookies/

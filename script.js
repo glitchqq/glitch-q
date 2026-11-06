@@ -871,7 +871,7 @@ function catGlyph(cat){
 function renderHomeCats(){
   const g=$('homeCatsGrid');if(!g)return;g.innerHTML='';
   CATS.filter(c=>c.enabled).sort((a,b)=>(a.order||0)-(b.order||0)).forEach(cat=>{
-    const el=document.createElement('button');el.className='cat-c';
+    const el=document.createElement('button');el.className='cat-c';el.dataset.cat=String(cat.id||'');
     const cnt=PRODS.filter(p=>p.cat===cat.id&&p.stock!==false).length;
     const name=S.lang==='en'?(cat.nameEn||cat.name):(cat.name||cat.id);
     const prod_word=S.lang==='en'?'products':'منتج';

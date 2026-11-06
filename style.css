@@ -1,4 +1,25 @@
 
+/* Fonts are self-hosted (assets/fonts). Display = 'Kookies' (the face the owner picked): Arabic glyphs from KO-Okies
+   (assets/fonts/kookies, kept OUT of git — see assets/fonts/NOTICE.md), Latin from Chakra Petch because KO-Okies has no
+   Latin. Each weight pairs two faces with identical descriptors and disjoint unicode-range, so the browser composes them.
+   If the KO-Okies files are absent the Arabic falls through to 'GQ Display' (Baloo Bhaijaan 2, OFL) and nothing breaks. */
+@font-face{font-family:'Kookies';src:url(assets/fonts/kookies/Kookies-Medium.woff) format('woff');font-weight:500;unicode-range:U+0600-06FF,U+0750-077F,U+FB50-FDFF,U+FE70-FEFF,U+200C-200F,U+060C,U+061B,U+061F;font-display:swap}
+@font-face{font-family:'Kookies';src:url(assets/fonts/ChakraPetch-Medium.woff) format('woff');font-weight:500;unicode-range:U+0020-007E,U+00A0-00FF,U+2010-2027,U+20AC,U+2190-2193;font-display:swap}
+@font-face{font-family:'Kookies';src:url(assets/fonts/kookies/Kookies-SemiBold.woff) format('woff');font-weight:600;unicode-range:U+0600-06FF,U+0750-077F,U+FB50-FDFF,U+FE70-FEFF,U+200C-200F,U+060C,U+061B,U+061F;font-display:swap}
+@font-face{font-family:'Kookies';src:url(assets/fonts/ChakraPetch-SemiBold.woff) format('woff');font-weight:600;unicode-range:U+0020-007E,U+00A0-00FF,U+2010-2027,U+20AC,U+2190-2193;font-display:swap}
+@font-face{font-family:'Kookies';src:url(assets/fonts/kookies/Kookies-Bold.woff) format('woff');font-weight:700;unicode-range:U+0600-06FF,U+0750-077F,U+FB50-FDFF,U+FE70-FEFF,U+200C-200F,U+060C,U+061B,U+061F;font-display:swap}
+@font-face{font-family:'Kookies';src:url(assets/fonts/ChakraPetch-Bold.woff) format('woff');font-weight:700;unicode-range:U+0020-007E,U+00A0-00FF,U+2010-2027,U+20AC,U+2190-2193;font-display:swap}
+@font-face{font-family:'Kookies';src:url(assets/fonts/kookies/Kookies-ExtraBold.woff) format('woff');font-weight:800;unicode-range:U+0600-06FF,U+0750-077F,U+FB50-FDFF,U+FE70-FEFF,U+200C-200F,U+060C,U+061B,U+061F;font-display:swap}
+@font-face{font-family:'Kookies';src:url(assets/fonts/ChakraPetch-Bold.woff) format('woff');font-weight:800;unicode-range:U+0020-007E,U+00A0-00FF,U+2010-2027,U+20AC,U+2190-2193;font-display:swap}
+@font-face{font-family:'GQ Display';src:url(assets/fonts/display-stand-in.woff) format('woff');font-weight:400 800;font-style:normal;font-display:swap}
+@font-face{font-family:'Chakra Petch';src:url(assets/fonts/ChakraPetch-Medium.woff) format('woff');font-weight:500;font-display:swap}
+@font-face{font-family:'Chakra Petch';src:url(assets/fonts/ChakraPetch-SemiBold.woff) format('woff');font-weight:600;font-display:swap}
+@font-face{font-family:'Chakra Petch';src:url(assets/fonts/ChakraPetch-Bold.woff) format('woff');font-weight:700;font-display:swap}
+@font-face{font-family:'IBM Plex Sans Arabic';src:url(assets/fonts/IBMPlexSansArabic-Regular.woff) format('woff');font-weight:400;font-display:swap}
+@font-face{font-family:'IBM Plex Sans Arabic';src:url(assets/fonts/IBMPlexSansArabic-Medium.woff) format('woff');font-weight:500;font-display:swap}
+@font-face{font-family:'IBM Plex Sans Arabic';src:url(assets/fonts/IBMPlexSansArabic-SemiBold.woff) format('woff');font-weight:600;font-display:swap}
+@font-face{font-family:'IBM Plex Sans Arabic';src:url(assets/fonts/IBMPlexSansArabic-Bold.woff) format('woff');font-weight:700;font-display:swap}
+
 /* ═══ TOKENS ═══ */
 :root{
   --bg:#050507;--bg2:#0A0A0E;--card:#0F0F14;--card2:#16161D;
@@ -8,7 +29,7 @@
   --red-hot:#FF3B57;
   --text:#F4F4F7;--mid:#A6A6B4;--dim:#70707E;
   --btn:#D4062A;--btn-h:#FF1F3D;--glitch-r:#FF5C6C;--glitch-c:#35E0F2;
-  --f:'IBM Plex Sans Arabic',-apple-system,'Segoe UI',Tahoma,sans-serif;--fh:'Lalezar','Reem Kufi','IBM Plex Sans Arabic',sans-serif;--fl:'Chakra Petch','IBM Plex Sans Arabic',sans-serif;
+  --f:'IBM Plex Sans Arabic',-apple-system,'Segoe UI',Tahoma,sans-serif;--fh:'Kookies','GQ Display','IBM Plex Sans Arabic',sans-serif;--fl:'Chakra Petch','IBM Plex Sans Arabic',sans-serif;
   --hH:58px;--nH:44px;--tbh:0px;
 }
 
@@ -1003,9 +1024,9 @@ html[dir="ltr"] .hs-steps b{letter-spacing:.2em}
   .mq{margin-inline:-14px}
 }
 @media(max-width:768px){
-  :root{--tbh:60px}
+  :root{--tbh:62px}
   .hs{height:300vh}
-  .hs-stick{height:calc(100vh - var(--hdr) - var(--tbh));height:calc(100svh - var(--hdr) - var(--tbh));min-height:520px}
+  .hs-stick{height:calc(100vh - var(--hdr) - var(--tbh) - 1px);height:calc(100svh - var(--hdr) - var(--tbh) - 1px);min-height:520px}
   .hs-copy{width:auto;inset-inline:18px;padding-block:20px 0;justify-content:flex-start}
   .hero-ey{font-size:11.5px;margin-bottom:14px;padding:6px 16px 6px 12px}
   .hero-h1{font-size:clamp(40px,12.5vw,60px);margin-bottom:12px}
@@ -1035,3 +1056,117 @@ html[dir="ltr"] .hs-steps b{letter-spacing:.2em}
   .mq-t{animation:none}
   .pc{transform:none}
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 5 — IMMERSIVE: you are inside the console, not browsing a page.
+   · one self-hosted display face (Kookies slot) + Chakra Petch for numbers + IBM Plex Sans Arabic for reading
+   · a world behind the page (embers, nebula, viewport HUD frame, scroll rail)
+   · single-row console header, focus-style product rail, bento categories, controller-glyph steps
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* display type: big, tight, heavy — the personality lives here */
+.mtitle,.page-ttl,.hero-h1,.hs-steps span,.sec-ttl,.pd-name,.how-it b,.b3-ttl,.b3-ttl-row b,.offer-ttl,.nl-txt b,.f-col h4,.cat-c span{font-weight:800}
+.hero-h1{font-size:clamp(42px,min(5.8vw,9.6vh),98px);line-height:1.02;letter-spacing:-.01em}
+@media(min-width:769px) and (max-height:780px){.hero-desc,.hs-steps small{display:none}.hs-copy{padding-block:24px 104px}.hero-ey{margin-bottom:14px}.hero-tagline{margin-bottom:20px}}
+.hero-h1 em{margin-top:.04em}
+.sec-ttl{font-size:clamp(32px,4.4vw,56px);line-height:1.02;letter-spacing:-.012em;gap:16px}
+.page-ttl{font-size:clamp(34px,5vw,60px);line-height:1.02}
+.b3-ttl,.b3-ttl-row b{font-size:24px}
+.how-it b{font-size:28px;line-height:1.1}
+.nl-txt b{font-size:26px}
+.f-col h4{font-size:20px}
+.hs-steps span{font-size:clamp(19px,1.9vw,28px)}
+.pc-name{font-weight:700}
+
+/* THE WORLD — canvas of embers is created by fx.js; the rest is paint */
+body{background:radial-gradient(1100px 640px at 88% -8%,rgba(212,6,42,.17),transparent 62%),radial-gradient(900px 620px at -6% 46%,rgba(110,0,28,.16),transparent 62%),var(--bg);background-attachment:fixed}
+.world{position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none;display:block}
+body::before{content:'';position:fixed;inset:10px;z-index:99989;pointer-events:none;--hc:rgba(255,255,255,.2);background:
+  linear-gradient(var(--hc),var(--hc)) top left/24px 1.5px no-repeat,linear-gradient(var(--hc),var(--hc)) top left/1.5px 24px no-repeat,
+  linear-gradient(var(--hc),var(--hc)) top right/24px 1.5px no-repeat,linear-gradient(var(--hc),var(--hc)) top right/1.5px 24px no-repeat,
+  linear-gradient(var(--hc),var(--hc)) bottom left/24px 1.5px no-repeat,linear-gradient(var(--hc),var(--hc)) bottom left/1.5px 24px no-repeat,
+  linear-gradient(var(--hc),var(--hc)) bottom right/24px 1.5px no-repeat,linear-gradient(var(--hc),var(--hc)) bottom right/1.5px 24px no-repeat}
+.rail{position:fixed;right:11px;top:50%;width:3px;height:30vh;transform:translateY(-50%);background:rgba(255,255,255,.1);z-index:99988;pointer-events:none}
+.rail i{position:absolute;left:0;right:0;top:0;height:calc(var(--sp,0)*100%);background:var(--violet);box-shadow:0 0 14px var(--violet)}
+.rail::after{content:'';position:absolute;left:-3px;width:9px;top:calc(var(--sp,0)*100%);height:2px;background:#fff;box-shadow:0 0 10px #fff}
+
+/* HEADER — one console bar: logo, tabs, search, actions */
+@media(min-width:769px){
+  :root{--hH:66px;--nH:0px}
+  #header{display:flex;align-items:center;gap:26px;height:var(--hH);padding-inline:max(24px,calc((100vw - 1240px)/2 + 24px))}
+  .hdr-inner,.main-nav,.nav-in{display:contents}
+  .hdr-logo{order:0}
+  .nav-ul{order:1;flex:0 0 auto;height:calc(var(--hH) - 1px);overflow:visible}
+  .nav-ul a{font-family:var(--fh);font-size:16px;font-weight:700;padding:0 18px;color:#B4B4C2}
+  .nav-ul li.on a,.nav-ul a:hover{color:#fff}
+  .nav-ul li.on a::after{bottom:-1px}
+  .hdr-search{order:2;flex:0 1 300px;margin:0;margin-inline-start:auto}
+  .hdr-acts{order:3}
+  #header::after{content:'';position:absolute;inset-inline:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,var(--violet) 25%,var(--violet) 75%,transparent);opacity:.5;pointer-events:none}
+}
+@media(min-width:769px) and (max-width:1120px){.hdr-search{display:none}.hdr-acts{margin-inline-start:auto}}
+
+/* HERO tuned to the new type; the viewport frame replaces the stage corners on desktop */
+@media(min-width:769px){.hs-hud .c{display:none}}
+.hs-copy{padding-block:40px 120px}
+.hero-tagline{font-size:clamp(15px,1.3vw,18px)}
+
+/* SECTION MARKERS — controller buttons, not numbers (the sections are not a sequence) */
+#pg-home .sec-ttl::before,.sec-ttl::before{content:'';flex-shrink:0;width:.52em;height:.52em;border:0;padding:0;background:var(--violet);clip-path:polygon(50% 0,100% 100%,0 100%);filter:drop-shadow(0 0 10px rgba(245,34,63,.8));font:inherit;letter-spacing:0}
+#pg-home .sec:nth-of-type(4n+2) .sec-ttl::before{clip-path:none;border-radius:50%;background:none;border:.1em solid var(--violet);box-sizing:border-box}
+#pg-home .sec:nth-of-type(4n+3) .sec-ttl::before{clip-path:polygon(14% 0,50% 36%,86% 0,100% 14%,64% 50%,100% 86%,86% 100%,50% 64%,14% 100%,0 86%,36% 50%,0 14%)}
+#pg-home .sec:nth-of-type(4n+4) .sec-ttl::before{clip-path:none;background:none;border:.1em solid var(--violet);box-sizing:border-box}
+.page-ttl::before{width:.4em;height:.7em}
+
+/* PRODUCT RAIL — console focus: the tile you point at lifts, the rest dim */
+.prods-scroll{gap:20px;padding:14px 4px 22px}
+.pc{width:min(236px,62vw);transition:background .2s,transform .22s ease-out,filter .3s}
+.prods-scroll:has(.pc:hover) .pc:not(:hover),.prods-grid:has(.pc:hover) .pc:not(:hover){filter:brightness(.5) saturate(.55)}
+.pc:hover{transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) scale(1.045);z-index:3}
+.pc.rv:hover{transition:background .2s,transform .22s ease-out,filter .3s,opacity .75s,translate .75s}
+.pc-type{text-transform:none;letter-spacing:.02em;color:var(--mid);font-family:var(--f)}
+.pc-name{font-size:15px}
+
+/* CATEGORIES — big bento tiles, one accent each */
+.cats-grid{grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
+.cat-c{--ac:var(--violet);display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;min-height:210px;padding:26px 26px 24px;border:0;border-top:2px solid var(--ac);background:linear-gradient(200deg,rgba(255,255,255,.04),transparent 42%),#0C0C11;transition:transform .3s,background .3s;--ch:22px;clip-path:polygon(var(--ch) 0,100% 0,100% calc(100% - var(--ch)),calc(100% - var(--ch)) 100%,0 100%,0 var(--ch))}
+.cat-c[data-cat="psplus"]{--ac:var(--gold)}
+.cat-c[data-cat="games"]{--ac:var(--cyan)}
+.cat-c::before{inset:auto 0 0 0;width:auto;height:70%;background:radial-gradient(120% 100% at 100% 100%,color-mix(in srgb,var(--ac) 32%,transparent),transparent 62%);box-shadow:none;transform:none;opacity:.55;transition:opacity .35s}
+.cat-c:hover::before{opacity:1;transform:none}
+.cat-c:hover{transform:translateY(-4px)}
+.cat-ico{position:absolute!important;inset-inline-end:-6px;top:-8px;width:auto;height:auto;grid-row:auto;background:none!important;clip-path:none;font-size:150px;line-height:1;color:var(--ac);opacity:.12;transition:opacity .35s,transform .5s;pointer-events:none}
+.cat-c:hover .cat-ico{opacity:.3;transform:scale(1.08) rotate(-4deg)}
+.cat-c span{position:relative;font-family:var(--fh);font-size:clamp(26px,2.6vw,36px);line-height:1.08;align-self:auto;color:#fff}
+.cat-c small{position:relative;font-size:13px;margin-top:6px;color:var(--ac);align-self:auto;font-weight:600}
+.cat-c::after{content:'\2190';inset-inline-end:22px;top:auto;bottom:22px;transform:none;font-size:22px;color:var(--ac)}
+.cat-c:hover::after{transform:translateX(-5px);color:var(--ac)}
+html[dir="ltr"] .cat-c:hover::after{transform:translateX(5px)}
+@media(min-width:900px){.cats-grid:has(> .cat-c:nth-child(3):last-child){grid-template-columns:1.7fr 1fr 1fr}.cats-grid:has(> .cat-c:nth-child(3):last-child) .cat-c:first-child{min-height:250px}}
+
+/* HOW IT WORKS — three controller buttons joined by a line */
+.how-grid{position:relative;background:none;border:0;gap:0;counter-reset:hw}
+.how-it{border:0;padding:34px 28px 10px;text-align:start}
+.how-it:hover{background:none}
+.how-it:not(:last-child)::after{content:'';position:absolute;top:68px;inset-inline:112px -12px;border-top:2px dashed rgba(245,34,63,.4);pointer-events:none}
+.how-n{display:block;direction:inherit;text-align:start;font-size:0;line-height:0;height:68px;margin-bottom:18px;-webkit-text-stroke:0;text-shadow:none}
+.how-n::before{content:'';display:block;width:68px;height:68px;background:var(--violet);filter:drop-shadow(0 0 14px rgba(245,34,63,.65));-webkit-mask:var(--g) center/contain no-repeat;mask:var(--g) center/contain no-repeat}
+.how-it:nth-child(1){--g:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 8 57 53H7Z' fill='none' stroke='%23000' stroke-width='6' stroke-linejoin='round'/%3E%3C/svg%3E")}
+.how-it:nth-child(2){--g:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='23' fill='none' stroke='%23000' stroke-width='6'/%3E%3C/svg%3E")}
+.how-it:nth-child(3){--g:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M12 12 52 52M52 12 12 52' fill='none' stroke='%23000' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E")}
+.how-it p{font-size:14.5px;max-width:34ch}
+
+/* HUD PANELS + NEWSLETTER + FOOTER keep their shapes, gain depth from the world behind */
+.b3-card,.nl-wrap{backdrop-filter:none}
+.nl-wrap{background:linear-gradient(100deg,rgba(245,34,63,.14),rgba(5,5,7,.7) 60%),rgba(15,15,20,.8)}
+
+/* mobile: no viewport frame, thinner rail */
+@media(max-width:768px){
+  body::before{display:none}
+  .rail{right:4px;height:22vh;width:2px}
+  .how-it:not(:last-child)::after{display:none}
+  .how-it{padding:26px 6px 6px}
+  .cat-c{min-height:150px;padding:20px}
+  .cat-ico{font-size:110px}
+}
+@media(prefers-reduced-motion:reduce){.world{display:none}}
