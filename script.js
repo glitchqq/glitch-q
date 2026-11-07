@@ -93,10 +93,10 @@ const T={
     verify_sub:'أرسلنا لك رابط التفعيل. افتح بريدك واضغط الرابط.',
     verify_resend:'إعادة الإرسال',verify_login:'تسجيل الدخول',
     region_title:'اختر ريجنك',region_sub:'حدد ريجن PlayStation لعرض الأسعار الصحيحة',
-    rw_title:'النقاط والمكافآت',rw_pts_hint:'كل 1000 دج = نقطة · 500 نقطة = خصم 5%',
-    rw_ms_desc:'اجمع النقاط واحصل على بطاقات مجانية!',
+    rw_title:'النقاط والمكافآت',rw_pts_hint:'كل طلب يُسلَّم يمنحك نقاطاً · والنقاط المجانية تُفتح بمشترياتك',
+    rw_ms_desc:'استبدل نقاطك ببطاقات مجانية. المتاح للاستبدال يعتمد على مشترياتك السابقة.',
     ref_link_title:'رابط الدعوة الخاص بك',
-    ref_desc:'شارك رابطك مع أصدقائك. عند تسجيلهم تحصل على 1000 نقطة لكل صديق!',
+    ref_desc:'شارك رابطك مع أصدقائك. عندما يُتمّ صديقك أول عملية شراء تحصل على نقاط إضافية.',ref_cap:'حتى {n} نقطة لكل صديق',
     ref_warning:'لا يعمل مع حسابات من نفس الجهاز أو الشبكة',
     ref_copy:'نسخ',ref_friends:'صديق مدعو',ref_pts_label:'نقطة من الدعوات',
     ref_login_hint:'سجل دخولك لعرض رابطك',
@@ -167,8 +167,8 @@ const T={
     t_streak_reward:'مكافأة اليوم!',t_badge_new:'شارة جديدة',
     t_ref_copied:'تم نسخ رابط الدعوة!',
     t_ref_self:'لا يمكن الإحالة من نفس الجهاز',
-    t_ref_done:'تم تسجيل دعوتك! صاحبك ربح 1000 نقطة',
-    t_ms_pts:'تحتاج نقاط للحصول على هذه المكافأة',
+    t_ref_done:'تم تسجيل دعوتك! سيحصل صاحبك على نقاط بعد أول عملية شراء لك',
+    t_ms_pts:'تحتاج نقاطاً أكثر للحصول على هذه المكافأة',t_rw_locked:'نقاطك مقفلة: تُفتح مع مشترياتك المُسلَّمة',t_rw_ok:'تم الاستبدال! سنرسل المكافأة خلال 24 ساعة',rw_bal:'رصيدك',rw_avail:'متاح للاستبدال',rw_lock:'مقفل (يُفتح بمشترياتك)',rw_need:'تحتاج',rw_more:'نقطة أخرى',rw_redeem:'🎁 استبدل',rw_locked_btn:'🔒 مقفلة',rw_cost:'تكلفتها',rw_loading:'جاري التحميل…',
     t_ms_claimed:'استلمت هذه المكافأة مسبقاً',
     t_ms_spend:'يجب أن تصرف على الأقل',
     t_ms_notify:'يمكنك الآن استلام',t_ms_notify2:'اذهب لقسم المكافآت',
@@ -233,10 +233,10 @@ const T={
     verify_sub:'We sent you a verification link. Open your email and click it.',
     verify_resend:'Resend Email',verify_login:'Sign In',
     region_title:'Choose Your Region',region_sub:'Select your PlayStation region',
-    rw_title:'Points & Rewards',rw_pts_hint:'Every 1000 DZD = 1 point · 500 points = 5% discount',
-    rw_ms_desc:'Collect points and get free cards!',
+    rw_title:'Points & Rewards',rw_pts_hint:'Every delivered order earns points · free points unlock with your purchases',
+    rw_ms_desc:'Redeem your points for free cards. What you can redeem depends on your past purchases.',
     ref_link_title:'Your Referral Link',
-    ref_desc:'Share your link with friends. Get 1000 points per friend!',
+    ref_desc:'Share your link with friends. When a friend completes a first purchase you earn bonus points.',ref_cap:'Up to {n} points per friend',
     ref_warning:'Does not work with accounts from the same device',
     ref_copy:'Copy',ref_friends:'Friends invited',ref_pts_label:'Points from referrals',
     ref_login_hint:'Sign in to view your link',
@@ -307,8 +307,8 @@ const T={
     t_streak_reward:"✅ Today's reward!",t_badge_new:'New Badge',
     t_ref_copied:'Referral link copied!',
     t_ref_self:'Cannot refer from same device',
-    t_ref_done:'Referral registered! Your friend earned 1000 points',
-    t_ms_pts:'You need points for this reward',
+    t_ref_done:'Referral registered! Your friend earns points after your first purchase',
+    t_ms_pts:'You need more points for this reward',t_rw_locked:'Your points are locked: they unlock with your delivered purchases',t_rw_ok:'Redeemed! We will send the reward within 24 hours',rw_bal:'Balance',rw_avail:'Redeemable',rw_lock:'Locked (unlocks with purchases)',rw_need:'Need',rw_more:'more points',rw_redeem:'🎁 Redeem',rw_locked_btn:'🔒 Locked',rw_cost:'Costs',rw_loading:'Loading…',
     t_ms_claimed:'Already claimed this reward',
     t_ms_spend:'You must spend at least',
     t_ms_notify:'You can now claim',t_ms_notify2:'Go to Rewards section',
@@ -532,7 +532,7 @@ const BADGES=[
   {id:'fan10',icon:'🎯',name:'متمرس',nameEn:'Pro',check:u=>(u.orders||0)>=10},
   {id:'reviewer',icon:'⭐',name:'المُقيِّم',nameEn:'Reviewer',check:u=>(u.ratings||0)>=1},
   {id:'spinner',icon:'🎰',name:'المحظوظ',nameEn:'Lucky',check:u=>(u.spins||0)>=1},
-  {id:'pts500',icon:'💎',name:'500 نقطة',nameEn:'500 Points',check:u=>(u.points||0)>=500},
+  {id:'pts500',icon:'💎',name:'100 نقطة',nameEn:'100 Points',check:u=>(u.points||0)>=100},
   {id:'streak7',icon:'🔥',name:'أسبوع',nameEn:'Week',check:u=>(u.streak||0)>=7},
   {id:'sharer',icon:'📣',name:'المُروِّج',nameEn:'Promoter',check:u=>(u.shares||0)>=1},
   {id:'referrer',icon:'👥',name:'الداعية',nameEn:'Referrer',check:u=>(u.referrals||0)>=1},
@@ -545,22 +545,18 @@ const FAQ_DATA=[
   {q:'هل يمكن الاسترجاع بعد إرسال الكود؟',qEn:'Can I get a refund after the code is sent?',a:'لا. بمجرد إرسال الكود لا يتم الاسترجاع.',aEn:'No. Once the code is sent, no refunds are possible.'},
   {q:'ما هي طرق الدفع المتاحة؟',qEn:'What payment methods are available?',a:'BaridiMob: RIP 00799999004390466974\nيد بيد: في ولاية تلمسان فقط.',aEn:'BaridiMob: RIP 00799999004390466974\nHand delivery: In Tlemcen only.'},
   {q:'كيف أتواصل معكم؟',qEn:'How can I contact you?',a:'واتساب: 213658996502\nإيميل: glitchq1q@gmail.com',aEn:'WhatsApp: 213658996502\nEmail: glitchq1q@gmail.com'},
-  {q:'كيف تعمل نقاط المكافآت؟',qEn:'How do reward points work?',a:'كل 1000 دج إنفاق = نقطة. 500 نقطة = خصم 5%.',aEn:'Every 1000 DZD spent = 1 point. 500 points = 5% discount.'},
+  {q:'كيف تعمل نقاط المكافآت؟',qEn:'How do reward points work?',a:'كل طلب يُسلَّم يمنحك نقاطاً من أرباحنا عليه، وتستبدلها ببطاقات مجانية من قسم المكافآت. النقاط المجانية (الدخول اليومي والعجلة) تُفتح تدريجياً مع مشترياتك. دعوة صديق تمنحك نقاطاً عندما يُتمّ أول عملية شراء.',aEn:'Every delivered order earns you points from what we make on it, and you redeem them for free cards in the Rewards section. Free points (daily check-in, wheel) unlock gradually with your purchases. Inviting a friend earns you points when he completes his first purchase.'},
   {q:'ماذا أفعل إذا كان الكود خاطئاً؟',qEn:'What if the code is wrong?',a:'تواصل معنا فوراً عبر واتساب مع رقم طلبك.',aEn:'Contact us immediately via WhatsApp with your order number.'},
 ];
-const MILESTONES=[
-  {id:'m100',pts:100,icon:'🎁',name:'مكافأة 100 نقطة',nameEn:'100 Point Reward',desc:'بطاقة PS Store 5€ مجانية',descEn:'Free PS Store 5€ Card',minSpend:50000,msg:'🎉 مبروك! ربحت بطاقة PS Store 5€ مجانية!',msgEn:'🎉 Congratulations! You won a free PS Store 5€ card!'},
-  {id:'m300',pts:300,icon:'👑',name:'مكافأة 300 نقطة',nameEn:'300 Point Reward',desc:'PS Plus Essential شهر مجاني',descEn:'Free PS Plus Essential 1 Month',minSpend:150000,msg:'🎉 مبروك! ربحت PS Plus Essential شهر مجاني!',msgEn:'🎉 Congratulations! You won a free PS Plus Essential month!'},
-  {id:'m600',pts:600,icon:'💎',name:'مكافأة 600 نقطة',nameEn:'600 Point Reward',desc:'بطاقة PS Store 20€ مجانية',descEn:'Free PS Store 20€ Card',minSpend:300000,msg:'🎉 مبروك! ربحت بطاقة PS Store 20€ مجانية!',msgEn:'🎉 Congratulations! You won a free PS Store 20€ card!'},
-  {id:'m1000',pts:1000,icon:'🏆',name:'مكافأة 1000 نقطة',nameEn:'1000 Point Reward',desc:'PS Plus Extra 3 أشهر مجانية',descEn:'Free PS Plus Extra 3 Months',minSpend:600000,msg:'🎉 مبروك! ربحت PS Plus Extra 3 أشهر مجانية!',msgEn:'🎉 Congratulations! You won free PS Plus Extra 3 months!'},
-];
+/* Reward catalogue and balances come from the Worker (/account/rewards): profit-funded, see worker.js */
+let RW=null,RW_T=0;
 const SPIN_SEGMENTS=[
-  {pts:2,label:'2 نقاط',labelEn:'2 Points',color:'#1B2A5C',prob:35},
-  {pts:3,label:'3 نقاط',labelEn:'3 Points',color:'#141E30',prob:30},
-  {pts:5,label:'5 نقاط',labelEn:'5 Points',color:'#2146B5',prob:20},
-  {pts:10,label:'10 نقاط',labelEn:'10 Points',color:'#4A3410',prob:10},
-  {pts:20,label:'20 نقطة',labelEn:'20 Points',color:'#141E30',prob:4},
-  {pts:50,label:'50 نقطة',labelEn:'50 Points',color:'#5C1F2A',prob:1},
+  {pts:1,label:'نقطة',labelEn:'1 Point',color:'#1B2A5C',prob:35},
+  {pts:2,label:'نقطتان',labelEn:'2 Points',color:'#141E30',prob:30},
+  {pts:3,label:'3 نقاط',labelEn:'3 Points',color:'#2146B5',prob:20},
+  {pts:5,label:'5 نقاط',labelEn:'5 Points',color:'#4A3410',prob:10},
+  {pts:8,label:'8 نقاط',labelEn:'8 Points',color:'#141E30',prob:4},
+  {pts:15,label:'15 نقطة',labelEn:'15 Points',color:'#5C1F2A',prob:1},
   {pts:0,label:'حاول غداً',labelEn:'Try Tomorrow',color:'#161A22',prob:0},
 ];
 const SUPPORT_FLOWS={
@@ -1373,13 +1369,13 @@ function renderRewardsPage(){
   const lb=$('rwLvlBadge');if(lb){lb.textContent=`${lvl.icon} ${S.lang==='en'?lvl.nameEn:lvl.name}`;lb.className='lvl-badge '+lvl.cls;}
   const pf=$('rwPtsBar');if(pf)pf.style.width=progress+'%';
   renderBadges();renderStreak();loadLbRw();initSpinTimerRw();
-  renderMissions('missionsWrapRw');renderMilestones();initReferral();
+  renderMissions('missionsWrapRw');renderMilestones();initReferral();loadRewards();
 }
 
 function getLevel(pts){
-  const lvls=[{min:0,name:'مبتدئ',nameEn:'Beginner',icon:'🥉',cls:'lvl-br'},{min:100,name:'فضي',nameEn:'Silver',icon:'🥈',cls:'lvl-si'},{min:300,name:'ذهبي',nameEn:'Gold',icon:'🥇',cls:'lvl-go'},{min:600,name:'بلاتيني',nameEn:'Platinum',icon:'💎',cls:'lvl-pl'},{min:1000,name:'ألماسي',nameEn:'Diamond',icon:'👑',cls:'lvl-di'}];
+  const lvls=[{min:0,name:'مبتدئ',nameEn:'Beginner',icon:'🥉',cls:'lvl-br'},{min:30,name:'فضي',nameEn:'Silver',icon:'🥈',cls:'lvl-si'},{min:100,name:'ذهبي',nameEn:'Gold',icon:'🥇',cls:'lvl-go'},{min:250,name:'بلاتيني',nameEn:'Platinum',icon:'💎',cls:'lvl-pl'},{min:500,name:'ألماسي',nameEn:'Diamond',icon:'👑',cls:'lvl-di'}];
   let lvl=lvls[0],idx=0;for(let i=lvls.length-1;i>=0;i--){if(pts>=lvls[i].min){lvl=lvls[i];idx=i;break;}}
-  const nxt=idx<lvls.length-1?lvls[idx+1].min:1000;const progress=idx===lvls.length-1?100:Math.min(((pts-lvl.min)/(nxt-lvl.min))*100,100);
+  const nxt=idx<lvls.length-1?lvls[idx+1].min:500;const progress=idx===lvls.length-1?100:Math.min(((pts-lvl.min)/(nxt-lvl.min))*100,100);
   return{lvl,progress};
 }
 
@@ -1412,15 +1408,15 @@ async function renderLeaderboard(){return paintLeaderboard('lbList',false);}
 function renderMissions(containerId){
   const wrap=$(containerId);if(!wrap)return;wrap.innerHTML='';
   const missions=[
-    {id:'login',icon:'fa-calendar-check',color:'var(--cyan)',name:'تسجيل دخول يومي',nameEn:'Daily Login',pts:5,check:()=>S.udata?.lastLogin===algiersDay(),prog:()=>({done:S.udata?.lastLogin===algiersDay()?1:0,total:1})},
-    {id:'buy',icon:'fa-cart-shopping',color:'var(--violet)',name:'إجراء عملية شراء',nameEn:'Make a Purchase',pts:10,check:()=>(S.udata?.orders||0)>0,prog:()=>({done:Math.min(S.udata?.orders||0,1),total:1})},
-    {id:'ref',icon:'fa-user-plus',color:'var(--pink)',name:'دعوة أصدقاء (3)',nameEn:'Invite Friends (3)',pts:1000,check:()=>(S.udata?.referrals||0)>=3,prog:()=>({done:S.udata?.referrals||0,total:3})},
+    {id:'login',icon:'fa-calendar-check',color:'var(--cyan)',name:'تسجيل دخول يومي',nameEn:'Daily Login',ptsTxt:'+1 – +3',check:()=>S.udata?.lastLogin===algiersDay(),prog:()=>({done:S.udata?.lastLogin===algiersDay()?1:0,total:1})},
+    {id:'buy',icon:'fa-cart-shopping',color:'var(--violet)',name:'إجراء عملية شراء',nameEn:'Make a Purchase',ptsTxt:S.lang==='en'?'points from every order':'نقاط من كل طلب',check:()=>(S.udata?.orders||0)>0,prog:()=>({done:Math.min(S.udata?.orders||0,1),total:1})},
+    {id:'ref',icon:'fa-user-plus',color:'var(--pink)',name:'دعوة صديق يشتري',nameEn:'Invite a friend who buys',ptsTxt:S.lang==='en'?'points when he buys':'نقاط عند أول شراء له',check:()=>(S.udata?.referrals||0)>=1,prog:()=>({done:Math.min(S.udata?.referrals||0,1),total:1})},
   ];
   missions.forEach(m=>{
     const prog=m.prog();const isDone=m.check();
     const el=document.createElement('div');el.className='mission-it'+(isDone?' done':'');
     const name=S.lang==='en'?m.nameEn:m.name;
-    el.innerHTML=`<div class="mi-l"><i class="fa-solid ${m.icon}" style="color:${m.color}"></i><div class="mi-txt"><span>${san(name)}</span><small>+${m.pts.toLocaleString()} ${t('t_pts')}</small></div></div>${isDone?'<i class="fa-solid fa-check-circle mi-status-done"></i>':`<div class="mi-status-no"><span>${prog.done}/${prog.total}</span><div class="mi-prog-bar"><div class="mi-prog-fill" style="width:${Math.floor((prog.done/prog.total)*100)}%"></div></div></div>`}`;
+    el.innerHTML=`<div class="mi-l"><i class="fa-solid ${m.icon}" style="color:${m.color}"></i><div class="mi-txt"><span>${san(name)}</span><small>${m.ptsTxt?san(m.ptsTxt):'+'+m.pts.toLocaleString()+' '+t('t_pts')}</small></div></div>${isDone?'<i class="fa-solid fa-check-circle mi-status-done"></i>':`<div class="mi-status-no"><span>${prog.done}/${prog.total}</span><div class="mi-prog-bar"><div class="mi-prog-fill" style="width:${Math.floor((prog.done/prog.total)*100)}%"></div></div></div>`}`;
     wrap.appendChild(el);
   });
 }
@@ -1560,59 +1556,57 @@ async function checkAchievements(){
 /* ══════════════════════════════════════════
    MILESTONES
 ══════════════════════════════════════════ */
+async function loadRewards(force){
+  if(!S.user||!S.udata)return;
+  if(!force&&RW&&Date.now()-RW_T<20000){renderMilestones();initReferral();return;}
+  const r=await wkCall('/account/rewards',{});
+  const d=r.data;
+  if(d&&d.ok&&Array.isArray(d.rewards)&&Number.isFinite(d.points)&&Number.isFinite(d.redeemablePts)){RW={points:d.points,redeemablePts:d.redeemablePts,lockedPts:Math.max(0,d.points-d.redeemablePts),ptDZD:d.ptDZD||10,refMaxPts:Number(d.refMaxPts)||0,refMinOrderDZD:Number(d.refMinOrderDZD)||0,rewards:d.rewards.filter(x=>x&&typeof x.id==='string'&&Number.isFinite(x.pts)&&x.pts>0)};RW_T=Date.now();S.udata.points=d.points;}
+  renderMilestones();initReferral();
+}
 function renderMilestones(){
   const container=$('milestonesGrid');if(!container)return;
-  const pts=S.udata?.points||0;const totalSpend=S.udata?.totalSpend||0;const claimed=S.udata?.claimedMilestones||[];
-  container.innerHTML='';
-  MILESTONES.forEach(ms=>{
-    const isUnlocked=pts>=ms.pts;const isClaimed=claimed.includes(ms.id);const canClaim=isUnlocked&&!isClaimed&&totalSpend>=ms.minSpend;
-    const el=document.createElement('div');el.className='milestone-it'+(isClaimed?' unlocked':!isUnlocked?' locked':'');
-    const statusCls=isClaimed?'done':canClaim?'claim':'locked';
-    const name=S.lang==='en'?(ms.nameEn||ms.name):ms.name;
-    const desc=S.lang==='en'?(ms.descEn||ms.desc):ms.desc;
-    let statusTxt;
-    if(isClaimed)statusTxt=S.lang==='en'?'✅ Claimed':'✅ مُستلم';
-    else if(canClaim)statusTxt=S.lang==='en'?'🎁 Claim':'🎁 استلم';
-    else if(isUnlocked&&totalSpend<ms.minSpend)statusTxt=`⏳ ${ms.minSpend.toLocaleString()} دج`;
-    else statusTxt='🔒';
-    const reqTxt=isClaimed?(S.lang==='en'?'✅ Claimed':'✅ تم الاستلام'):`${pts}/${ms.pts} ${t('t_pts')} · ${S.lang==='en'?'Spent':'صرف'}: ${totalSpend.toLocaleString()}/${ms.minSpend.toLocaleString()} دج`;
+  const en=S.lang==='en';container.innerHTML='';
+  if(!RW){container.innerHTML=`<p style="font-size:12px;color:var(--mid)">${t('rw_loading')}</p>`;return;}
+  const sum=document.createElement('div');sum.className='ms-sum';
+  sum.innerHTML=`<div><b>${RW.points.toLocaleString()}</b><span>${t('rw_bal')}</span></div><div class="ok"><b>${RW.redeemablePts.toLocaleString()}</b><span>${t('rw_avail')}</span></div><div class="lk"><b>${RW.lockedPts.toLocaleString()}</b><span>${t('rw_lock')}</span></div>`;
+  container.appendChild(sum);
+  RW.rewards.forEach(rw=>{
+    const can=RW.redeemablePts>=rw.pts,haveEnough=RW.points>=rw.pts;
+    const el=document.createElement('div');el.className='milestone-it'+(can?'':' locked');
+    const name=en?(rw.nameEn||rw.name):rw.name;
+    const miss=Math.max(0,rw.pts-RW.redeemablePts);
+    const reqTxt=can?`${t('rw_cost')} ${rw.pts.toLocaleString()} ${t('t_pts')}`:`${t('rw_need')} ${miss.toLocaleString()} ${t('rw_more')}${haveEnough?' · '+t('t_rw_locked'):''}`;
     el.innerHTML=`
-      <div class="ms-ico">${ms.icon}</div>
+      <div class="ms-ico">🎁</div>
       <div class="ms-info">
         <div class="ms-name">${san(name)}</div>
-        <div class="ms-desc">${san(desc)}</div>
+        <div class="ms-desc">${rw.pts.toLocaleString()} ${t('t_pts')}</div>
         <div class="ms-req">${san(reqTxt)}</div>
+        <div class="mi-prog-bar" style="margin-top:6px"><div class="mi-prog-fill" style="width:${Math.min(100,Math.floor(RW.redeemablePts/rw.pts*100))}%"></div></div>
       </div>
-      <button class="ms-status ${statusCls}" ${canClaim?`onclick="claimMilestone('${ms.id}')"`:''} style="${!canClaim?'cursor:default':''}">${statusTxt}</button>
+      <button class="ms-status ${can?'claim':'locked'}" ${can?`onclick="claimMilestone('${jsq(rw.id)}')"`:''} style="${!can?'cursor:default':''}">${can?t('rw_redeem'):t('rw_locked_btn')}</button>
     `;
     container.appendChild(el);
   });
 }
 
-window.claimMilestone=async function(msId){
+window.claimMilestone=async function(rwId){
   if(!S.user||!S.udata){toast(t('t_login_first'),'terr');return;}
   if(!RL.ok('milestone',5,60000)){toast(t('t_too_many'),'twarn');return;}
-  const ms=MILESTONES.find(m=>m.id===msId);if(!ms)return;
-  const r=await wkCall('/account/milestone',{id:msId});
+  const rw=RW&&RW.rewards.find(x=>x.id===rwId);if(!rw)return;
+  const r=await wkCall('/account/redeem',{id:rwId});
   if(r.data&&r.data.ok){
-    S.udata.claimedMilestones=[...(S.udata.claimedMilestones||[]),msId];S.udata.points=r.data.points;
-    const msg=S.lang==='en'?(ms.msgEn||ms.msg):ms.msg;
-    toast(msg,'tok');fireConfetti(50);renderMilestones();updProfUI();
-  }else if(r.data&&r.data.reason==='points')toast(`${t('t_ms_pts')}: ${ms.pts}`,'twarn');
-  else if(r.data&&r.data.reason==='claimed')toast(t('t_ms_claimed'),'twarn');
-  else if(r.data&&r.data.reason==='spend')toast(`${t('t_ms_spend')} ${ms.minSpend.toLocaleString()} دج`,'twarn');
+    S.udata.points=r.data.points;
+    toast(t('t_rw_ok'),'tok');fireConfetti(50);
+    await loadRewards(true);updProfUI();
+  }else if(r.data&&r.data.reason==='points')toast(t('t_ms_pts'),'twarn');
+  else if(r.data&&r.data.reason==='locked'){toast(t('t_rw_locked'),'twarn');loadRewards(true);}
   else toast(t('t_ms_error'),'terr');
 };
 
-function checkMilestones(){
-  if(!S.user||!S.udata)return;const pts=S.udata.points||0;const totalSpend=S.udata.totalSpend||0;const claimed=S.udata.claimedMilestones||[];
-  MILESTONES.forEach(ms=>{
-    if(pts>=ms.pts&&!claimed.includes(ms.id)&&totalSpend>=ms.minSpend){
-      const name=S.lang==='en'?(ms.nameEn||ms.name):ms.name;
-      setTimeout(()=>toast(`🏆 ${t('t_ms_notify')}: ${name}! ${t('t_ms_notify2')}`,'twarn'),1000);
-    }
-  });
-}
+/* the old "you can claim now" toasts are gone: what is redeemable depends on the Worker's answer, fetched on the rewards page */
+function checkMilestones(){}
 
 /* ══════════════════════════════════════════
    REFERRAL SYSTEM
@@ -1623,7 +1617,8 @@ function initReferral(){
   const refUrl=`${location.origin}${location.pathname}?ref=${refId}`;
   const el=$('refLinkTxt');if(el)el.textContent=refUrl;
   setText('refCount',S.udata?.referrals||0);
-  setText('refPts',((S.udata?.referrals||0)*1000).toLocaleString());
+  setText('refPts',(S.udata?.refPoints||0).toLocaleString());
+  const rd=$('refDesc');if(rd)rd.innerHTML=`${t('ref_desc')}${RW?`<br><strong style="color:var(--violet)">${t('ref_cap').replace('{n}',RW.refMaxPts.toLocaleString())}</strong>`:''}<br><small style="color:var(--dim)">${t('ref_warning')}</small>`;
 }
 
 window.copyRefLink=function(){

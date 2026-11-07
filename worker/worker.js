@@ -63,7 +63,7 @@ export default {
 
     try {
       const routes = {
-        '/health':                 () => json({ ok: true, v: 5 }, 200, cors),
+        '/health':                 () => json({ ok: true, v: 6 }, 200, cors),
         '/maintenance':            () => handleMaintenance(request, env, cors),
         '/ticker':                 () => handleTicker(request, env, cors),
         '/stats/visit':            () => handleVisit(request, env, cors),
@@ -78,7 +78,9 @@ export default {
         '/newsletter/subscribe':   () => handleNewsletter(request, env, cors),
         '/account/streak':         () => handleStreak(request, env, cors),
         '/account/spin':           () => handleSpin(request, env, cors),
-        '/account/milestone':      () => handleMilestone(request, env, cors),
+        '/account/rewards':        () => handleRewards(request, env, cors),
+        '/account/redeem':         () => handleRedeem(request, env, cors),
+        '/account/milestone':      () => handleRedeem(request, env, cors),   // old name, same handler
         '/account/referral':       () => handleReferral(request, env, cors),
         '/account/fp':             () => handleFingerprint(request, env, cors),
         '/account/revoke-sessions': () => handleRevokeSessions(request, env, cors),
@@ -715,19 +717,63 @@ async function handleReportCreate(request, env, cors) {
 /* ═══════════════════════════════════════
    POINTS & REWARDS — decided by the server only
 ═══════════════════════════════════════ */
-const STREAK_BONUS = [1, 1, 2, 2, 3, 3, 5];
+// Free points (daily check-in, wheel) are small on purpose AND locked: they can only be redeemed
+// up to the customer's reward pool, which is filled exclusively from profit on delivered orders.
+const STREAK_BONUS = [1, 1, 1, 2, 2, 2, 3];
 // order and weights must match SPIN_SEGMENTS in script.js
 const SPIN_SEGMENTS = [
-  { pts: 2, prob: 35 }, { pts: 3, prob: 30 }, { pts: 5, prob: 20 }, { pts: 10, prob: 10 },
-  { pts: 20, prob: 4 }, { pts: 50, prob: 1 }, { pts: 0, prob: 0 },
+  { pts: 1, prob: 35 }, { pts: 2, prob: 30 }, { pts: 3, prob: 20 }, { pts: 5, prob: 10 },
+  { pts: 8, prob: 4 }, { pts: 15, prob: 1 }, { pts: 0, prob: 0 },
 ];
-// must match MILESTONES in script.js
-const MILESTONES = [
-  { id: 'm100', pts: 100, minSpend: 50000, name: 'مكافأة 100 نقطة', desc: 'بطاقة PS Store 5€ مجانية' },
-  { id: 'm300', pts: 300, minSpend: 150000, name: 'مكافأة 300 نقطة', desc: 'PS Plus Essential شهر مجاني' },
-  { id: 'm600', pts: 600, minSpend: 300000, name: 'مكافأة 600 نقطة', desc: 'بطاقة PS Store 20€ مجانية' },
-  { id: 'm1000', pts: 1000, minSpend: 600000, name: 'مكافأة 1000 نقطة', desc: 'PS Plus Extra 3 أشهر مجانية' },
-];
+
+/* ───── Profit-funded rewards ─────
+   settings/economics (owner-only document) holds the cost prices and the reward rules; it is never sent to browsers.
+   users/{uid}.rewardPool (DZD) grows ONLY when the owner delivers an order (admin.js: share of that order's profit)
+   and shrinks when a reward is redeemed. A reward can be redeemed only if BOTH the point balance and the pool cover it,
+   so what a customer has cost the store in free cards can never exceed what the store earned from that customer.
+   Keep ECON_DEFAULTS / normEcon identical to econ.js (worker.test.mjs checks that they agree). */
+const ECON_DEFAULTS = {
+  marginPct: 5, earnPct: 40, refPct: 40, refMaxPts: 80, refMinOrderDZD: 2000, ptDZD: 10,
+  rewards: [
+    { id: 'r5', name: 'بطاقة PS Store 5€', nameEn: 'PS Store 5€ card', priceDZD: 1600 },
+    { id: 'r15', name: 'بطاقة PS Store 15€', nameEn: 'PS Store 15€ card', priceDZD: 4500 },
+    { id: 'r20', name: 'بطاقة PS Store 20€', nameEn: 'PS Store 20€ card', priceDZD: 6200 },
+    { id: 'r50', name: 'بطاقة PS Store 50€', nameEn: 'PS Store 50€ card', priceDZD: 14900 },
+  ],
+};
+function econNum(v, def, min, max) { const n = Number(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def; }
+function normEcon(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  const D = ECON_DEFAULTS;
+  const e = {
+    marginPct: econNum(r.marginPct, D.marginPct, 0, 60),
+    earnPct: Math.floor(econNum(r.earnPct, D.earnPct, 0, 70)),
+    refPct: Math.floor(econNum(r.refPct, D.refPct, 0, 70)),
+    refMaxPts: Math.floor(econNum(r.refMaxPts, D.refMaxPts, 0, 5000)),
+    refMinOrderDZD: Math.floor(econNum(r.refMinOrderDZD, D.refMinOrderDZD, 0, 1e6)),
+    ptDZD: Math.floor(econNum(r.ptDZD, D.ptDZD, 1, 1000)),
+  };
+  if (e.earnPct + e.refPct > 90) e.refPct = Math.max(0, 90 - e.earnPct);            // the store always keeps at least 10% of the profit
+  const list = Array.isArray(r.rewards) ? r.rewards : D.rewards;
+  e.rewards = [];
+  const seen = new Set();
+  for (const x of list.slice(0, 12)) {
+    const id = cleanText(x && x.id, 20), price = Math.floor(Number(x && x.priceDZD));
+    if (!/^[A-Za-z0-9_-]{1,20}$/.test(id) || seen.has(id) || !(price >= 1 && price <= 1e6)) continue;
+    seen.add(id);
+    e.rewards.push({ id, name: cleanText(x.name, 80) || id, nameEn: cleanText(x.nameEn, 80) || cleanText(x.name, 80) || id, priceDZD: price });
+  }
+  return e;
+}
+async function loadEcon(env) {
+  try { const d = await fsGet(env, 'settings/economics'); return normEcon(d.exists ? d.data : null); }
+  catch { return normEcon(null); }
+}
+const rewardPts = (rw, e) => Math.ceil(rw.priceDZD / e.ptDZD);
+function redeemablePts(u, e) {
+  const pts = Math.max(0, Math.floor(Number(u.points) || 0)), pool = Math.max(0, Number(u.rewardPool) || 0);
+  return Math.min(pts, Math.floor(pool / e.ptDZD));
+}
 
 // common gate for the /account/* routes: POST + verified + email verified + not banned
 async function account(request, env, cors, { maxBody = 2048 } = {}) {
@@ -788,23 +834,39 @@ async function handleSpin(request, env, cors) {
   return json({ ok: true, index: idx, pts: prize.pts, points: (Number(res.cur.data.points) || 0) + prize.pts, spins: (Number(res.cur.data.spins) || 0) + 1 }, 200, cors);
 }
 
-async function handleMilestone(request, env, cors) {
+// What the customer may redeem right now. Nothing here reveals cost prices or margins.
+async function handleRewards(request, env, cors) {
   const g = await account(request, env, cors); if (g.err) return g.err;
-  const ms = MILESTONES.find(m => m.id === cleanText(g.body.id, 20));
-  if (!ms) return json({ error: 'Unknown reward' }, 400, cors);
+  const [e, u] = await Promise.all([loadEcon(env), fsGet(env, `users/${g.uid}`)]);
+  if (!u.exists) return json({ ok: false, reason: 'nouser' }, 404, cors);
+  const points = Math.max(0, Math.floor(Number(u.data.points) || 0)), red = redeemablePts(u.data, e);
+  return json({
+    ok: true, points, redeemablePts: red, lockedPts: points - red, ptDZD: e.ptDZD, refMaxPts: e.refMaxPts, refMinOrderDZD: e.refMinOrderDZD,
+    rewards: e.rewards.map(r => ({ id: r.id, name: r.name, nameEn: r.nameEn, pts: rewardPts(r, e) })),
+  }, 200, cors);
+}
+
+async function handleRedeem(request, env, cors) {
+  const g = await account(request, env, cors); if (g.err) return g.err;
+  const e = await loadEcon(env);
+  const rw = e.rewards.find(r => r.id === cleanText(g.body.id, 20));
+  if (!rw) return json({ error: 'Unknown reward' }, 400, cors);
+  const need = rewardPts(rw, e), worth = need * e.ptDZD;
   const res = await fsUpdate(env, `users/${g.uid}`, cur => {
     if (!cur.exists) return { abort: 'nouser' };
-    const claimed = Array.isArray(cur.data.claimedMilestones) ? cur.data.claimedMilestones : [];
-    if (claimed.includes(ms.id)) return { abort: 'claimed' };
-    if ((Number(cur.data.points) || 0) < ms.pts) return { abort: 'points' };
-    if ((Number(cur.data.totalSpend) || 0) < ms.minSpend) return { abort: 'spend' };
-    const notif = { title: `🎁 ${ms.name}`, code: `سيتم إرسال ${ms.desc} لك خلال 24 ساعة.`, date: dzDate(), read: false };
-    return { fields: {}, transforms: { inc: { points: -ms.pts }, arrayUnion: { claimedMilestones: [ms.id], notifications: [notif] } }, _spend: Number(cur.data.totalSpend) || 0 };
+    if (Math.floor(Number(cur.data.points) || 0) < need) return { abort: 'points' };
+    if ((Number(cur.data.rewardPool) || 0) < worth) return { abort: 'locked' };            // enough points, but the store has not earned enough from this customer yet
+    const notif = { title: `🎁 ${rw.name}`, code: 'سيتم إرسال المكافأة لك خلال 24 ساعة.', date: dzDate(), read: false };
+    return { fields: {}, transforms: { inc: { points: -need, rewardPool: -worth, redeemed: 1 }, arrayUnion: { notifications: [notif] } } };
   });
   if (res.aborted) return json({ ok: false, reason: res.abort }, 200, cors);
   if (!res.ok) return json({ error: 'Please try again' }, 503, cors);
-  await tgSend(env, `🏆 Reward Claimed!\n👤 ${cleanText(g.claims.name || '', 60)}\n🔑 ${g.uid}\n🎁 ${ms.name}\n💳 ${ms.desc}\n📊 Points: ${ms.pts}\n💰 Spent: ${res.out._spend.toLocaleString('en-US')} دج`);
-  return json({ ok: true, points: (Number(res.cur.data.points) || 0) - ms.pts }, 200, cors);
+  const left = { points: Math.floor(Number(res.cur.data.points) || 0) - need, rewardPool: (Number(res.cur.data.rewardPool) || 0) - worth };
+  // a claim for the owner to fulfil (owner-only collection); a failed write is not fatal because the Telegram message below carries the same facts
+  const cid = randomId(20);
+  await fsCommit(env, [fsWrite(env, `reward_claims/${cid}`, { fields: { userId: g.uid, name: cleanText(g.claims.name || '', 60), email: cleanText(g.claims.email || '', 120), rewardId: rw.id, reward: rw.name, pts: need, worthDZD: worth, status: 'pending', date: new Date().toISOString() }, precondition: { exists: false } })]);
+  await tgSend(env, `🏆 Reward Claimed!\n👤 ${cleanText(g.claims.name || '', 60)}\n🔑 ${g.uid}\n🎁 ${rw.name}\n📊 Points: ${need} (≈ ${worth.toLocaleString('en-US')} دج)\n🆔 claim ${cid}`);
+  return json({ ok: true, points: left.points, redeemablePts: Math.min(left.points, Math.floor(left.rewardPool / e.ptDZD)) }, 200, cors);
 }
 
 // Records who invited this account. The inviter is rewarded later, when the invited

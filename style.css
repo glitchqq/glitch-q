@@ -1170,3 +1170,13 @@ html[dir="ltr"] .cat-c:hover::after{transform:translateX(5px)}
   .cat-ico{font-size:110px}
 }
 @media(prefers-reduced-motion:reduce){.world{display:none}}
+
+/* REWARDS — balance strip: total / redeemable / locked (the profit-funded points system) */
+.ms-sum{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:4px}
+.ms-sum>div{background:var(--card);border:1px solid var(--brd);padding:12px 10px;text-align:center;display:flex;flex-direction:column;gap:2px}
+.ms-sum b{font-family:var(--fl);font-size:22px;font-weight:700;color:#fff;line-height:1.1}
+.ms-sum span{font-size:11.5px;color:var(--mid)}
+.ms-sum .ok{border-color:rgba(40,200,138,.5)}.ms-sum .ok b{color:var(--green)}
+.ms-sum .lk b{color:var(--gold)}
+@media(max-width:480px){.ms-sum b{font-size:18px}.ms-sum span{font-size:10.5px}}
+.milestone-it .mi-prog-bar{width:100%;max-width:220px;height:4px}

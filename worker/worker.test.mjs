@@ -145,15 +145,13 @@ function seed() {
   const src = readFileSync(new URL('../script.js', import.meta.url), 'utf8');
   const grab = re => re.exec(src)[0];
   const ctx = {};
-  vm.runInNewContext(grab(/const RATES=[^\n]+/).replace('const ', 'this.') + ';' + grab(/const MILESTONES=\[[\s\S]*?\n\];/).replace('const ', 'this.') + ';' + grab(/const SPIN_SEGMENTS=\[[\s\S]*?\n\];/).replace('const ', 'this.'), ctx);
+  vm.runInNewContext(grab(/const RATES=[^\n]+/).replace('const ', 'this.') + ';' + grab(/const SPIN_SEGMENTS=\[[\s\S]*?\n\];/).replace('const ', 'this.'), ctx);
   const w = readFileSync(new URL('./worker.js', import.meta.url), 'utf8');
   const wRates = vm.runInNewContext('(' + /const RATES = (\{[^}]+\})/.exec(w)[1] + ')');
   ck('RATES identical in worker and script.js', JSON.stringify(wRates) === JSON.stringify(ctx.RATES), JSON.stringify([wRates, ctx.RATES]));
   const adminSrc = readFileSync(new URL('../admin.js', import.meta.url), 'utf8');
   const aRates = vm.runInNewContext('(' + /const PF_RATES=(\{[^}]+\})/.exec(adminSrc)[1] + ')');
   ck('RATES identical in worker and the admin price hint (admin.js)', JSON.stringify(aRates) === JSON.stringify(wRates), JSON.stringify([aRates, wRates]));
-  const wMs = vm.runInNewContext(/const MILESTONES = (\[[\s\S]*?\n\]);/.exec(w)[1]);
-  ck('MILESTONES (id/pts/minSpend) identical', JSON.stringify(wMs.map(m => [m.id, m.pts, m.minSpend])) === JSON.stringify(ctx.MILESTONES.map(m => [m.id, m.pts, m.minSpend])));
   const wSp = vm.runInNewContext(/const SPIN_SEGMENTS = (\[[\s\S]*?\n\]);/.exec(w)[1]);
   ck('SPIN_SEGMENTS (pts/prob order) identical', JSON.stringify(wSp.map(m => [m.pts, m.prob])) === JSON.stringify(ctx.SPIN_SEGMENTS.map(m => [m.pts, m.prob])));
 }
@@ -307,7 +305,7 @@ ck('streak: first claim → +1, streak 1', s === 200 && j.ok && j.bonus === 1 &&
 [s, j] = await call('/account/streak', { idToken: await tok('u1') }); ck('streak: second claim same day refused', j.ok === false && j.reason === 'done' && get('users/u1').points === 6, JSON.stringify(j));
 function dzToday(off = 0) { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Algiers', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() + off * 86400000)); }
 put('users/u2', { points: 10, streak: 6, lastLogin: dzToday(-1) });
-[s, j] = await call('/account/streak', { idToken: await tok('u2') }); ck('streak: consecutive day → streak 7, bonus 5', j.ok && j.streak === 7 && j.bonus === 5 && get('users/u2').points === 15, JSON.stringify(j));
+[s, j] = await call('/account/streak', { idToken: await tok('u2') }); ck('streak: consecutive day → streak 7, bonus 3 (free points are small)', j.ok && j.streak === 7 && j.bonus === 3 && get('users/u2').points === 13, JSON.stringify(j));
 put('users/u3', { points: 10, streak: 6, lastLogin: dzToday(-3) });
 [s, j] = await call('/account/streak', { idToken: await tok('u3') }); ck('streak: gap resets to 1', j.streak === 1 && j.bonus === 1, JSON.stringify(j));
 { const legacy = new Date(dzToday(-1) + 'T12:00:00Z').toDateString();   // what older accounts stored: the browser's toDateString()
@@ -328,17 +326,60 @@ const idx1 = j.index;
   const w = [35, 30, 20, 10, 4, 1, 0]; const dev = counts.map((c, i) => Math.abs(c / N * 100 - w[i]));
   ck('spin: prize distribution matches weights (±3%)  ' + counts.join('/'), dev.every(d => d < 3) && counts[6] === 0, JSON.stringify(dev)); }
 
+/* ───────── profit-funded rewards ───────── */
+const ECON = (await import('../econ.js')).default;
 seed();
-put('users/u1', { points: 150, totalSpend: 60000, claimedMilestones: [], notifications: [] });
-[s, j] = await call('/account/milestone', { idToken: await tok('u1'), id: 'zzz' }); ck('milestone: unknown id → 400', s === 400);
-[s, j] = await call('/account/milestone', { idToken: await tok('u1'), id: 'm300' }); ck('milestone: not enough points → refused', j.ok === false && j.reason === 'points' && get('users/u1').points === 150);
-put('users/u2', { points: 500, totalSpend: 1000, claimedMilestones: [], notifications: [] });
-[s, j] = await call('/account/milestone', { idToken: await tok('u2'), id: 'm100' }); ck('milestone: enough points but no real spending → refused', j.ok === false && j.reason === 'spend' && get('users/u2').points === 500, JSON.stringify(j));
-{ const rs = await Promise.all([1, 2, 3].map(async () => call('/account/milestone', { idToken: await tok('u1'), id: 'm100' })));
-  const u = get('users/u1');
-  ck('milestone: concurrent triple claim → paid once (points 150→50, one notification)', rs.filter(r => r[1].ok).length === 1 && u.points === 50 && u.claimedMilestones.length === 1 && u.notifications.length === 1, JSON.stringify([rs.map(r => r[1]), u.points])); }
-ck('milestone: owner notified via telegram', fs.tg.some(x => x.text.includes('Reward Claimed')));
-[s, j] = await call('/account/milestone', { idToken: await tok('u1'), id: 'm100' }); ck('milestone: later re-claim refused', j.reason === 'claimed');
+put('users/u1', { points: 5000, rewardPool: 0, notifications: [] });          // lots of FREE points, nothing earned from purchases
+put('users/u2', { points: 600, rewardPool: 1600, notifications: [] });        // enough pool for exactly one 5€ card (160 pts)
+put('users/u3', { points: 100, rewardPool: 100000, notifications: [] });      // rich pool, too few points
+[s] = await call('/account/rewards', {}); ck('rewards: no token → 401', s === 401);
+[s, j] = await call('/account/rewards', { idToken: await tok('u1') });
+ck('rewards: free points with an empty pool are all LOCKED (5000 pts, 0 redeemable)', s === 200 && j.ok && j.points === 5000 && j.redeemablePts === 0 && j.lockedPts === 5000, JSON.stringify(j));
+ck('rewards: catalogue priced in points from retail price (5€ = 1600 DZD = 160 pts)', j.rewards.find(r => r.id === 'r5').pts === 160 && j.rewards.length === 4, JSON.stringify(j.rewards));
+[s, j] = await call('/account/rewards', { idToken: await tok('u2') }); ck('rewards: redeemable = min(points, pool/ptDZD) = 160', j.redeemablePts === 160 && j.lockedPts === 440, JSON.stringify(j));
+[s, j] = await call('/account/redeem', { idToken: await tok('u1'), id: 'zzz' }); ck('redeem: unknown id → 400', s === 400);
+[s, j] = await call('/account/redeem', { idToken: await tok('u1'), id: 'r5' });
+ck('redeem: 5000 free points but empty pool → refused "locked", nothing changes (the store cannot be drained with free points)', j.ok === false && j.reason === 'locked' && get('users/u1').points === 5000 && get('users/u1').rewardPool === 0, JSON.stringify(j));
+[s, j] = await call('/account/redeem', { idToken: await tok('u3'), id: 'r5' }); ck('redeem: rich pool but not enough points → refused "points"', j.ok === false && j.reason === 'points' && get('users/u3').points === 100, JSON.stringify(j));
+{ const rs = await Promise.all([1, 2, 3].map(async () => call('/account/redeem', { idToken: await tok('u2'), id: 'r5' })));
+  const u = get('users/u2');
+  ck('redeem: concurrent triple request → exactly one paid (points 600→440, pool 1600→0)', rs.filter(r => r[1].ok).length === 1 && u.points === 440 && u.rewardPool === 0 && u.notifications.length === 1 && u.redeemed === 1, JSON.stringify([rs.map(r => r[1]), u])); }
+ck('redeem: a pending claim for the owner was written (owner-only collection)', [...fs.docs.keys()].some(k => k.startsWith('reward_claims/')) && D(fs.docs.get([...fs.docs.keys()].find(k => k.startsWith('reward_claims/'))).fields.status) === 'pending');
+ck('redeem: owner notified via telegram', fs.tg.some(x => x.text.includes('Reward Claimed')));
+[s, j] = await call('/account/redeem', { idToken: await tok('u2'), id: 'r5' }); ck('redeem: second card refused — the pool is spent', j.ok === false && j.reason === 'locked');
+[s, j] = await call('/account/milestone', { idToken: await tok('u3'), id: 'r5' }); ck('old /account/milestone path behaves like /account/redeem', j.reason === 'points');
+
+/* owner's own rules: custom rewards come from settings/economics, and cost prices never reach the browser */
+put('settings/economics', { earnPct: 30, rewards: [{ id: 'x1', name: 'Plus شهر', nameEn: 'Plus 1m', priceDZD: 2501 }], costs: { p1: 1234567, p2: 7654321 }, marginPct: 11 });
+put('users/u4', { points: 1000, rewardPool: 5000, notifications: [] });
+[s, j] = await call('/account/rewards', { idToken: await tok('u4') });
+ck('economics: custom reward used; price 2501 DZD → ceil(2501/10) = 251 pts', j.rewards.length === 1 && j.rewards[0].id === 'x1' && j.rewards[0].pts === 251, JSON.stringify(j));
+ck('economics: cost prices / margin / shares never appear in the response', !/1234567|7654321|marginPct|earnPct|costs|rewardPool/.test(JSON.stringify(j)), JSON.stringify(j));
+[s, j] = await call('/account/redeem', { idToken: await tok('u4'), id: 'x1' }); ck('economics: redeem custom reward → points −251, pool −2510', j.ok && get('users/u4').points === 749 && get('users/u4').rewardPool === 2490, JSON.stringify([j, get('users/u4')]));
+put('settings/economics', { rewards: 'garbage', ptDZD: 'abc', earnPct: 'abc' });
+[s, j] = await call('/account/rewards', { idToken: await tok('u4') }); ck('economics: garbage settings fall back to safe defaults', s === 200 && j.ptDZD === 10 && j.rewards.length === 4, JSON.stringify(j));
+
+/* invariant, property-style: whatever the sequence of redemptions, the total worth redeemed never exceeds the pool the customer was given */
+{ let bad = 0, total = 0;
+  for (let n = 0; n < 40; n++) {
+    const uid = 'inv' + n;     // one account per round: the per-account rate limiter would otherwise cut the loop short
+    const pool = [0, 500, 1600, 3000, 7777, 20000][n % 6], pts = [10, 150, 700, 5000, 100000][n % 5];
+    put('users/' + uid, { points: pts, rewardPool: pool, notifications: [] });
+    for (let k = 0; k < 6; k++) await call('/account/redeem', { idToken: await tok(uid), id: ['r5', 'r15', 'r20', 'r50'][(n + k) % 4] });
+    const u = get('users/' + uid), spentWorth = pool - u.rewardPool;
+    total++; if (u.rewardPool < 0 || u.points < 0 || spentWorth > pool || spentWorth !== (pts - u.points) * 10) bad++;
+  }
+  ck('invariant: 40 random pool/points mixes × 6 redemptions — pool and points never negative, worth redeemed ≤ pool, points and pool fall together', bad === 0 && total === 40, bad); }
+
+/* the Worker's normEcon must agree with the panel's (econ.js) */
+{ const inputs = [null, {}, { earnPct: 80, refPct: 80 }, { earnPct: 30.9, refPct: 20, ptDZD: 0.2, marginPct: 99 }, { rewards: [{ id: 'a b', priceDZD: 5 }, { id: 'ok', priceDZD: 99.9, name: '<b>x</b>' }, { id: 'ok', priceDZD: 5 }] }, { refMaxPts: 1e9, refMinOrderDZD: -5 }, { rewards: [] }];
+  const strip = e => { const c = JSON.parse(JSON.stringify(e)); delete c.costs; c.rewards.forEach(r => delete r.prodId); return c; };
+  const wsrc = readFileSync(new URL('./worker.js', import.meta.url), 'utf8');
+  const cleanSrc = /function cleanText\([\s\S]*?\n}\n/.exec(wsrc)[0];
+  const wNorm = vm.runInNewContext(cleanSrc + wsrc.slice(wsrc.indexOf('const ECON_DEFAULTS'), wsrc.indexOf('async function loadEcon')) + ';normEcon');
+  ck('normEcon extracted from worker.js', typeof wNorm === 'function');
+  let same = 0; if (wNorm) for (const x of inputs) if (JSON.stringify(wNorm(x)) === JSON.stringify(strip(ECON.normEcon(x)))) same++;
+  ck('normEcon: Worker and econ.js give the same answer on ' + inputs.length + ' tricky inputs', same === inputs.length, same + '/' + inputs.length); }
 
 /* ───────── referral ───────── */
 seed();
@@ -452,7 +493,7 @@ seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'OFFX', type: 'fixe
 seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'FULL', type: 'fixed', value: 300, active: true, featured: true, maxUses: 2, usedCount: 2 }] });
 [s, j] = await call('/offer', null, { method: 'GET' }); ck('offer: featured but fully used → ok:false', j.ok === false, JSON.stringify(j));
 { const ip = '9.9.9.9'; let last = 0; for (let i = 0; i < 70; i++) [last] = await call('/offer', null, { method: 'GET', ip }); ck('offer: per-IP rate limit', last === 429, last); }
-[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v5', j.v === 5, JSON.stringify(j));
+[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v6', j.v === 6, JSON.stringify(j));
 
 /* ───────── reset-password limiter, maintenance/ticker ───────── */
 seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { text: 'hello' });

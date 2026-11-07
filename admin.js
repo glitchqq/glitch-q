@@ -164,6 +164,7 @@ async function loadDashboard(){
     document.getElementById('sbPendingBadge').textContent=pending;
     document.getElementById('sbReportBadge').textContent=reportsSnap.size;
     window._dash={orders,users:usersSnap.docs.map(d=>({id:d.id,...d.data()}))};   /* feeds the quick-search palette and the charts */
+    try{renderInsights(orders,window._dash.users);}catch(e){console.error('insights',e);}
     // Recent orders
     const recent=orders.sort((a,b)=>(b.ts?.seconds||0)-(a.ts?.seconds||0)).slice(0,5);
     const rc=document.getElementById('dashRecentOrders');rc.innerHTML='';
@@ -248,12 +249,16 @@ function closeConfirmModal(){document.getElementById('confirmModal').classList.a
    Same arithmetic as monthEndISO() in worker.js; worker.test.mjs checks the two agree. */
 function codeUntil(ms){const d=new Date((ms||Date.now())+3600000);const y=d.getUTCFullYear(),m=d.getUTCMonth();const last=new Date(Date.UTC(y,m+1,0)).getUTCDate();return `${y}-${String(m+1).padStart(2,'0')}-${String(last).padStart(2,'0')}`;}
 
-/* Marks an order done and pays the customer ONCE (points = 1 per 1000 DZD, order count, total spent,
-   and the one-time referral reward). The `awarded` flag makes a second call harmless. */
-/* referral reward only for a real purchase (set to 0 to reward any completed first order) */
-const REF_MIN_ORDER_DZD=2000;
+/* Marks an order done and pays the customer ONCE. Points are no longer "1 per 1000 DZD": they are a share of the
+   PROFIT of this order (econ.js), and the same amount is added to the customer's reward pool, so a free reward can
+   never cost the store more than the store earned. The invited friend's FIRST delivered order also pays the person
+   who invited him, from that order's profit, capped per friend. The `awarded` flag makes a second call harmless.
+   The profit figures go to order_econ/{orderId} (owner-only), never onto the order the customer can read. */
 async function completeOrder(orderId,notif){
   const FV=firebase.firestore.FieldValue;
+  const e=await ensureEcon();
+  if(e._failed)throw new Error('تعذّر قراءة قواعد النقاط — لم يُسلَّم الطلب. أعد المحاولة');
+  await ensureProds();
   const oref=db.collection('orders').doc(orderId);
   return db.runTransaction(async tx=>{
     const os=await tx.get(oref);if(!os.exists)throw new Error('الطلب غير موجود');
@@ -262,22 +267,31 @@ async function completeOrder(orderId,notif){
     if(o.awarded===false&&uid&&uid!=='guest'){   /* only orders created by the new Worker carry awarded:false; older orders were already paid when they were placed */
       uref=db.collection('users').doc(uid);us=await tx.get(uref);
       const u=us.exists?us.data():null;
-      if(u&&u.referredBy&&u.referredBy!==uid&&!u.refRewarded&&(Number(o.totalDZD)||0)>=REF_MIN_ORDER_DZD){rref=db.collection('users').doc(u.referredBy);rs=await tx.get(rref);}
+      if(u&&u.referredBy&&u.referredBy!==uid&&!u.refRewarded&&(Number(o.totalDZD)||0)>=e.refMinOrderDZD){rref=db.collection('users').doc(u.referredBy);rs=await tx.get(rref);}
     }
     /* the deadline is fixed the first time the order is delivered; a later re-send never extends it */
     const upd0=o.awarded===false?{status:'done',awarded:true}:{status:'done'};if(!o.codeValidUntil)upd0.codeValidUntil=(notif&&notif.until)||codeUntil();
     tx.update(oref,upd0);
     if(us&&us.exists){
       const total=Math.max(0,Number(o.totalDZD)||0);
-      const upd={points:FV.increment(Math.floor(total/1000)),orders:FV.increment(1),totalSpend:FV.increment(total)};
+      const pr=GQEcon.orderProfit(o,allProds,e,ECO_RATES);
+      const pts=GQEcon.earnPts(pr.profit,e);
+      const upd={points:FV.increment(pts),rewardPool:FV.increment(pts*e.ptDZD),orders:FV.increment(1),totalSpend:FV.increment(total)};
       if(notif)upd.notifications=FV.arrayUnion(notif);
-      if(rs&&rs.exists){upd.refRewarded=true;tx.update(rref,{points:FV.increment(1000),referrals:FV.increment(1)});}
+      let rp=0;
+      if(rs&&rs.exists){
+        rp=GQEcon.refPts(pr.profit,e);
+        upd.refRewarded=true;
+        tx.update(rref,{points:FV.increment(rp),rewardPool:FV.increment(rp*e.ptDZD),referrals:FV.increment(1),refPoints:FV.increment(rp)});
+      }
       tx.update(uref,upd);
+      tx.set(db.collection('order_econ').doc(orderId),{orderId,userId:uid,revenue:pr.revenue,cost:pr.cost,profit:pr.profit,estimated:pr.estimated,pts,refPts:rp,refUserId:(rs&&rs.exists)?u_ref(us):null,ptDZD:e.ptDZD,earnPct:e.earnPct,refPct:e.refPct,ts:FV.serverTimestamp()});
     }else if(notif&&uid&&uid!=='guest'){
       tx.update(db.collection('users').doc(uid),{notifications:FV.arrayUnion(notif)});
     }
   });
 }
+function u_ref(us){const d=us&&us.exists?us.data():null;return d&&d.referredBy?d.referredBy:null;}
 
 async function confirmDelivery(){
   const code=document.getElementById('cmCode').value.trim();
@@ -569,7 +583,10 @@ function closeUserModal(){document.getElementById('userModal').classList.add('hi
 async function addPointsToUser(uid,name){
   const pts=parseInt(prompt(`إضافة نقاط لـ ${name}:\nأدخل عدد النقاط (موجب = إضافة، سالب = حذف):`));
   if(isNaN(pts))return;
-  try{await db.collection('users').doc(uid).update({points:firebase.firestore.FieldValue.increment(pts)});aToast(`تم ${pts>0?'إضافة':'حذف'} ${Math.abs(pts)} نقطة`,'ok');loadUsers();}catch(e){aToast('خطأ','err');}
+  const FV=firebase.firestore.FieldValue,upd={points:FV.increment(pts)};
+  /* a gift from the owner is locked like any free point, unless the owner explicitly pays for it */
+  if(pts>0&&confirm(`جعل هذه النقاط قابلة للاستبدال فوراً؟\nموافق: تدفع أنت قيمتها (≈ ${(pts*((ECON&&ECON.ptDZD)||10)).toLocaleString('en-US')} دج بسعر البيع) عند استبدالها.\nإلغاء: تبقى مقفلة حتى يشتري العميل.`)){await ensureEcon();upd.rewardPool=FV.increment(pts*ECON.ptDZD);}
+  try{await db.collection('users').doc(uid).update(upd);aToast(`تم ${pts>0?'إضافة':'حذف'} ${Math.abs(pts)} نقطة`,'ok');loadUsers();}catch(e){aToast('خطأ','err');}
 }
 async function sendNotifToUser(uid){
   const title=prompt('عنوان الإشعار:');if(!title)return;const code=prompt('نص الإشعار (اختياري):');
@@ -952,7 +969,7 @@ function runFraudDetection(orders,users){
   highValue.forEach(o=>{const ts=o.ts?.seconds?o.ts.seconds*1000:0;if(now-ts>hour*24)alerts.push({level:'medium',icon:'fa-hourglass-half',msg:`طلب قيمة عالية معلّق أكثر من 24 ساعة`,detail:`${(o.totalDZD||0).toLocaleString()} دج — ${o.product||''}`,ids:o.id.slice(0,16)});});
 
   // 4. Users with 0 orders but high points
-  users.forEach(u=>{if(!u.orders&&(u.points||0)>200)alerts.push({level:'low',icon:'fa-crosshairs',msg:`مستخدم بنقاط عالية بدون طلبات`,detail:`${u.name||u.email||'مجهول'} — ${u.points} نقطة`,ids:u.id?.slice(0,16)||''});});
+  users.forEach(u=>{if(!u.orders&&(u.points||0)>60)alerts.push({level:'low',icon:'fa-crosshairs',msg:`مستخدم بنقاط عالية بدون طلبات`,detail:`${u.name||u.email||'مجهول'} — ${u.points} نقطة`,ids:u.id?.slice(0,16)||''});});
 
   // Render
   const box=document.getElementById('fraudAlertBox');
