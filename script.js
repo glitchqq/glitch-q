@@ -1527,6 +1527,8 @@ window.doSpin=async function(){
 
 async function onSpinDone(prize,srv){
   S.spinning=false;localStorage.setItem('gq_lastSpin',Date.now().toString());
+  /* the server decides the prize: if its table ever differs from this wheel (old Worker, new site), show what it really paid */
+  if(srv&&Number.isFinite(srv.pts)&&srv.pts!==prize.pts){prize={pts:srv.pts,label:srv.pts>0?(srv.pts+' نقاط'):'حاول غداً',labelEn:srv.pts>0?(srv.pts+' Points'):'Try Tomorrow'};}
   const label=S.lang==='en'?(prize.labelEn||prize.label):prize.label;
   const prizeEl=$('spinPrize');if(prizeEl)prizeEl.textContent=`🎉 ${S.lang==='en'?'You won':'ربحت'} ${label}!`;
   if(srv&&Number.isFinite(srv.points)){S.udata.points=srv.points;S.udata.spins=srv.spins;}
