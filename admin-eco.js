@@ -28,11 +28,12 @@ function impMatch(val){return (allProds||[]).find(p=>p&&p.cur==='EUR'&&Number(p.
 function impId(val){let id=slugId(['ps',val,'eur','france'].join('-')),n=2,u=id;while((allProds||[]).some(p=>p.id===u))u=id+'-'+(n++);return u;}
 async function loadImport(){
   await ensureProds();
-  try{if(!allCats.length){const d=await db.collection('settings').doc('categories').get();allCats=(d.exists?d.data().categories||[]:[]).slice().sort((a,b)=>(a.order||0)-(b.order||0));}}catch(e){}
+  try{if(!allCats.length)allCats=(await readCats()).cats.slice().sort((a,b)=>(a.order||0)-(b.order||0));}catch(e){}
   const sel=document.getElementById('impCat');if(!sel)return;
-  const keep=sel.value;
-  sel.innerHTML=allCats.map(c=>`<option value="${esc(c.id)}">${esc(c.name||c.id)}</option>`).join('');
+  const keep=sel.value,ib=document.getElementById('impBtn');
+  sel.innerHTML=allCats.length?allCats.map(c=>`<option value="${esc(c.id)}">${esc(c.name||c.id)}</option>`).join(''):'<option value="">لا توجد أقسام — أضف قسماً أولاً</option>';
   sel.value=keep&&allCats.some(c=>c.id===keep)?keep:(allCats.find(c=>c.id==='psstore')||allCats[0]||{}).id||'';
+  if(ib)ib.disabled=!allCats.length;
   const rows=document.getElementById('impRows');if(!rows)return;
   rows.innerHTML=PRICE_LIST.map(it=>{
     const m=impMatch(it.val);

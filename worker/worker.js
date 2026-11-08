@@ -63,7 +63,7 @@ export default {
 
     try {
       const routes = {
-        '/health':                 () => json({ ok: true, v: 6 }, 200, cors),
+        '/health':                 () => json({ ok: true, v: 7 }, 200, cors),
         '/maintenance':            () => handleMaintenance(request, env, cors),
         '/ticker':                 () => handleTicker(request, env, cors),
         '/stats/visit':            () => handleVisit(request, env, cors),
@@ -1467,10 +1467,10 @@ const MAIL_LOGO = MAIL_SITE + 'assets/logo/logo-email.png';   // the only image 
 const MAIL_FONT = "-apple-system,'Segoe UI',Tahoma,'Noto Sans Arabic',Arial,sans-serif";
 const MAIL_MONO = "'SF Mono',Consolas,Menlo,'Courier New',monospace";
 
-// One accent per kind of letter: reset = cobalt, delivered code = mint, security alert = gold.
+// One accent per kind of letter: reset = crimson (the store's colour), delivered code = mint, security alert = gold.
 // `red` is only used for the "wasn't you?" box. `c` names the CSS classes that the dark-mode block recolours.
 const MAIL_TONE = {
-  cobalt: { bar: '#3D6BFF', btn: '#2F5BEA', btnText: '#FFFFFF', btnDk: '#2F5BEA', btnTextDk: '#FFFFFF', ink: '#2748C4', tint: '#EEF2FF', line: '#D3DDFB', inkDk: '#8FAAFF', tintDk: '#141C3D', lineDk: '#26335F', c: { tint: 'tint', ink: 'ink' } },
+  crimson: { bar: '#E1062C', btn: '#C4062A', btnText: '#FFFFFF', btnDk: '#E1062C', btnTextDk: '#FFFFFF', ink: '#A30520', tint: '#FFF1F3', line: '#F8CAD2', inkDk: '#FF8EA0', tintDk: '#2B0F16', lineDk: '#5C1D2A', c: { tint: 'tint', ink: 'ink' } },
   mint:   { bar: '#28C88A', btn: '#0B7A50', btnText: '#FFFFFF', btnDk: '#28C88A', btnTextDk: '#06140E', ink: '#0B7A50', tint: '#E8F8F1', line: '#BFE9D6', inkDk: '#3DDC9F', tintDk: '#0F2A22', lineDk: '#1D4A3A', c: { tint: 'tint', ink: 'ink' } },
   gold:   { bar: '#F4B63E', btn: '#F4B63E', btnText: '#1A1300', btnDk: '#F4B63E', btnTextDk: '#1A1300', ink: '#8A5A00', tint: '#FFF6E0', line: '#F6DFA6', inkDk: '#F4B63E', tintDk: '#2B2210', lineDk: '#5A4518', c: { tint: 'gtint', ink: 'gink' } },
   red:    { ink: '#B3243A', tint: '#FFF0F1', line: '#FBC9CF', inkDk: '#FF8A96', c: { tint: 'rtint', ink: 'rink' } },
@@ -1614,7 +1614,7 @@ ${body}
 /* ── 1) password reset ───────────────────────────────────────────────── */
 function buildResetEmail(resetLink) {
   const link = escHtml(resetLink);
-  const t = MAIL_TONE.cobalt;
+  const t = MAIL_TONE.crimson;
   const body = [
     mH1('إعادة تعيين كلمة المرور'),
     mP('وصلنا طلب لتعيين كلمة مرور جديدة لحسابك في Glitch Q. اضغط الزر أدناه واختر كلمة المرور الجديدة.'),
@@ -1641,7 +1641,7 @@ function buildResetEmail(resetLink) {
     mP('<strong>Glitch Q لن يطلب منك كلمة المرور أبداً</strong> — لا عبر الإيميل ولا واتساب ولا أي رسالة أخرى.', 'font-size:14px;'),
   ].join('\n');
   return mailShell({
-    tone: 'cobalt',
+    tone: 'crimson',
     label: 'أمان الحساب',
     title: 'إعادة تعيين كلمة المرور — Glitch Q',
     preheader: 'اضغط الزر لاختيار كلمة مرور جديدة — الرابط صالح لمدة ساعة واحدة ويعمل مرة واحدة فقط.',

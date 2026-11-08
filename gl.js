@@ -99,11 +99,11 @@
   '  vec3 col=bg(uv);\n' +
   /* floor */
   '  float yF=-.78;float tF=(yF-ro.y)/rd.y;\n' +
-  '  float t=0.;bool hit=false;\n' +
+  '  float t=0.;bool hit=false;float dm=1e3,tmn=0.;\n' +
   '  vec3 oc=ro-vec3(0.,0.,0.);float b=dot(oc,rd);float cc=dot(oc,oc)-7.5;float disc=b*b-cc;\n' +
   '  if(disc>0.){\n' +
   '    t=max(0.,-b-sqrt(disc))+h21(fc+uT)*.01;float tm=-b+sqrt(disc);\n' +
-  '    for(int i=0;i<96;i++){if(float(i)>=uSteps)break;vec3 p=ro+rd*t;float d=map(p);if(d<.0016){hit=true;break;}t+=d;if(t>tm)break;}\n' +
+  '    for(int i=0;i<96;i++){if(float(i)>=uSteps)break;vec3 p=ro+rd*t;float d=map(p);if(d<dm){dm=d;tmn=t;}if(d<.0016){hit=true;break;}t+=d;if(t>tm)break;}\n' +
   '  }\n' +
   '  if(tF>0.&&(!hit||tF<t)){\n' +
   '    vec3 fp=ro+rd*tF;float dd=map(fp+vec3(0.,.7,0.));\n' +
@@ -112,7 +112,10 @@
   '    fcol*=mix(1.,.0,smoothstep(2.4,7.,length(fp.xz)));\n' +
   '    col=mix(col,fcol,smoothstep(0.,.5,.5+rd.y*-6.)*0.9+.1);\n' +
   '  }\n' +
-  '  if(hit){\n' +
+  /* edge anti-aliasing: a ray that grazes the surface within about one pixel still gets a share of the surface colour */
+  '  float cov=hit?1.:1.-smoothstep(.0016,.0016+tmn/(2.35*uRes.y)*1.6,dm);\n' +
+  '  if(!hit)t=tmn;\n' +
+  '  if(cov>.003){\n' +
   '    vec3 p=ro+rd*t;vec3 n=nrm(p,.0014+t*.0004);\n' +
   '    vec3 r=reflect(rd,n);\n' +
   '    float fr=pow(1.-clamp(dot(n,-rd),0.,1.),4.);\n' +
@@ -140,7 +143,7 @@
   '      cc+=vec3(1.,.5,.55)*sw*.55;\n' +
   '      base=mix(base,cc+e*.3*(.2+fr),face);\n' +
   '    }\n' +
-  '    col=base;\n' +
+  '    col=mix(col,base,cov);\n' +
   '  }\n' +
   /* vignette + grain */
   '  vec2 vu=fc/uRes-.5;col*=1.-dot(vu,vu)*.95;\n' +
@@ -171,11 +174,35 @@
   ['uRes', 'uT', 'uP', 'uVel', 'uSteps', 'uAct', 'uPtr', 'uOff'].forEach(function (n) { U[n] = gl.getUniformLocation(pr, n); });
 
   var coarse = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
-  var st = { p: 0, ps: 0, vel: 0, lastY: window.scrollY, px: 9, py: 9, pxs: 9, pys: 9, act: .55, hover: false, t: 0, q: coarse ? .5 : .62, visible: true, last: 0, acc: 0, frames: 0, fixedT: null };
+  var st = { p: 0, ps: 0, vel: 0, lastY: window.scrollY, px: 9, py: 9, pxs: 9, pys: 9, act: .55, hover: false, t: 0, q: coarse ? .6 : .72, visible: true, last: 0, acc: 0, frames: 0, fixedT: null };
 
+  /* Phones: the canvas covers only the free band between the buttons and the three steps, whatever the text height
+     (2 or 3 heading lines, big system fonts, Safari/Chrome toolbars). Desktop keeps the full-bleed scene. */
+  var mob = window.matchMedia ? window.matchMedia('(max-width:768px)') : { matches: false };
+  var stage = scene.querySelector('.hs-stick') || scene;
+  var MINBAND = 190;
+  function band() {
+    var copy = scene.querySelector('.hs-copy'), btns = scene.querySelector('.hero-btns'), steps = scene.querySelector('.hs-steps');
+    var H = stage.clientHeight;
+    var top = copy && btns ? copy.offsetTop + btns.offsetTop + btns.offsetHeight + 12 : H * .5;
+    var bot = steps ? steps.offsetTop - 6 : H;
+    return { top: top, bot: bot, H: H };
+  }
+  function layout() {
+    scene.classList.remove('hs-tight', 'hs-tighter');
+    if (!mob.matches) { cv.style.top = cv.style.height = ''; scene.style.removeProperty('--gl-top'); scene.style.removeProperty('--gl-gap'); return; }
+    var b = band();
+    /* short screen: the card needs room, so the secondary copy steps aside instead of the card sitting on the buttons */
+    if (b.bot - b.top < MINBAND) { scene.classList.add('hs-tight'); b = band(); }
+    if (b.bot - b.top < MINBAND) { scene.classList.add('hs-tighter'); b = band(); }
+    var top = Math.min(b.top, b.H - 150), bot = Math.max(b.bot, top + 150);
+    cv.style.top = Math.round(top) + 'px'; cv.style.height = Math.round(bot - top) + 'px';
+    scene.style.setProperty('--gl-top', Math.round(top) + 'px'); scene.style.setProperty('--gl-gap', Math.round(b.H - bot) + 'px');   // the product cards of step 3 use the same free band
+  }
   function size() {
+    layout();
     var r = cv.getBoundingClientRect();
-    var dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
     var w = Math.max(160, Math.round(r.width * dpr * st.q)), h = Math.max(120, Math.round(r.height * dpr * st.q));
     if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
     gl.viewport(0, 0, cv.width, cv.height);
@@ -197,7 +224,7 @@
     var asp = cv.width / cv.height;
     /* copy sits on the reading-start side, the metal on the other one */
     var side = document.documentElement.dir === 'ltr' ? -1 : 1;
-    var offX = asp > 1.25 ? .85 * side : 0, offY = asp < .9 ? .75 : 0;
+    var offX = !mob.matches && asp > 1.25 ? .85 * side : 0, offY = !mob.matches && asp < .9 ? .75 : 0;
     gl.uniform2f(U.uRes, cv.width, cv.height);
     gl.uniform1f(U.uT, t); gl.uniform1f(U.uP, st.ps); gl.uniform1f(U.uVel, st.vel);
     gl.uniform1f(U.uSteps, coarse ? 52 : 84);
@@ -224,8 +251,8 @@
     st.acc += dt; st.frames++;
     if (st.frames >= 24) {
       var avg = st.acc / st.frames; st.acc = 0; st.frames = 0;
-      if (avg > .034 && st.q > .34) { st.q = Math.max(.34, st.q * .86); size(); }
-      else if (avg < .017 && st.q < (coarse ? .55 : .8)) { st.q = Math.min(coarse ? .55 : .8, st.q * 1.08); size(); }
+      if (avg > .034 && st.q > .4) { st.q = Math.max(.4, st.q * .88); size(); }
+      else if (avg < .018 && st.q < (coarse ? .9 : 1)) { st.q = Math.min(coarse ? .9 : 1, st.q * 1.06); size(); }
     }
   }
 
@@ -237,6 +264,11 @@
   }, { passive: true });
   scene.addEventListener('pointerleave', function () { st.hover = false; }, { passive: true });
   window.addEventListener('resize', size);
+  if (mob.addEventListener) mob.addEventListener('change', size);
+  /* the copy box itself never changes size (it fills the stage), so watch the pieces whose wrapping changes with the language, the font or the OS text size */
+  if (window.ResizeObserver) { var ro = new ResizeObserver(size); ['.hero-ey', '.hero-h1', '.hero-tagline', '.hero-btns', '.hs-steps'].forEach(function (q) { var e = scene.querySelector(q); if (e) ro.observe(e); }); }
+  window.addEventListener('load', size);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(size);
   if ('IntersectionObserver' in window) {
     new IntersectionObserver(function (es) { st.visible = es[0].isIntersecting; }, { rootMargin: '120px' }).observe(scene);
   }

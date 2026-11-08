@@ -1180,3 +1180,63 @@ html[dir="ltr"] .cat-c:hover::after{transform:translateX(5px)}
 .ms-sum .lk b{color:var(--gold)}
 @media(max-width:480px){.ms-sum b{font-size:18px}.ms-sum span{font-size:10.5px}}
 .milestone-it .mi-prog-bar{width:100%;max-width:220px;height:4px}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 7 — modern shapes + fixes from real-phone screenshots
+   · icons, header controls, inputs and small cards are soft-cornered; the cut-corner stays only on the big
+     hero buttons and the product cards (the brand signature)
+   · hero headline: Arabic descenders were cut off by the glitch-slice clip → the clip now has room, line-height is looser
+   · missions: every row says exactly how many points it pays
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root{--rad-s:10px;--rad-m:14px;--rad-l:20px}
+
+/* icons & header controls */
+.mico,.feat i,.pc-cart,.ms-ico,.lb-rank,.f-soc,.u-av,.modal-x,.act-btn,.lang-btn,.u-btn,.btn-out-sm,.support-send{clip-path:none;border-radius:var(--rad-m)}
+.feat i,.mico{border-radius:16px}
+.pc-cart{border-radius:12px}
+.u-av,.lb-rank,.modal-x{border-radius:10px}
+.modal-x{border-radius:50%}
+.act-btn,.lang-btn,.u-btn{height:40px;min-width:40px;border-radius:14px;background:rgba(255,255,255,.035)}
+.act-btn:hover,.lang-btn:hover,.u-btn:hover,.btn-out-sm:hover{background:rgba(245,34,63,.12)}
+.u-btn{padding:0 12px 0 6px}
+.u-av{width:28px;height:28px;border-radius:10px}
+.act-badge{border-radius:999px;min-width:19px;height:19px;padding:0 5px;top:-7px;right:-7px;font-family:var(--fl);line-height:1}
+html[dir="rtl"] .act-badge{right:auto;left:-7px}
+.u-drop,.modal-box,.notif-panel{border-radius:var(--rad-l)}
+.notif-panel{overflow:hidden}
+.iw input,.txta,.sel-field,.hdr-search input,.nl-inp-wrap input{border-radius:var(--rad-m)}
+.mission-it,.milestone-it,.pts-card,.rw-sec,.ref-section,.ref-stat,.ref-link-box,.sup-card,.prof-top,.b3-card,.lb-it,.sday,.hi,.pact,.pay-m,.offer-code,.cfb,.mission-timer{border-radius:var(--rad-m)}
+.ref-copy-btn,.pts-bar-w,.pts-bar,.mi-prog-bar,.mi-prog-fill{border-radius:999px}
+.bdg,.lvl-badge,.prof-reg-badge,.ms-status{border-radius:999px}
+.tabbar button svg{stroke-linecap:round;stroke-linejoin:round}
+.tabbar button.on::before{border-radius:0 0 4px 4px}
+.hero-ey,html[dir="ltr"] .hero-ey{clip-path:none;border-radius:999px;padding:7px 18px}
+.pc-badge,html[dir="ltr"] .pc-badge{clip-path:none;border-radius:999px;padding:4px 11px}
+
+/* hero headline: nothing may be cut under the letters */
+.hero-h1{line-height:1.1}
+html[dir="rtl"] .hero-h1{line-height:1.22}
+.hero-h1 em{padding-bottom:.2em;margin-bottom:-.12em}
+.hero-h1 em span{clip-path:polygon(-40% -40%,140% -40%,140% 52%,-40% 52%,-40% 55.5%,140% 55.5%,140% 160%,-40% 160%)}
+
+/* missions */
+.mi-l{min-width:0}
+.mi-txt small{line-height:1.6}
+.mi-r{display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex-shrink:0}
+.mi-pts{display:inline-flex;align-items:baseline;gap:4px;padding:4px 11px;border-radius:999px;background:rgba(244,182,62,.12);border:1px solid rgba(244,182,62,.45);color:var(--gold);font:800 12.5px/1.2 var(--fl);white-space:nowrap}
+.mi-pts em{font:600 10.5px/1 var(--f);font-style:normal;opacity:.9}
+.mission-it.done .mi-pts{opacity:.55}
+.mi-status-no{align-items:flex-end}
+@media(max-width:480px){.mission-it{align-items:flex-start}.mi-txt small{font-size:11px}}
+
+/* short phones: gl.js adds these when the free band for the card would be under ~190px */
+@media(max-width:768px){
+  .hs.hs-tight .hero-tagline,.hs.hs-tight .hero-ey{display:none}
+  .hs.hs-tighter .hero-h1{font-size:clamp(30px,9.4vw,38px);margin-bottom:10px}
+}
+@media(max-width:768px){.hs-fan{inset-block:var(--gl-top,44%) var(--gl-gap,17%)}}
+
+/* small-screen polish found in the audit */
+.streak-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.sday{width:auto;min-height:50px;height:auto;padding:6px 0}
+@media(max-width:600px){.pd-top{justify-content:center}.pd-face{width:150px}.pd-info{flex-basis:100%;min-width:0}}

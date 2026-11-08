@@ -327,16 +327,30 @@ function initCatForm(){
 function clearCatForm(){editingCat=null;['newCatId','newCatName','newCatNameEn','newCatIcon','newCatOrder'].forEach(i=>{const e=document.getElementById(i);e.value='';delete e.dataset.touched;});
   document.getElementById('newCatId').readOnly=false;document.getElementById('newCatC1').value='#203a43';document.getElementById('newCatC2').value='#2c5364';
   document.getElementById('catFormTitle').textContent='إضافة قسم جديد';document.getElementById('catSaveBtn').innerHTML='<i class="fa-solid fa-plus"></i> إضافة قسم';catPrev();}
+/* The storefront shows these three sections when Firestore has no `settings/categories` document (same list as script.js).
+   The panel must show them too — and the first time you change any section it saves them together with your change,
+   otherwise adding ONE section would silently hide the other three from the store. */
+const ADMIN_DEFAULT_CATS=[
+  {id:'psstore',name:'بطاقات PlayStation',nameEn:'PlayStation Cards',icon:'<i class="fa-brands fa-playstation"></i>',bg:'linear-gradient(135deg,#6B0516,#E1062C)',enabled:true,order:1},
+  {id:'psplus',name:'اشتراكات PS Plus',nameEn:'PS Plus Subscriptions',icon:'👑',bg:'linear-gradient(135deg,#b45309,#f59e0b)',enabled:true,order:2},
+  {id:'games',name:'ألعاب رقمية',nameEn:'Digital Games',icon:'🎮',bg:'linear-gradient(135deg,#203a43,#2c5364)',enabled:true,order:3}
+];
+async function readCats(){
+  const d=await db.collection('settings').doc('categories').get();
+  const saved=d.exists&&Array.isArray(d.data().categories)?d.data().categories:null;
+  return {cats:saved?saved:ADMIN_DEFAULT_CATS.map(c=>({...c})),saved:!!saved};
+}
+function catIco(i){const v=String(i||'');return /^<i class="fa-(solid|brands|regular) fa-[a-z0-9-]{1,40}"><\/i>$/.test(v)?v:esc(v||'📦');}
 async function loadCats(){
   const el=document.getElementById('catsList');el.innerHTML=loading();initCatForm();
   try{
-    const d=await db.collection('settings').doc('categories').get();
-    const cats=d.exists?d.data().categories||[]:[];
+    const rc=await readCats(),cats=rc.cats;
     allCats=cats.slice().sort((a,b)=>(a.order||0)-(b.order||0));pfFillCats();
     el.innerHTML='';if(!cats.length){el.innerHTML=empty('لا توجد أقسام');return;}
+    if(!rc.saved)el.innerHTML='<div class="pf-hint" style="margin-bottom:10px">هذه الأقسام الافتراضية التي يعرضها المتجر. أول تعديل أو إضافة تحفظها كلها معاً.</div>';
     allCats.forEach(cat=>{
       const card=document.createElement('div');card.className='adm-card';
-      card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:${esc(cat.bg||'#1c2a44')};font-size:20px">${esc(cat.icon||'📦')}</div><div class="adm-card-info"><div class="adm-card-title">${san(cat.name)} | ${san(cat.nameEn||'')}</div><div class="adm-card-sub">ID: ${san(cat.id)} · ترتيب: ${esc(cat.order||0)}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${esc(cat.enabled?'checked':'')} onchange="toggleCat('${jsq(cat.id)}',this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="editCat('${jsq(cat.id)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-pen"></i> تعديل</button><button onclick="deleteCat('${jsq(cat.id)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
+      card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:${esc(cat.bg||'#1c2a44')};font-size:20px">${catIco(cat.icon)}</div><div class="adm-card-info"><div class="adm-card-title">${san(cat.name)} | ${san(cat.nameEn||'')}</div><div class="adm-card-sub">ID: ${san(cat.id)} · ترتيب: ${esc(cat.order||0)}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${esc(cat.enabled?'checked':'')} onchange="toggleCat('${jsq(cat.id)}',this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="editCat('${jsq(cat.id)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-pen"></i> تعديل</button><button onclick="deleteCat('${jsq(cat.id)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
       el.appendChild(card);
     });
     const pf=document.getElementById('prodCatFilter');pf.innerHTML='<button class="filter-btn on" onclick="filterProds(\'all\',this)">الكل</button>';
@@ -356,7 +370,7 @@ async function addCat(){
   let id=document.getElementById('newCatId').value.trim().toLowerCase();
   if(!name){aToast('أدخل اسم القسم','err');return;}
   try{
-    const d=await db.collection('settings').doc('categories').get();const cats=d.exists?d.data().categories||[]:[];
+    const cats=(await readCats()).cats;
     if(!editingCat){
       if(!id)id=slugId(nameEn)||('cat'+(cats.length+1));
       if(!/^[a-z0-9][a-z0-9_-]{0,29}$/.test(id)){aToast('المعرّف: حروف إنجليزية صغيرة وأرقام و - فقط','err');return;}
@@ -370,11 +384,11 @@ async function addCat(){
     aToast(editingCat?'تم حفظ التعديل':'تم إضافة القسم','ok');clearCatForm();loadCats();
   }catch(e){aToast('خطأ: '+e.message,'err');}
 }
-async function toggleCat(id,val){try{const d=await db.collection('settings').doc('categories').get();const cats=d.data().categories||[];const c=cats.find(x=>x.id===id);if(!c)return;c.enabled=val;await db.collection('settings').doc('categories').set({categories:cats});aToast(val?'مفعّل':'مخفي',val?'ok':'warn');}catch(e){aToast('خطأ','err');}}
+async function toggleCat(id,val){try{const cats=(await readCats()).cats;const c=cats.find(x=>x.id===id);if(!c)return;c.enabled=val;await db.collection('settings').doc('categories').set({categories:cats});aToast(val?'مفعّل':'مخفي',val?'ok':'warn');}catch(e){aToast('خطأ','err');}}
 async function deleteCat(id){
   const n=allProds.filter(p=>p.cat===id).length;
   if(!confirm(n?`في هذا القسم ${n} منتج. لن تظهر في المتجر بعد حذف القسم حتى تنقلها لقسم آخر. حذف القسم؟`:'حذف هذا القسم؟'))return;
-  try{const d=await db.collection('settings').doc('categories').get();const cats=(d.data().categories||[]).filter(x=>x.id!==id);await db.collection('settings').doc('categories').set({categories:cats});aToast('تم الحذف','info');loadCats();}catch(e){aToast('خطأ','err');}
+  try{const cats=(await readCats()).cats.filter(x=>x.id!==id);await db.collection('settings').doc('categories').set({categories:cats});aToast('تم الحذف','info');loadCats();}catch(e){aToast('خطأ','err');}
 }
 
 /* ══ PRODUCTS ══ */

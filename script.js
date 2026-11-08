@@ -1407,16 +1407,25 @@ async function renderLeaderboard(){return paintLeaderboard('lbList',false);}
 /* ══ MISSIONS ══ */
 function renderMissions(containerId){
   const wrap=$(containerId);if(!wrap)return;wrap.innerHTML='';
+  const en=S.lang==='en',cap=(typeof RW!=='undefined'&&RW&&RW.refMaxPts>0)?RW.refMaxPts:0;
+  /* every mission says exactly what it pays: `chip` is the short badge, `ptsTxt` the sentence under the name */
   const missions=[
-    {id:'login',icon:'fa-calendar-check',color:'var(--cyan)',name:'تسجيل دخول يومي',nameEn:'Daily Login',ptsTxt:'+1 – +3',check:()=>S.udata?.lastLogin===algiersDay(),prog:()=>({done:S.udata?.lastLogin===algiersDay()?1:0,total:1})},
-    {id:'buy',icon:'fa-cart-shopping',color:'var(--violet)',name:'إجراء عملية شراء',nameEn:'Make a Purchase',ptsTxt:S.lang==='en'?'points from every order':'نقاط من كل طلب',check:()=>(S.udata?.orders||0)>0,prog:()=>({done:Math.min(S.udata?.orders||0,1),total:1})},
-    {id:'ref',icon:'fa-user-plus',color:'var(--pink)',name:'دعوة صديق يشتري',nameEn:'Invite a friend who buys',ptsTxt:S.lang==='en'?'points when he buys':'نقاط عند أول شراء له',check:()=>(S.udata?.referrals||0)>=1,prog:()=>({done:Math.min(S.udata?.referrals||0,1),total:1})},
+    {id:'login',icon:'fa-calendar-check',color:'var(--cyan)',name:'تسجيل دخول يومي',nameEn:'Daily Login',
+      chip:'+1 – 3',ptsTxt:en?'1 to 3 points every day · the streak raises it':'من 1 إلى 3 نقاط كل يوم · وتزيد مع الأيام المتتالية',
+      check:()=>S.udata?.lastLogin===algiersDay(),prog:()=>({done:S.udata?.lastLogin===algiersDay()?1:0,total:1})},
+    {id:'buy',icon:'fa-cart-shopping',color:'var(--violet)',name:'إجراء عملية شراء',nameEn:'Make a Purchase',
+      chip:en?'Every order':'كل طلب',ptsTxt:en?'Points from our profit on every delivered order · bigger orders earn more':'نقاط من أرباحنا على كل طلب يُسلَّم · كلما كبر الطلب زادت النقاط',
+      check:()=>(S.udata?.orders||0)>0,prog:()=>({done:Math.min(S.udata?.orders||0,1),total:1})},
+    {id:'ref',icon:'fa-user-plus',color:'var(--pink)',name:'دعوة صديق يشتري',nameEn:'Invite a friend who buys',
+      chip:cap?'≤ '+cap:(en?'Bonus':'مكافأة'),
+      ptsTxt:cap?(en?`Up to ${cap} points when your friend's first order is delivered`:`حتى ${cap} نقطة عند تسليم أول طلب لصديقك`):(en?'Bonus points when your friend\'s first order is delivered':'نقاط إضافية عند تسليم أول طلب لصديقك'),
+      check:()=>(S.udata?.referrals||0)>=1,prog:()=>({done:Math.min(S.udata?.referrals||0,1),total:1})},
   ];
   missions.forEach(m=>{
     const prog=m.prog();const isDone=m.check();
     const el=document.createElement('div');el.className='mission-it'+(isDone?' done':'');
-    const name=S.lang==='en'?m.nameEn:m.name;
-    el.innerHTML=`<div class="mi-l"><i class="fa-solid ${m.icon}" style="color:${m.color}"></i><div class="mi-txt"><span>${san(name)}</span><small>${m.ptsTxt?san(m.ptsTxt):'+'+m.pts.toLocaleString()+' '+t('t_pts')}</small></div></div>${isDone?'<i class="fa-solid fa-check-circle mi-status-done"></i>':`<div class="mi-status-no"><span>${prog.done}/${prog.total}</span><div class="mi-prog-bar"><div class="mi-prog-fill" style="width:${Math.floor((prog.done/prog.total)*100)}%"></div></div></div>`}`;
+    const name=en?m.nameEn:m.name;
+    el.innerHTML=`<div class="mi-l"><i class="fa-solid ${m.icon}" style="color:${m.color}"></i><div class="mi-txt"><span>${san(name)}</span><small>${san(m.ptsTxt)}</small></div></div><div class="mi-r"><bdi class="mi-pts" dir="ltr">${san(m.chip)}${/\d/.test(m.chip)?' <em>'+(en?'pts':'نقطة')+'</em>':''}</bdi>${isDone?'<i class="fa-solid fa-check-circle mi-status-done"></i>':`<div class="mi-status-no"><span>${prog.done}/${prog.total}</span><div class="mi-prog-bar"><div class="mi-prog-fill" style="width:${Math.floor((prog.done/prog.total)*100)}%"></div></div></div>`}</div>`;
     wrap.appendChild(el);
   });
 }
@@ -1439,10 +1448,31 @@ function loadNotifs(){
   if(!notifs.length){list.innerHTML=`<div class="ni-empty">${t('notif_empty')}</div>`;return;}
   [...notifs].reverse().forEach(n=>{const d=document.createElement('div');d.className='ni'+(n.read?'':' unread');d.innerHTML=`<div class="ni-ttl">${san(n.title||'')}</div>${n.code?`<div class="ni-code">${san(n.code)}</div>`:''}${codeUntilHTML(n.until)}<div class="ni-date">${san(n.date||'')}</div>`;list.appendChild(d);});
 }
-function toggleNotif(){$('notifPanel')?.classList.toggle('hidden');}
-function closeNotif(){$('notifPanel')?.classList.add('hidden');}
+/* Opening the panel = the customer has seen them: the badge clears at once and the "read" flag is saved to the account
+   (a transaction, so a notification the store adds at the same moment is never overwritten). The new ones stay highlighted
+   until the panel is closed. If saving fails the flag stays unread and the next opening tries again. */
+let _nMarking=false;
+async function markNotifsRead(){
+  if(!S.user||!S.udata||_nMarking)return;
+  if(!(S.udata.notifications||[]).some(n=>n&&!n.read))return;
+  _nMarking=true;
+  const b=$('notifBadge');if(b){b.textContent='0';b.classList.add('hidden');}
+  try{
+    const ref=db.collection('users').doc(S.user.uid);
+    const mark=a=>(a||[]).map(n=>n&&!n.read?{...n,read:true}:n);
+    await db.runTransaction(async tx=>{const snap=await tx.get(ref);tx.update(ref,{notifications:mark((snap.data()||{}).notifications)});});
+    S.udata.notifications=mark(S.udata.notifications);
+  }catch(e){}
+  _nMarking=false;
+}
+function toggleNotif(){
+  const p=$('notifPanel');if(!p)return;
+  const opening=p.classList.contains('hidden');
+  if(opening){p.classList.remove('hidden');markNotifsRead();}else closeNotif();
+}
+function closeNotif(){const p=$('notifPanel');if(!p||p.classList.contains('hidden'))return;p.classList.add('hidden');loadNotifs();}
 window.toggleNotif=toggleNotif;window.closeNotif=closeNotif;
-document.addEventListener('click',e=>{if(!e.target.closest('#notifPanel')&&!e.target.closest('#notifBtn'))$('notifPanel')?.classList.add('hidden');});
+document.addEventListener('click',e=>{if(!e.target.closest('#notifPanel')&&!e.target.closest('#notifBtn'))closeNotif();});
 
 /* ══ TRACK ORDER ══ */
 window.trackOrder=async()=>{
@@ -1564,7 +1594,7 @@ async function loadRewards(force){
   const r=await wkCall('/account/rewards',{});
   const d=r.data;
   if(d&&d.ok&&Array.isArray(d.rewards)&&Number.isFinite(d.points)&&Number.isFinite(d.redeemablePts)){RW={points:d.points,redeemablePts:d.redeemablePts,lockedPts:Math.max(0,d.points-d.redeemablePts),ptDZD:d.ptDZD||10,refMaxPts:Number(d.refMaxPts)||0,refMinOrderDZD:Number(d.refMinOrderDZD)||0,rewards:d.rewards.filter(x=>x&&typeof x.id==='string'&&Number.isFinite(x.pts)&&x.pts>0)};RW_T=Date.now();S.udata.points=d.points;}
-  renderMilestones();initReferral();
+  renderMilestones();initReferral();renderMissions('missionsWrap');renderMissions('missionsWrapRw');
 }
 function renderMilestones(){
   const container=$('milestonesGrid');if(!container)return;

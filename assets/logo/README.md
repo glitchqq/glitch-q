@@ -8,12 +8,13 @@ lockup, and a gold blade for the Q's tail.
 | `glitchq-lockup.svg` | Full logo on dark backgrounds (white letters) |
 | `glitchq-lockup-ink.svg` | Full logo on light backgrounds (ink letters) |
 | `glitchq-mark.svg` / `glitchq-mark-ink.svg` | The Q alone (white / ink) |
-| `glitchq-icon.svg`, `favicon.svg` | Cobalt chamfered tile with the Q — avatars, app icon, favicon |
+| `glitchq-icon.svg`, `favicon.svg` | Crimson rounded tile, white chamfered Q, gold blade — avatars, app icon, favicon |
 | `favicon-32.png`, `apple-touch-icon.png` (180), `icon-512.png` | PNG exports of the icon |
 | `logo-email.png` | White lockup, transparent, 680 px wide — the e-mail header (shown at 170 px) |
 | `og-image.png` | 1200×630 link preview |
+| `build-icons.py` | Rebuilds the icon SVGs and all the PNGs above except the lockups (needs Python + Playwright) |
 
-Colours: ink `#0A0C10` · white `#F4F6FB` · cobalt `#3D6BFF` · gold `#F4B63E` (blade gradient `#FFEBB0 → #F4B63E → #B27610`) · glitch fringes red `#FF4D5E` and cyan `#35E0F2`.
+Colours: ink `#0A0C10` · white `#F4F6FB` · crimson `#D1092B` (tile gradient `#FF2D4D → #D1092B → #7E0518`) · gold `#F4B63E` (blade gradient `#FFEBB0 → #F4B63E → #B27610`) · glitch fringes red `#FF4D5E` and cyan `#35E0F2`.
 
 Rules: keep clear space of one letter-stroke (14 units) on every side; don't recolour the blade or the fringes; don't stretch; below 120 px wide use the icon instead of the lockup.
 
