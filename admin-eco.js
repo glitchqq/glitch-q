@@ -273,23 +273,33 @@ function launchUserFields(pts,clearNotifs){
   if(clearNotifs)f.notifications=[];
   return f;
 }
+let lnLinkUrl='';
 function launchReset(){                               /* called when the tab opens */
   lnData=null;lnBacked=false;
+  if(lnLinkUrl){try{URL.revokeObjectURL(lnLinkUrl);}catch(_){}lnLinkUrl='';}
   const set=(id,h)=>{const el=document.getElementById(id);if(el)el.innerHTML=h;};
   set('lnScan','');set('lnBackupMsg','');set('lnProg','');
   const p=document.getElementById('lnPhrase');if(p)p.value='';
-  const b=document.getElementById('lnBackupBtn');if(b)b.disabled=true;
+  const sv=document.getElementById('lnSaved');if(sv)sv.checked=false;
+  const row=document.getElementById('lnSavedRow');if(row)row.style.display='none';
+  const lk=document.getElementById('lnBackupLink');if(lk)lk.style.display='none';
   launchGate();
 }
+/* the run button opens only when all four are true — and the list under it says which one is still missing */
 function launchGate(){
   const run=document.getElementById('lnRunBtn');if(!run)return;
   const typed=(document.getElementById('lnPhrase').value||'').trim()===LAUNCH_PHRASE;
-  run.disabled=!(lnData&&lnBacked&&typed&&!lnRunning);
+  const saved=!!document.getElementById('lnSaved')?.checked;
+  const rows=[[!!lnData,'1) فحص ما سيتأثر'],[lnBacked,'2) تجهيز النسخة الاحتياطية'],[lnBacked&&saved,'تأكيد أن الملف محفوظ على جهازك'],[typed,'كتابة عبارة التأكيد «'+LAUNCH_PHRASE+'»']];
+  const box=document.getElementById('lnChecklist');
+  if(box)box.innerHTML=rows.map(([ok,t])=>`<div class="${ok?'ok':''}"><i class="fa-solid ${ok?'fa-circle-check':'fa-circle'}"></i> ${esc(t)}</div>`).join('');
+  run.disabled=!(lnData&&lnBacked&&saved&&typed&&!lnRunning);
 }
 async function launchScan(){
   const box=document.getElementById('lnScan'),btn=document.getElementById('lnScanBtn');
-  box.innerHTML=loading();btn.disabled=true;lnBacked=false;launchGate();
-  document.getElementById('lnBackupMsg').textContent='';
+  box.innerHTML=loading();btn.disabled=true;lnBacked=false;
+  document.getElementById('lnBackupMsg').textContent='';document.getElementById('lnSaved').checked=false;
+  document.getElementById('lnSavedRow').style.display='none';document.getElementById('lnBackupLink').style.display='none';launchGate();
   try{
     const read=async c=>(await db.collection(c).get()).docs.map(d=>({id:d.id,data:d.data()}));
     const [users,orders,econ,claims]=await Promise.all([read('users'),read('orders'),read('order_econ'),read('reward_claims')]);
@@ -308,28 +318,51 @@ async function launchScan(){
     ${orders.length?`<p class="pf-hint" style="margin-top:10px">حالات الطلبات: ${Object.entries(byStatus).map(([k,v])=>`${esc(k)} ${esc(v)}`).join(' · ')}</p>`:''}
     ${orders.some(o=>o.data.status!=='done'&&o.data.status!=='cancelled'&&o.data.status!=='rejected')?`<div class="adm-card" style="border-color:var(--gold);margin-top:10px"><i class="fa-solid fa-triangle-exclamation" style="color:var(--gold)"></i> يوجد طلبات غير مكتملة (قيد الانتظار/المعالجة). إن كان بينها طلب <b>حقيقي</b> لم تسلّمه فسلّمه أولاً — الحذف نهائي.</div>`:''}
     ${log?`<div class="adm-card" style="border-color:var(--red);margin-top:10px"><i class="fa-solid fa-clock-rotate-left" style="color:var(--red)"></i> سبق تنفيذ الإطلاق الجديد في <b>${esc(String(log.at||'').slice(0,16).replace('T',' '))}</b>. التنفيذ مرة أخرى سيحذف كل ما جرى منذ ذلك الوقت.</div>`:''}`;
-    document.getElementById('lnBackupBtn').disabled=false;
   }catch(e){
     lnData=null;box.innerHTML=errState('تعذّر الفحص: '+(e&&e.message||'خطأ')+' — تأكد أن قواعد Firestore منشورة وأنك مسجّل بحساب المالك.');
   }finally{btn.disabled=false;launchGate();}
 }
-function launchBackup(){
-  if(!lnData){aToast('افحص أولاً','warn');return;}
+const lnIsIOS=()=>/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+function lnBackupReady(){                              /* the file exists and was handed to the device: now the owner must confirm it is saved */
+  lnBacked=true;
+  const row=document.getElementById('lnSavedRow');if(row)row.style.display='flex';
+  launchGate();
+}
+async function launchBackup(){
+  const btn=document.getElementById('lnBackupBtn'),msg=document.getElementById('lnBackupMsg');
+  if(lnRunning)return;
+  if(!lnData){await launchScan();if(!lnData)return;}  /* the button scans first when the owner skipped step 1 */
   const dump=rows=>rows.map(r=>({id:r.id,...r.data}));
   const payload={app:'glitch-q',kind:'launch-reset-backup',exportedAt:new Date().toISOString(),
     note:'نسخة قبل «إطلاق جديد». تحوي أكواد مُسلَّمة وبيانات عملاء — احتفظ بها بأمان.',
     counts:{users:lnData.users.length,orders:lnData.orders.length,order_econ:lnData.econ.length,reward_claims:lnData.claims.length},
     users:dump(lnData.users),orders:dump(lnData.orders),order_econ:dump(lnData.econ),reward_claims:dump(lnData.claims)};
+  const name='glitchq-backup-'+new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')+'.json';
   const blob=new Blob([JSON.stringify(payload,null,1)],{type:'application/json'});
-  const url=URL.createObjectURL(blob),a=document.createElement('a');
-  a.href=url;a.download='glitchq-backup-'+new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')+'.json';
-  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);
-  lnBacked=true;
-  document.getElementById('lnBackupMsg').innerHTML='<i class="fa-solid fa-circle-check" style="color:var(--green)"></i> تم تنزيل النسخة ('+Math.round(blob.size/1024).toLocaleString('en-US')+' KB) — تأكد أنها في جهازك';
-  launchGate();
+  const kb=Math.round(blob.size/1024).toLocaleString('en-US');
+  if(lnLinkUrl){try{URL.revokeObjectURL(lnLinkUrl);}catch(_){}}
+  lnLinkUrl=URL.createObjectURL(blob);
+  const link=document.getElementById('lnBackupLink');link.href=lnLinkUrl;link.setAttribute('download',name);link.style.display='';
+  const done=how=>{msg.innerHTML='<i class="fa-solid fa-circle-check" style="color:var(--green)"></i> الملف جاهز ('+esc(kb)+' KB) — '+how;lnBackupReady();};
+  /* iPhone/iPad: the share sheet ("Save to Files") is the dependable way; a plain download can open the JSON in the tab instead */
+  if(lnIsIOS()&&navigator.canShare&&typeof File==='function'){
+    try{
+      const file=new File([blob],name,{type:'application/json'});
+      if(navigator.canShare({files:[file]})){
+        await navigator.share({files:[file],title:'نسخة Glitch Q الاحتياطية'});
+        done('تمت المشاركة. تأكد أنك اخترت «حفظ في الملفات».');return;
+      }
+    }catch(e){
+      if(e&&e.name==='AbortError'){msg.innerHTML='<span style="color:var(--gold)">أُغلقت نافذة الحفظ قبل الحفظ. اضغط الزر مرة أخرى واختر «حفظ في الملفات».</span>';return;}
+      /* any other failure (e.g. the tap was "too old" after the automatic scan): use the link below, which is a fresh tap */
+      msg.innerHTML='<span style="color:var(--gold)">اضغط الزر الثاني «اضغط هنا لحفظ الملف» أدناه لحفظ النسخة.</span>';lnBackupReady();return;
+    }
+  }
+  const a=document.createElement('a');a.href=lnLinkUrl;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  done('بدأ التنزيل. إن لم يظهر الملف في «التنزيلات» فاستخدم الزر الثاني أدناه.');
 }
 async function launchRun(){
-  if(lnRunning||!lnData||!lnBacked)return;
+  if(lnRunning||!lnData||!lnBacked||!document.getElementById('lnSaved').checked)return;
   if((document.getElementById('lnPhrase').value||'').trim()!==LAUNCH_PHRASE){aToast('اكتب عبارة التأكيد كما هي','warn');return;}
   if(!RL.ok('launch-run',2,300000)){aToast('انتظر قليلاً','warn');return;}
   const keepPts=Math.max(0,Math.min(100,Math.floor(Number(document.getElementById('lnPts').value)||0)));
@@ -367,12 +400,12 @@ async function launchRun(){
       ?`<b>تم الإطلاق الجديد.</b> الطلبات المتبقية: 0 · سجل الأرباح: 0 · طلبات المكافآت: 0 · حسابات فيها نقاط غير ${keepPts}: 0 (من ${us.docs.length.toLocaleString('en-US')} حساب).`
       :`<b>اكتمل التنفيذ لكن التحقق وجد بقايا:</b> طلبات ${o} · أرباح ${e} · مكافآت ${c} · حسابات غير مصفّرة ${dirty}. أعد الفحص ثم نفّذ مرة أخرى (آمن).`}</div>`;
     aToast(good?'تم الإطلاق الجديد':'بقيت عناصر — أعد التنفيذ',good?'ok':'warn');
-    lnData=null;lnBacked=false;document.getElementById('lnBackupBtn').disabled=true;document.getElementById('lnScan').innerHTML='';
+    lnData=null;lnBacked=false;document.getElementById('lnScan').innerHTML='';document.getElementById('lnSaved').checked=false;document.getElementById('lnSavedRow').style.display='none';
     document.getElementById('lnPhrase').value='';
   }catch(err){
     draw('توقف عند «'+step+'»: '+(err&&err.message||'خطأ')+' — ما نُفّذ قبلها تم، وإعادة الفحص ثم التنفيذ آمنة.',true);
     aToast('توقف التنفيذ: '+step,'err');
-    lnData=null;lnBacked=false;document.getElementById('lnBackupBtn').disabled=true;   /* the lists are stale now: a retry starts from a fresh scan + backup */
+    lnData=null;lnBacked=false;document.getElementById('lnSaved').checked=false;document.getElementById('lnSavedRow').style.display='none';   /* the lists are stale now: a retry starts from a fresh scan + backup */
   }finally{lnRunning=false;launchGate();}
 }
 window.launchScan=launchScan;window.launchBackup=launchBackup;window.launchRun=launchRun;window.launchGate=launchGate;window.launchReset=launchReset;

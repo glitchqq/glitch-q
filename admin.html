@@ -410,6 +410,8 @@ body{background:radial-gradient(900px 520px at 100% -10%,rgba(212,6,42,.16),tran
 .ln-n{border-radius:50%!important;clip-path:none!important;flex-shrink:0}
 .ln-grid .stat-card{display:flex;flex-direction:column;gap:2px;padding:12px 14px}
 .ln-grid .stat-val{font-size:22px}
+.btn:disabled,.btn[disabled]{opacity:.38;cursor:not-allowed;filter:grayscale(.55);box-shadow:none;transform:none}
+.ln-check{margin:14px 0 8px;font-size:13px;line-height:2}.ln-check div{display:flex;align-items:center;gap:8px;color:var(--mid)}.ln-check .ok{color:var(--green)}.ln-check i{width:16px}
 .nl-frame{width:100%;height:620px;border:1px solid var(--brd);border-radius:12px;background:#050507}
 </style>
 </head>
@@ -975,9 +977,11 @@ body{background:radial-gradient(900px 520px at 100% -10%,rgba(212,6,42,.16),tran
 
         <div class="sec">
           <div class="sec-title"><span class="ln-n">2</span> نزّل نسخة احتياطية</div>
-          <p class="pf-hint" style="margin-bottom:12px">ملف JSON يحوي كل الطلبات (بما فيها الأكواد المُسلَّمة) وسجلّ الأرباح وطلبات المكافآت وحسابات المستخدمين كما هي الآن. احتفظ به في مكان آمن — يحوي بيانات حساسة.</p>
-          <button class="btn btn-c" id="lnBackupBtn" onclick="launchBackup()" disabled><i class="fa-solid fa-download"></i> تنزيل النسخة الاحتياطية</button>
-          <span id="lnBackupMsg" class="pf-hint" style="margin-inline-start:10px"></span>
+          <p class="pf-hint" style="margin-bottom:12px">ملف JSON يحوي كل الطلبات (بما فيها الأكواد المُسلَّمة) وسجلّ الأرباح وطلبات المكافآت وحسابات المستخدمين كما هي الآن. احتفظ به في مكان آمن — يحوي بيانات حساسة. إن لم تفحص بعد فالزر يفحص تلقائياً ثم يجهّز الملف.</p>
+          <button class="btn btn-c" id="lnBackupBtn" onclick="launchBackup()"><i class="fa-solid fa-download"></i> تنزيل النسخة الاحتياطية</button>
+          <div id="lnBackupMsg" class="pf-hint" style="margin-top:10px"></div>
+          <a id="lnBackupLink" class="btn btn-o" style="display:none;margin-top:10px;text-decoration:none"><i class="fa-solid fa-file-arrow-down"></i> إن لم يبدأ التنزيل: اضغط هنا لحفظ الملف</a>
+          <label class="ln-chk" id="lnSavedRow" style="display:none;margin-top:12px"><input type="checkbox" id="lnSaved" onchange="launchGate()"> تأكدت أن ملف النسخة الاحتياطية محفوظ على جهازي (افتحه أو تحقق من «الملفات/التنزيلات»)</label>
         </div>
 
         <div class="sec" style="border-color:rgba(255,92,108,.45)">
@@ -989,6 +993,7 @@ body{background:radial-gradient(900px 520px at 100% -10%,rgba(212,6,42,.16),tran
           <label class="ln-chk"><input type="checkbox" id="lnStats"> تصفير عدّاد الزوار</label>
           <label class="form-label" style="margin-top:12px">للتأكيد اكتب العبارة: <b style="color:var(--red)">ابدأ من الصفر</b></label>
           <input type="text" id="lnPhrase" class="adm-inp" autocomplete="off" placeholder="ابدأ من الصفر" oninput="launchGate()">
+          <div id="lnChecklist" class="ln-check"></div>
           <button class="btn btn-r" id="lnRunBtn" onclick="launchRun()" disabled style="margin-top:6px"><i class="fa-solid fa-rocket"></i> تنفيذ الإطلاق الجديد</button>
           <div id="lnProg" style="margin-top:14px"></div>
         </div>
