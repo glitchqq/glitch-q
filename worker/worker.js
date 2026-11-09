@@ -47,6 +47,9 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: cors });
     }
+    // The "unsubscribe" link in a newsletter is opened by a mail app or the reader's browser, which carry no allowed Origin.
+    // It is protected by a signed token (unsubToken) and its own limiter instead, and answers with a plain page.
+    if (new URL(request.url).pathname === '/newsletter/unsubscribe') return handleUnsubscribe(request, env);
     // The Origin header only filters browsers (scripts can forge it), so it is never the
     // only protection: every route below validates its input and checks a verified token.
     if (!allowed) {
@@ -63,7 +66,7 @@ export default {
 
     try {
       const routes = {
-        '/health':                 () => json({ ok: true, v: 7 }, 200, cors),
+        '/health':                 () => json({ ok: true, v: 8 }, 200, cors),
         '/maintenance':            () => handleMaintenance(request, env, cors),
         '/ticker':                 () => handleTicker(request, env, cors),
         '/stats/visit':            () => handleVisit(request, env, cors),
@@ -88,6 +91,7 @@ export default {
         '/support/ping':           () => handleSupportPing(request, env, cors),
         '/admin/notify':           () => handleAdminNotify(request, env, cors),
         '/admin/send-code':        () => handleAdminSendCode(request, env, cors),
+        '/admin/newsletter':       () => handleAdminNewsletter(request, env, cors),
       };
       const h = Object.prototype.hasOwnProperty.call(routes, path) ? routes[path] : null;
       if (!h) return json({ error: 'Not found' }, 404, cors);
@@ -670,6 +674,143 @@ async function handleNewsletter(request, env, cors) {
   return json({ ok: true }, 200, cors);
 }
 
+/* ═══════════════════════════════════════
+   NEWSLETTER — unsubscribe links + the owner's composer
+   Subscribers live in newsletter/{id} (id = first 40 hex chars of sha256(email), see handleNewsletter).
+   The unsubscribe token is HMAC-SHA256(id) keyed from the Worker's own FIREBASE_SERVICE_ACCOUNT secret, so no new secret is
+   needed and a link cannot be forged or used for any other subscriber.
+═══════════════════════════════════════ */
+const NL = { subjMax: 120, preMax: 140, bodyMax: 6000, labelMax: 40, sendDefault: 250, sendCap: 1000, chunk: 100 };
+const RE_NL_ID = /^[A-Za-z0-9_-]{8,64}$/;
+
+async function hmacHex(secret, msg) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msg));
+  return Array.from(new Uint8Array(sig)).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+const unsubSecret = env => env.FIREBASE_SERVICE_ACCOUNT ? 'glitchq-unsub-v1|' + env.FIREBASE_SERVICE_ACCOUNT : '';
+async function unsubToken(env, id) {
+  const sec = unsubSecret(env);
+  return sec ? (await hmacHex(sec, 'unsub|' + id)).slice(0, 32) : '';
+}
+function sameStr(a, b) {
+  a = String(a); b = String(b);
+  if (!a || a.length !== b.length) return false;
+  let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+async function unsubLink(env, origin, id) {
+  return `${origin}/newsletter/unsubscribe?i=${encodeURIComponent(id)}&t=${await unsubToken(env, id)}`;
+}
+
+function unsubPage(kind, action) {
+  const T = {
+    ask:  ['إلغاء الاشتراك من النشرة', 'هل تريد التوقف عن استلام النشرة البريدية؟ لن تصلك رسائل ترويجية بعد ذلك، أما رسائل طلباتك وأكوادك فتبقى تصلك كالمعتاد.'],
+    done: ['تم إلغاء اشتراكك', 'لن تصلك النشرة البريدية بعد الآن. يمكنك الاشتراك من جديد في أي وقت من المتجر.'],
+    bad:  ['الرابط غير صالح', 'هذا الرابط غير صحيح أو انتهت صلاحيته. لإلغاء الاشتراك استخدم الرابط الموجود في آخر رسالة وصلتك.'],
+    busy: ['محاولات كثيرة', 'انتظر بضع دقائق ثم حاول مرة أخرى.'],
+  }[kind];
+  return `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${escHtml(T[0])}</title>
+<style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:#050507;color:#F4F4F7;font-family:${MAIL_FONT};direction:rtl}
+.c{width:min(420px,100%);background:#0F0F14;border:1px solid #24242E;border-radius:20px;overflow:hidden}.s{height:4px;background:linear-gradient(90deg,#F5223F 88%,#FF5C6C 88% 94%,#35E0F2 94%)}
+.b{padding:30px 26px;text-align:right}h1{margin:0 0 10px;font-size:22px;line-height:1.5}p{margin:0 0 22px;font-size:14.5px;line-height:1.9;color:#C9C9D6}
+button,a.l{display:block;width:100%;padding:14px;border:0;border-radius:12px;background:#D4062A;color:#fff;font:700 16px ${MAIL_FONT};text-align:center;text-decoration:none;cursor:pointer}
+.w{font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:3px;font-size:13px;color:#9A9AA8;margin-bottom:14px;direction:ltr;text-align:right}</style></head>
+<body><div class="c"><div class="s"></div><div class="b"><div class="w">GLITCH Q</div><h1>${escHtml(T[0])}</h1><p>${escHtml(T[1])}</p>
+${kind === 'ask' ? `<form method="post" action="${escHtml(action)}"><button type="submit">نعم، ألغِ اشتراكي</button></form>` : `<a class="l" href="${SITE_URL}">العودة إلى المتجر</a>`}</div></div></body></html>`;
+}
+
+// GET  → a confirmation page (so a mail scanner that merely opens the link cannot unsubscribe anyone)
+// POST → unsubscribes: the page's button, or a mail app's one-click request to the same URL
+async function handleUnsubscribe(request, env) {
+  const H = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" };
+  const page = (kind, status, action) => new Response(unsubPage(kind, action), { status, headers: H });
+  if (request.method !== 'GET' && request.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, POST' } });
+  if (hit('unsub:' + clientIp(request), 30, 600000)) return page('busy', 429);
+  const u = new URL(request.url);
+  const id = String(u.searchParams.get('i') || ''), tok = String(u.searchParams.get('t') || '');
+  if (!RE_NL_ID.test(id) || !sameStr(tok, await unsubToken(env, id))) return page('bad', 400);
+  if (request.method === 'GET') return page('ask', 200, `${u.pathname}?i=${encodeURIComponent(id)}&t=${tok}`);
+  const r = await fsCommit(env, [fsWrite(env, `newsletter/${id}`, { delete: true })]);   // deleting a missing document is fine: already unsubscribed
+  if (!r.ok) return new Response('Try again', { status: 503, headers: { 'Cache-Control': 'no-store' } });
+  return page('done', 200);
+}
+
+// Owner-only. mode: preview (returns the HTML, sends nothing) · test (one e-mail to the owner) · send (to subscribers, in chunks).
+function nlClean(s, max) { return cleanText(s, max).replace(/\{\{|\}\}|\{%|%\}/g, ''); }
+function nlBody(s) {
+  return String(s == null ? '' : s).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f‎‏‪-‮]/g, '')
+    .replace(/\{\{|\}\}|\{%|%\}/g, '').split('\n').map(l => l.replace(/[ \t]+$/g, '')).join('\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, NL.bodyMax);
+}
+async function sendNewsletterBatch(env, mail, recipients) {
+  if (!env.BREVO_API_KEY) return { ok: false, why: 'Email not configured' };
+  const versions = recipients.map(r => ({ to: [{ email: r.email }], params: { unsub: r.link } }));
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: { 'api-key': env.BREVO_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sender: { name: 'Glitch Q', email: 'glitchq1q@gmail.com' }, subject: mail.subject,
+      htmlContent: buildNewsletterEmail({ ...mail, unsubUrl: '{{params.unsub}}' }), textContent: buildNewsletterText({ ...mail, unsubUrl: '{{params.unsub}}' }),
+      messageVersions: versions, tags: ['newsletter'] }),
+  });
+  if (!res.ok) {
+    const eb = await res.json().catch(() => ({}));
+    console.error('NL_BREVO_ERROR status=' + res.status + ' body=' + JSON.stringify(eb));
+    return { ok: false, why: res.status === 402 || res.status === 429 || /limit|quota|credit/i.test(JSON.stringify(eb)) ? 'Email sending limit reached' : 'Email provider refused the message' };
+  }
+  return { ok: true };
+}
+async function handleAdminNewsletter(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  const body = await readJson(request, 16384);
+  if (!body) return json({ error: 'Invalid data' }, 400, cors);
+  const a = await who(body.idToken, env, cors, false);
+  if (a.err) return a.err;
+  if (!isAdminClaims(a.claims, env)) return json({ error: 'Forbidden' }, 403, cors);
+  const mode = String(body.mode || '');
+  if (!['preview', 'test', 'send'].includes(mode)) return json({ error: 'Bad mode' }, 400, cors);
+
+  const mail = { subject: nlClean(body.subject, NL.subjMax), preheader: nlClean(body.preheader, NL.preMax), text: nlBody(body.body), ctaLabel: nlClean(body.ctaLabel, NL.labelMax), ctaUrl: String(body.ctaUrl || '').trim() };
+  if (mail.subject.length < 3) return json({ error: 'Subject required' }, 400, cors);
+  if (mail.text.length < 10) return json({ error: 'Message is too short' }, 400, cors);
+  if (mail.ctaUrl || mail.ctaLabel) {
+    if (!mail.ctaLabel || !/^https:\/\/[^\s"'<>\\]{4,500}$/i.test(mail.ctaUrl)) return json({ error: 'The button needs a label and an https link' }, 400, cors);
+  }
+  if (mode === 'preview') return json({ ok: true, html: buildNewsletterEmail({ ...mail, unsubUrl: '#' }) }, 200, cors);
+  if (!unsubSecret(env)) return json({ error: 'Email not configured' }, 503, cors);
+  const origin = new URL(request.url).origin;
+
+  if (mode === 'test') {
+    if (hit('nltest', 10, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+    const to = String(a.claims.email).toLowerCase();
+    const id = (await sha256Hex(to)).slice(0, 40);
+    const r = await sendNewsletterBatch(env, { ...mail, subject: '[تجربة] ' + mail.subject }, [{ email: to, link: await unsubLink(env, origin, id) }]);
+    if (!r.ok) return json({ error: r.why }, 502, cors);
+    return json({ ok: true, to: maskEmail(to) }, 200, cors);
+  }
+
+  // send: each campaign is identified by the page (a hash of its content). A subscriber who already got THIS campaign is skipped,
+  // so the owner can press "send" again the next day to continue after Brevo's daily limit, without anyone receiving it twice.
+  if (hit('nlsend', 12, 3600000)) return json({ error: 'Too many requests' }, 429, cors);
+  const campaign = String(body.campaign || '');
+  if (!/^[A-Za-z0-9]{6,40}$/.test(campaign)) return json({ error: 'Campaign id required' }, 400, cors);
+  const max = Math.min(NL.sendCap, Math.max(1, Math.floor(Number(body.max)) || NL.sendDefault));
+  const rows = await fsQuery(env, 'newsletter', { limit: 5000 });
+  const valid = rows.filter(r => RE_NL_ID.test(r.id) && RE_EMAIL.test(String(r.data.email || '')));
+  const todo = valid.filter(r => r.data.lastCampaign !== campaign);
+  const pick = todo.slice(0, max);
+  let sent = 0;
+  for (let i = 0; i < pick.length; i += NL.chunk) {
+    const part = pick.slice(i, i + NL.chunk);
+    const r = await sendNewsletterBatch(env, mail, await Promise.all(part.map(async x => ({ email: String(x.data.email).toLowerCase(), link: await unsubLink(env, origin, x.id) }))));
+    if (!r.ok) return json({ ok: false, error: r.why, sent, remaining: todo.length - sent, total: valid.length }, 502, cors);
+    const m = await fsCommit(env, part.map(x => fsWrite(env, `newsletter/${x.id}`, { fields: { lastCampaign: campaign, lastSent: dzDate() }, precondition: { exists: true } })));
+    if (!m.ok) console.error('NL_MARK_FAILED');
+    sent += part.length;
+  }
+  return json({ ok: true, sent, remaining: todo.length - sent, already: valid.length - todo.length, total: valid.length }, 200, cors);
+}
+
 async function handleRatingCreate(request, env, cors) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
   if (hit('rt:' + clientIp(request), 5, 3600000)) return json({ error: 'Too many requests' }, 429, cors);
@@ -1066,7 +1207,7 @@ async function handleResetPassword(request, env, cors) {
     const oobCode = fbUrl.searchParams.get('oobCode');
     if (!oobCode) return json({ ok: true }, 200, cors);
 
-    resetLink = `https://glitch-q.web.app/reset.html?mode=resetPassword&oobCode=${encodeURIComponent(oobCode)}`;
+    resetLink = `${MAIL_SITE}reset.html?mode=resetPassword&oobCode=${encodeURIComponent(oobCode)}`;
   } catch (e) {
     console.error('Firebase reset error:', e.message);
     return json({ ok: true }, 200, cors);
@@ -1463,64 +1604,73 @@ function codeValidity(untilISO, ms = Date.now()) {
 function arDays(n) { return n === 1 ? 'يوم واحد' : n === 2 ? 'يومان' : n <= 10 ? `${n} أيام` : `${n} يوماً`; }
 
 const MAIL_SITE = 'https://glitchqq.github.io/glitch-q/';
-const MAIL_LOGO = MAIL_SITE + 'assets/logo/logo-email.png';   // the only image in any mail; alt text keeps the header readable when images are blocked
+// The only image in any mail: a banner with an OPAQUE dark plate and the GLITCH Q lockup baked in (assets/logo/build-icons.py),
+// so the logo stays readable whatever a mail app does to the cell colours behind it. Alt text covers blocked images.
+const MAIL_HEADER = MAIL_SITE + 'assets/logo/mail-header.png';
 const MAIL_FONT = "-apple-system,'Segoe UI',Tahoma,'Noto Sans Arabic',Arial,sans-serif";
 const MAIL_MONO = "'SF Mono',Consolas,Menlo,'Courier New',monospace";
 
-// One accent per kind of letter: reset = crimson (the store's colour), delivered code = mint, security alert = gold.
-// `red` is only used for the "wasn't you?" box. `c` names the CSS classes that the dark-mode block recolours.
+/* The letters are DARK-NATIVE — the storefront's crimson/black — so mail apps that force a dark mode (Gmail, Outlook.com…)
+   have nothing to invert, and light-mode readers still get the store's look.
+   Reading order: Gmail and some other apps DROP `dir` from <html>/<body>, which scrambles Arabic sentences that contain
+   Latin words. So every block carries its own dir="rtl" + direction:rtl, and Latin words sit in an isolated span. */
+const MC = { page: '#050507', plate: '#0A0A0E', card: '#0F0F14', box: '#16161D', line: '#24242E', line2: '#34343F', h: '#F4F4F7', p: '#C9C9D6', dim: '#9A9AA8' };
 const MAIL_TONE = {
-  crimson: { bar: '#E1062C', btn: '#C4062A', btnText: '#FFFFFF', btnDk: '#E1062C', btnTextDk: '#FFFFFF', ink: '#A30520', tint: '#FFF1F3', line: '#F8CAD2', inkDk: '#FF8EA0', tintDk: '#2B0F16', lineDk: '#5C1D2A', c: { tint: 'tint', ink: 'ink' } },
-  mint:   { bar: '#28C88A', btn: '#0B7A50', btnText: '#FFFFFF', btnDk: '#28C88A', btnTextDk: '#06140E', ink: '#0B7A50', tint: '#E8F8F1', line: '#BFE9D6', inkDk: '#3DDC9F', tintDk: '#0F2A22', lineDk: '#1D4A3A', c: { tint: 'tint', ink: 'ink' } },
-  gold:   { bar: '#F4B63E', btn: '#F4B63E', btnText: '#1A1300', btnDk: '#F4B63E', btnTextDk: '#1A1300', ink: '#8A5A00', tint: '#FFF6E0', line: '#F6DFA6', inkDk: '#F4B63E', tintDk: '#2B2210', lineDk: '#5A4518', c: { tint: 'gtint', ink: 'gink' } },
-  red:    { ink: '#B3243A', tint: '#FFF0F1', line: '#FBC9CF', inkDk: '#FF8A96', c: { tint: 'rtint', ink: 'rink' } },
+  crimson: { bar: '#F5223F', btn: '#D4062A', btnText: '#FFFFFF', ink: '#FF8A98', tint: '#240A10', line: '#5A1623' },
+  mint:    { bar: '#28C88A', btn: '#28C88A', btnText: '#04140D', ink: '#4BE0A5', tint: '#0C221A', line: '#1B4A39' },
+  gold:    { bar: '#F4B63E', btn: '#F4B63E', btnText: '#1A1300', ink: '#F4B63E', tint: '#241B09', line: '#5A4518' },
+  red:     { ink: '#FF8A96', tint: '#2A1015', line: '#5A2230' },
 };
 
 // ── small building blocks (all take trusted html) ────────────────────────
+const MB = `font-family:${MAIL_FONT};direction:rtl;text-align:right;`;            // every text block starts from this
+const lat = (s) => `<span dir="ltr" style="unicode-bidi:isolate;">${s}</span>`;     // a Latin word inside Arabic text
 const mGap = (h) => `<div style="height:${h}px;line-height:${h}px;font-size:1px;">&nbsp;</div>`;
-const mH1 = (s) => `<h1 class="h1 t-h" style="margin:0 0 12px;font-family:${MAIL_FONT};font-size:26px;line-height:1.4;font-weight:800;color:#10131A;text-align:right;">${s}</h1>`;
-const mP = (s, style = '') => `<p class="t-p" style="margin:0 0 18px;font-family:${MAIL_FONT};font-size:15px;line-height:1.95;color:#3A4357;text-align:right;${style}">${s}</p>`;
-const mSmall = (s) => `<p class="t-dim" style="margin:0 0 8px;font-family:${MAIL_FONT};font-size:12.5px;line-height:1.8;color:#6A7388;text-align:right;">${s}</p>`;
-const mHr = () => `<div class="hr" style="height:1px;line-height:1px;font-size:1px;background-color:#E3E7EF;">&nbsp;</div>`;
-const mBox = (inner, pad = '16px 18px') => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="box bd" bgcolor="#F5F7FB" style="background-color:#F5F7FB;border:1px solid #DDE2EC;border-radius:12px;padding:${pad};font-family:${MAIL_FONT};text-align:right;">${inner}</td></tr></table>`;
-const mTintBox = (t, inner) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="${t.c.tint}" bgcolor="${t.tint}" style="background-color:${t.tint};border:1px solid ${t.line};border-radius:12px;padding:16px 18px;font-family:${MAIL_FONT};text-align:right;">${inner}</td></tr></table>`;
+const mH1 = (s) => `<h1 dir="rtl" class="h1" style="margin:0 0 12px;${MB}font-size:26px;line-height:1.45;font-weight:800;color:${MC.h};">${s}</h1>`;
+const mP = (s, style = '') => `<p dir="rtl" style="margin:0 0 18px;${MB}font-size:15px;line-height:1.95;color:${MC.p};${style}">${s}</p>`;
+const mSmall = (s) => `<p dir="rtl" style="margin:0 0 8px;${MB}font-size:12.5px;line-height:1.8;color:${MC.dim};">${s}</p>`;
+const mHr = () => `<div style="height:1px;line-height:1px;font-size:1px;background-color:${MC.line};">&nbsp;</div>`;
+const mEyebrow = (label, t) => `<p dir="rtl" style="margin:0 0 14px;${MB}font-size:13px;line-height:1.6;font-weight:700;color:${t.ink};"><span style="color:${t.bar};">&#9679;</span>&nbsp; ${escHtml(label)}</p>`;
+const mBox = (inner, pad = '16px 18px') => `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td dir="rtl" bgcolor="${MC.box}" style="background-color:${MC.box};border:1px solid ${MC.line};border-radius:12px;padding:${pad};${MB}">${inner}</td></tr></table>`;
+const mTintBox = (t, inner) => `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td dir="rtl" bgcolor="${t.tint}" style="background-color:${t.tint};border:1px solid ${t.line};border-radius:12px;padding:16px 18px;${MB}">${inner}</td></tr></table>`;
+const mNote = (t, html) => mTintBox(t, `<div dir="rtl" style="${MB}font-size:14px;line-height:1.9;color:${t.ink};">${html}</div>`);
 
-const mNote = (t, html) => mTintBox(t, `<div class="${t.c.ink}" style="font-family:${MAIL_FONT};font-size:14px;line-height:1.9;color:${t.ink};">${html}</div>`);
-
+// The gradient layer keeps Gmail's dark-mode colour shifting from turning the button salmon (it leaves background-images alone).
 function mButton(href, label, t) {
-  return `<table role="presentation" class="btn-t" cellpadding="0" cellspacing="0" border="0"><tr>
-  <td class="btn-td" align="center" bgcolor="${t.btn}" style="background-color:${t.btn};border-radius:10px;">
-    <a class="btn-a" href="${href}" target="_blank" style="display:inline-block;padding:15px 38px;font-family:${MAIL_FONT};font-size:16px;line-height:1.3;font-weight:700;color:${t.btnText};text-decoration:none;border-radius:10px;">${label}</a>
+  const bg = `background-color:${t.btn};background-image:linear-gradient(${t.btn},${t.btn});`;
+  return `<table role="presentation" dir="rtl" class="btn-t" cellpadding="0" cellspacing="0" border="0"><tr>
+  <td dir="rtl" class="btn-td" align="center" bgcolor="${t.btn}" style="${bg}border-radius:12px;">
+    <a class="btn-a" href="${href}" target="_blank" style="display:inline-block;padding:15px 38px;font-family:${MAIL_FONT};font-size:16px;line-height:1.3;font-weight:700;color:${t.btnText};text-decoration:none;border-radius:12px;">${label}</a>
   </td></tr></table>`;
 }
 
 function mSteps(items, t) {
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${items.map((s, i) => `
+  return `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0">${items.map((s, i) => `
   <tr>
-    <td width="40" valign="top" style="padding:0 0 12px;">
+    <td dir="rtl" width="40" valign="top" style="padding:0 0 12px;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td class="${t.c.tint} ${t.c.ink}" width="28" height="28" align="center" valign="middle" bgcolor="${t.tint}" style="width:28px;height:28px;background-color:${t.tint};border:1px solid ${t.line};border-radius:14px;font-family:${MAIL_FONT};font-size:13px;line-height:26px;font-weight:800;color:${t.ink};text-align:center;">${i + 1}</td>
+        <td width="28" height="28" align="center" valign="middle" bgcolor="${t.tint}" style="width:28px;height:28px;background-color:${t.tint};border:1px solid ${t.line};border-radius:14px;font-family:${MAIL_FONT};font-size:13px;line-height:26px;font-weight:800;color:${t.ink};text-align:center;">${i + 1}</td>
       </tr></table>
     </td>
-    <td class="t-p" valign="top" style="padding:3px 0 12px;font-family:${MAIL_FONT};font-size:14.5px;line-height:1.8;color:#3A4357;text-align:right;">${s}</td>
+    <td dir="rtl" valign="top" style="padding:3px 0 12px;${MB}font-size:14.5px;line-height:1.8;color:${MC.p};">${s}</td>
   </tr>`).join('')}
   </table>`;
 }
 
 // label/value rows inside one bordered panel
 function mFacts(rows) {
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="box bd" bgcolor="#F5F7FB" style="background-color:#F5F7FB;border:1px solid #DDE2EC;border-radius:12px;border-collapse:separate;">${rows.map(([label, valueHtml], i) => {
-    const line = i < rows.length - 1 ? 'border-bottom:1px solid #DDE2EC;' : '';
+  return `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${MC.box}" style="background-color:${MC.box};border:1px solid ${MC.line};border-radius:12px;border-collapse:separate;">${rows.map(([label, valueHtml], i) => {
+    const line = i < rows.length - 1 ? `border-bottom:1px solid ${MC.line};` : '';
     return `
   <tr>
-    <td class="t-dim bd" width="34%" valign="top" style="${line}padding:13px 18px;font-family:${MAIL_FONT};font-size:13px;line-height:1.7;color:#6A7388;text-align:right;">${label}</td>
-    <td class="t-h bd" valign="top" style="${line}padding:13px 18px;font-family:${MAIL_FONT};font-size:14.5px;line-height:1.7;font-weight:700;color:#10131A;text-align:right;">${valueHtml}</td>
+    <td dir="rtl" width="34%" valign="top" style="${line}padding:13px 18px;${MB}font-size:13px;line-height:1.7;color:${MC.dim};">${label}</td>
+    <td dir="rtl" valign="top" style="${line}padding:13px 18px;${MB}font-size:14.5px;line-height:1.7;font-weight:700;color:${MC.h};"><span dir="auto" style="unicode-bidi:isolate;">${valueHtml}</span></td>
   </tr>`;
   }).join('')}
   </table>`;
 }
 
-function mailShell({ tone, label, title, preheader, body, note }) {
+function mailShell({ tone, label, title, preheader, body, note, extraFoot = '' }) {
   const t = MAIL_TONE[tone];
   const year = new Date().getFullYear();
   const F = MAIL_FONT;
@@ -1530,11 +1680,12 @@ function mailShell({ tone, label, title, preheader, body, note }) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<meta name="supported-color-schemes" content="light dark">
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
 <meta name="x-apple-disable-message-reformatting">
 <title>${escHtml(title)}</title>
 <style>
+  :root{color-scheme:dark;supported-color-schemes:dark}
   body{margin:0;padding:0;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}
   a{text-decoration:none}
   @media only screen and (max-width:520px){
@@ -1545,62 +1696,40 @@ function mailShell({ tone, label, title, preheader, body, note }) {
     .btn-a{display:block!important;padding-left:12px!important;padding-right:12px!important}
     .code-lg{font-size:19px!important;letter-spacing:1px!important}
   }
-  @media (prefers-color-scheme:dark){
-    body,.bg-page{background-color:#07090D!important}
-    .bg-card{background-color:#11151C!important}
-    .bd{border-color:#232A37!important}
-    .hr{background-color:#232A37!important}
-    .t-h{color:#F2F4F8!important}
-    .t-p{color:#B7BFD0!important}
-    .t-dim{color:#8A93A6!important}
-    .box{background-color:#181C25!important;border-color:#252B38!important}
-    .bg-foot{background-color:#0D1016!important;border-color:#232A37!important}
-    .ink{color:${t.inkDk}!important}
-    .tint{background-color:${t.tintDk}!important;border-color:${t.lineDk}!important}
-    .btn-td{background-color:${t.btnDk}!important}
-    .btn-a{color:${t.btnTextDk}!important}
-    .gtint{background-color:#2B2210!important;border-color:#5A4518!important}
-    .gink{color:#F4B63E!important}
-    .rtint{background-color:#2A1519!important;border-color:#5A2630!important}
-    .rink{color:#FF8A96!important}
-  }
 </style>
 </head>
-<body class="bg-page" style="margin:0;padding:0;background-color:#EDF0F6;" bgcolor="#EDF0F6">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#EDF0F6;font-size:1px;line-height:1px;">${escHtml(preheader)}${pad}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-page" bgcolor="#EDF0F6" style="background-color:#EDF0F6;">
-<tr><td class="wrap" align="center" style="padding:28px 12px;">
+<body dir="rtl" bgcolor="${MC.page}" style="margin:0;padding:0;background-color:${MC.page};direction:rtl;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${MC.page};font-size:1px;line-height:1px;">${escHtml(preheader)}${pad}</div>
+<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${MC.page}" style="background-color:${MC.page};">
+<tr><td dir="rtl" class="wrap" align="center" style="padding:28px 12px;">
 
-  <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="bg-card bd" bgcolor="#FFFFFF" style="width:600px;max-width:100%;background-color:#FFFFFF;border:1px solid #DDE2EC;border-radius:16px;border-collapse:separate;overflow:hidden;">
+  <table role="presentation" dir="rtl" width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="${MC.card}" style="width:600px;max-width:100%;background-color:${MC.card};border:1px solid ${MC.line};border-radius:18px;border-collapse:separate;overflow:hidden;">
 
-    <!-- Header: always dark. The Glitch Q lockup (PNG, alt text as fallback), then what this letter is about -->
-    <tr><td class="px" bgcolor="#0A0C10" style="background-color:#0A0C10;padding:20px 32px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td align="right" valign="middle">
-          <a href="${MAIL_SITE}" target="_blank" style="text-decoration:none;"><img src="${MAIL_LOGO}" width="170" height="33" alt="GLITCH Q" style="display:block;border:0;outline:none;width:170px;height:33px;font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:33px;font-weight:800;letter-spacing:3px;color:#FFFFFF;text-align:left;"></a>
-        </td>
-        <td align="left" valign="middle" style="font-family:${F};font-size:12.5px;line-height:1.6;color:#9AA3B5;text-align:left;">${escHtml(label)}</td>
-      </tr></table>
+    <!-- Header: one opaque banner image — near-black plate + the GLITCH Q lockup (alt text if images are blocked) -->
+    <tr><td align="center" bgcolor="${MC.plate}" style="background-color:${MC.plate};padding:0;font-size:0;line-height:0;">
+      <a href="${MAIL_SITE}" target="_blank" style="text-decoration:none;"><img src="${MAIL_HEADER}" width="600" height="96" alt="GLITCH Q" style="display:block;border:0;outline:none;width:100%;max-width:600px;height:auto;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:96px;font-weight:800;letter-spacing:4px;color:#FFFFFF;text-align:center;"></a>
     </td></tr>
 
     <!-- Accent strip: this letter's colour, then the two split channels -->
     <tr><td style="font-size:0;line-height:0;height:4px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
         <td width="88%" height="4" bgcolor="${t.bar}" style="height:4px;font-size:0;line-height:0;background-color:${t.bar};">&nbsp;</td>
-        <td width="6%" height="4" bgcolor="#FF4D5E" style="height:4px;font-size:0;line-height:0;background-color:#FF4D5E;">&nbsp;</td>
+        <td width="6%" height="4" bgcolor="#FF5C6C" style="height:4px;font-size:0;line-height:0;background-color:#FF5C6C;">&nbsp;</td>
         <td width="6%" height="4" bgcolor="#35E0F2" style="height:4px;font-size:0;line-height:0;background-color:#35E0F2;">&nbsp;</td>
       </tr></table>
     </td></tr>
 
     <!-- Body -->
-    <tr><td class="px" style="padding:36px 32px 14px;text-align:right;">
+    <tr><td dir="rtl" class="px" style="padding:34px 32px 14px;${MB}">
+${mEyebrow(label, t)}
 ${body}
     </td></tr>
 
     <!-- Footer -->
-    <tr><td class="bg-foot bd px" bgcolor="#F5F7FB" style="background-color:#F5F7FB;border-top:1px solid #DDE2EC;padding:22px 32px 26px;">
-      <p class="t-dim" style="margin:0 0 10px;font-family:${F};font-size:12.5px;line-height:1.8;color:#6A7388;text-align:right;">${note}</p>
-      <p class="t-dim" style="margin:0;font-family:${F};font-size:11.5px;line-height:1.8;color:#6A7388;text-align:right;"><span dir="ltr" style="font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:2px;">GLITCH Q</span> &middot; بطاقات PlayStation في الجزائر &middot; رسالة تلقائية، يرجى عدم الرد عليها &middot; &copy; ${year}</p>
+    <tr><td dir="rtl" class="px" bgcolor="${MC.plate}" style="background-color:${MC.plate};border-top:1px solid ${MC.line};padding:22px 32px 26px;${MB}">
+      <p dir="rtl" style="margin:0 0 12px;${MB}font-size:12.5px;line-height:1.8;color:${MC.dim};">${note}</p>
+      ${extraFoot}
+      <p dir="rtl" style="margin:0;${MB}font-size:11.5px;line-height:1.9;color:${MC.dim};"><span dir="ltr" style="unicode-bidi:isolate;font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:2px;color:${MC.h};">GLITCH Q</span><br>متجر بطاقات ${lat('PlayStation')} في الجزائر<br>رسالة تلقائية، يرجى عدم الرد عليها &middot; &copy; ${year}</p>
     </td></tr>
 
   </table>
@@ -1615,30 +1744,22 @@ ${body}
 function buildResetEmail(resetLink) {
   const link = escHtml(resetLink);
   const t = MAIL_TONE.crimson;
+  const cell = (k, v, side) => `<td dir="rtl" width="50%" valign="top" style="${side}padding:14px 18px;${MB}"><div style="font-size:12px;line-height:1.6;color:${MC.dim};">${k}</div><div style="font-size:15px;line-height:1.7;font-weight:700;color:${MC.h};">${v}</div></td>`;
   const body = [
     mH1('إعادة تعيين كلمة المرور'),
-    mP('وصلنا طلب لتعيين كلمة مرور جديدة لحسابك في Glitch Q. اضغط الزر أدناه واختر كلمة المرور الجديدة.'),
+    mP('وصلنا طلب لتعيين كلمة مرور جديدة لحسابك. اضغط الزر أدناه لاختيارها.'),
     mButton(link, 'اختيار كلمة مرور جديدة', t),
     mGap(24),
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="box bd" bgcolor="#F5F7FB" style="background-color:#F5F7FB;border:1px solid #DDE2EC;border-radius:12px;border-collapse:separate;"><tr>
-      <td class="bd" width="50%" valign="top" style="border-left:1px solid #DDE2EC;padding:14px 18px;font-family:${MAIL_FONT};text-align:right;">
-        <div class="t-dim" style="font-size:12px;line-height:1.6;color:#6A7388;">مدة الصلاحية</div>
-        <div class="t-h" style="font-size:15px;line-height:1.7;font-weight:700;color:#10131A;">ساعة واحدة</div>
-      </td>
-      <td width="50%" valign="top" style="padding:14px 18px;font-family:${MAIL_FONT};text-align:right;">
-        <div class="t-dim" style="font-size:12px;line-height:1.6;color:#6A7388;">الاستخدام</div>
-        <div class="t-h" style="font-size:15px;line-height:1.7;font-weight:700;color:#10131A;">مرة واحدة فقط</div>
-      </td>
-    </tr></table>`,
+    `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${MC.box}" style="background-color:${MC.box};border:1px solid ${MC.line};border-radius:12px;border-collapse:separate;"><tr>${cell('مدة الصلاحية', 'ساعة واحدة', `border-left:1px solid ${MC.line};`)}${cell('الاستخدام', 'مرة واحدة فقط', '')}</tr></table>`,
     mGap(24),
     mSmall('إذا لم يعمل الزر، انسخ هذا الرابط والصقه في المتصفح:'),
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="box bd" bgcolor="#F5F7FB" style="background-color:#F5F7FB;border:1px solid #DDE2EC;border-radius:10px;padding:12px 14px;font-family:${MAIL_MONO};font-size:11.5px;line-height:1.7;direction:ltr;text-align:left;word-break:break-all;"><a class="ink" href="${link}" target="_blank" style="color:${t.ink};text-decoration:underline;">${link}</a></td></tr></table>`,
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="${MC.box}" style="background-color:${MC.box};border:1px solid ${MC.line};border-radius:10px;padding:12px 14px;font-family:${MAIL_MONO};font-size:11.5px;line-height:1.7;direction:ltr;text-align:left;word-break:break-all;"><a href="${link}" target="_blank" style="color:${t.ink};text-decoration:underline;">${link}</a></td></tr></table>`,
     mGap(28),
     mHr(),
     mGap(22),
-    `<p class="t-h" style="margin:0 0 4px;font-family:${MAIL_FONT};font-size:15px;line-height:1.8;font-weight:800;color:#10131A;text-align:right;">لم تطلب هذا؟</p>`,
+    `<p dir="rtl" style="margin:0 0 4px;${MB}font-size:15px;line-height:1.8;font-weight:800;color:${MC.h};">لم تطلب هذا؟</p>`,
     mP('تجاهل الرسالة؛ كلمة مرورك لن تتغير ولن يحدث شيء في حسابك. وإن وصلتك رسائل كهذه باستمرار فغيّر كلمة مرور بريدك الإلكتروني.', 'font-size:14px;'),
-    mP('<strong>Glitch Q لن يطلب منك كلمة المرور أبداً</strong> — لا عبر الإيميل ولا واتساب ولا أي رسالة أخرى.', 'font-size:14px;'),
+    mP('<strong style="color:#FFFFFF;">لن نطلب منك كلمة المرور أبداً</strong> — لا عبر الإيميل ولا واتساب ولا أي رسالة أخرى.', 'font-size:14px;'),
   ].join('\n');
   return mailShell({
     tone: 'crimson',
@@ -1653,7 +1774,7 @@ function buildResetEmail(resetLink) {
 function buildResetText(resetLink) {
   return `إعادة تعيين كلمة المرور — Glitch Q
 
-وصلنا طلب لتعيين كلمة مرور جديدة لحسابك في Glitch Q.
+وصلنا طلب لتعيين كلمة مرور جديدة لحسابك.
 افتح الرابط التالي واختر كلمة المرور الجديدة:
 
 ${resetLink}
@@ -1663,7 +1784,7 @@ ${resetLink}
 لم تطلب هذا؟
 تجاهل الرسالة؛ كلمة مرورك لن تتغير ولن يحدث شيء في حسابك. وإن وصلتك رسائل كهذه باستمرار فغيّر كلمة مرور بريدك الإلكتروني.
 
-Glitch Q لن يطلب منك كلمة المرور أبداً — لا عبر الإيميل ولا واتساب ولا أي رسالة أخرى.
+لن نطلب منك كلمة المرور أبداً — لا عبر الإيميل ولا واتساب ولا أي رسالة أخرى.
 
 Glitch Q`;
 }
@@ -1689,38 +1810,37 @@ function buildCodeEmail({ product, code, orderId, validity }) {
   const raw = String(code == null ? '' : code);
   const longest = Math.max(1, ...raw.split(/\r?\n/).map((l) => l.length));
   const size = longest <= 19 ? 26 : longest <= 30 ? 20 : 16;
-  const ticket = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0A0C10" style="background-color:#0A0C10;border:1px solid #252B38;border-radius:14px;border-collapse:separate;">
-      <tr><td align="center" style="padding:20px 22px 16px;font-family:${MAIL_FONT};">
-        <div style="font-size:12px;line-height:1.6;color:#9AA3B5;">المنتج</div>
-        <div style="font-size:17px;line-height:1.7;font-weight:700;color:#F2F4F8;">${escHtml(product || '—')}</div>
+  const ticket = `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#08080B" style="background-color:#08080B;border:1px solid ${MC.line2};border-radius:14px;border-collapse:separate;">
+      <tr><td dir="rtl" align="center" style="padding:20px 22px 16px;font-family:${MAIL_FONT};direction:rtl;text-align:center;">
+        <div style="font-size:12px;line-height:1.6;color:${MC.dim};">المنتج</div>
+        <div dir="auto" style="font-size:17px;line-height:1.7;font-weight:700;color:${MC.h};">${escHtml(product || '—')}</div>
       </td></tr>
-      <tr><td style="padding:0 22px;"><div style="height:0;line-height:0;font-size:0;border-top:1px dashed #323A4B;">&nbsp;</div></td></tr>
-      <tr><td align="center" style="padding:18px 22px 22px;font-family:${MAIL_FONT};">
-        <div style="font-size:12px;line-height:1.6;color:#9AA3B5;margin-bottom:6px;">الكود</div>
-        <div class="${size === 26 ? 'code-lg' : ''}" dir="ltr" style="font-family:${MAIL_MONO};font-size:${size}px;line-height:1.5;font-weight:700;letter-spacing:${size === 26 ? 2 : 1}px;color:#3DDC9F;text-align:center;white-space:pre-wrap;word-break:break-all;-webkit-user-select:all;user-select:all;">${escHtml(raw)}</div>
+      <tr><td style="padding:0 22px;"><div style="height:0;line-height:0;font-size:0;border-top:1px dashed ${MC.line2};">&nbsp;</div></td></tr>
+      <tr><td dir="rtl" align="center" style="padding:18px 22px 22px;font-family:${MAIL_FONT};direction:rtl;text-align:center;">
+        <div style="font-size:12px;line-height:1.6;color:${MC.dim};margin-bottom:6px;">الكود</div>
+        <div class="${size === 26 ? 'code-lg' : ''}" dir="ltr" style="font-family:${MAIL_MONO};font-size:${size}px;line-height:1.5;font-weight:700;letter-spacing:${size === 26 ? 2 : 1}px;color:${t.ink};text-align:center;white-space:pre-wrap;word-break:break-all;-webkit-user-select:all;user-select:all;">${escHtml(raw)}</div>
       </td></tr>${orderId ? `
-      <tr><td align="center" bgcolor="#11141B" style="background-color:#11141B;border-top:1px solid #252B38;border-radius:0 0 13px 13px;padding:11px 22px;font-family:${MAIL_FONT};font-size:12px;line-height:1.7;color:#9AA3B5;">رقم الطلب &nbsp;<span dir="ltr" style="font-family:${MAIL_MONO};color:#D5DAE6;">${escHtml(orderId)}</span></td></tr>` : ''}
+      <tr><td dir="rtl" align="center" bgcolor="${MC.card}" style="background-color:${MC.card};border-top:1px solid ${MC.line};border-radius:0 0 13px 13px;padding:11px 22px;font-family:${MAIL_FONT};direction:rtl;text-align:center;font-size:12px;line-height:1.7;color:${MC.dim};">رقم الطلب &nbsp;<span dir="ltr" style="unicode-bidi:isolate;font-family:${MAIL_MONO};color:${MC.p};">${escHtml(orderId)}</span></td></tr>` : ''}
     </table>`;
   // validity band: a dark calendar tile with the last day of the month + what it means
-  const tileInk = vt.inkDk || vt.ink;
-  const validityBand = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-      <td class="${vt.c.tint}" bgcolor="${vt.tint}" style="background-color:${vt.tint};border:1px solid ${vt.line};border-radius:12px;padding:14px 16px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-          <td width="64" valign="middle" style="width:64px;">
-            <table role="presentation" width="56" cellpadding="0" cellspacing="0" border="0" bgcolor="#0A0C10" style="width:56px;background-color:#0A0C10;border-radius:10px;border-collapse:separate;"><tr><td align="center" style="padding:7px 0 8px;font-family:${MAIL_FONT};">
-              <div style="font-size:11px;line-height:1.4;font-weight:700;color:${tileInk};">${escHtml(v.monthName)}</div>
+  const validityBand = `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td dir="rtl" bgcolor="${vt.tint}" style="background-color:${vt.tint};border:1px solid ${vt.line};border-radius:12px;padding:14px 16px;">
+        <table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+          <td dir="rtl" width="64" valign="middle" style="width:64px;">
+            <table role="presentation" width="56" cellpadding="0" cellspacing="0" border="0" bgcolor="${MC.page}" style="width:56px;background-color:${MC.page};border:1px solid ${vt.line};border-radius:10px;border-collapse:separate;"><tr><td align="center" style="padding:7px 0 8px;font-family:${MAIL_FONT};">
+              <div style="font-size:11px;line-height:1.4;font-weight:700;color:${vt.ink};">${escHtml(v.monthName)}</div>
               <div style="font-size:24px;line-height:1.15;font-weight:800;color:#FFFFFF;">${v.lastDay}</div>
             </td></tr></table>
           </td>
-          <td valign="middle" style="padding-right:4px;font-family:${MAIL_FONT};text-align:right;">
-            <div class="${vt.c.ink}" style="font-size:15px;line-height:1.7;font-weight:800;color:${vt.ink};">${escHtml(vc.title)}</div>
-            <div class="t-p" style="font-size:13px;line-height:1.8;color:#3A4357;">${escHtml(vc.sub)}</div>
+          <td dir="rtl" valign="middle" style="padding-right:4px;${MB}">
+            <div style="font-size:15px;line-height:1.7;font-weight:800;color:${vt.ink};">${escHtml(vc.title)}</div>
+            <div style="font-size:13px;line-height:1.8;color:${MC.p};">${escHtml(vc.sub)}</div>
           </td>
         </tr></table>
       </td></tr></table>`;
   const body = [
     mH1('طلبك جاهز'),
-    mP('شكراً لشرائك من Glitch Q. هذا هو الكود الخاص بطلبك، وهو جاهز للاستخدام الآن.'),
+    mP('شكراً لشرائك من متجرنا. كودك أدناه، وهو جاهز للاستخدام الآن.'),
     ticket,
     mGap(10),
     mSmall('لتنسخ الكود: اضغط عليه مطولاً على الجوال، أو حدّده بالماوس على الكمبيوتر.'),
@@ -1729,17 +1849,17 @@ function buildCodeEmail({ product, code, orderId, validity }) {
     mGap(12),
     mNote(MAIL_TONE.gold, '<strong>لا تشارك الكود مع أحد</strong> — من يملكه يستطيع استخدامه.'),
     mGap(26),
-    `<p class="t-h" style="margin:0 0 14px;font-family:${MAIL_FONT};font-size:16px;line-height:1.6;font-weight:800;color:#10131A;text-align:right;">طريقة التفعيل على PlayStation</p>`,
+    `<p dir="rtl" style="margin:0 0 14px;${MB}font-size:16px;line-height:1.6;font-weight:800;color:${MC.h};">طريقة التفعيل على ${lat('PlayStation')}</p>`,
     mSteps([
-      'افتح <strong>PlayStation Store</strong> من جهازك أو من المتصفح.',
-      'اختر <strong>«استرداد الرموز»</strong> (Redeem Codes).',
+      `افتح <strong style="color:#FFFFFF;">${lat('PlayStation Store')}</strong> من جهازك أو من المتصفح.`,
+      `اختر <strong style="color:#FFFFFF;">«استرداد الرموز»</strong> ${lat('(Redeem Codes)')}`,
       'أدخل الكود أعلاه ثم أكّد.',
     ], t),
     mGap(6),
-    mNote(t, '<strong>تأكد من المنطقة:</strong> بطاقات PlayStation مرتبطة بمنطقة محددة، فيجب أن تطابق منطقة حسابك منطقة البطاقة قبل إدخال الكود.'),
+    mNote(t, `<strong>تأكد من المنطقة:</strong> بطاقات ${lat('PlayStation')} مرتبطة بمنطقة محددة، فيجب أن تطابق منطقة حسابك منطقة البطاقة قبل إدخال الكود.`),
     mGap(26),
     mP(`الكود لا يعمل؟ راسلنا من صفحة الدعم في الموقع${orderId ? ' وأرسل رقم الطلب' : ''}، وسنتابع معك.`, 'font-size:14px;'),
-    mButton(MAIL_SITE, 'فتح Glitch Q', t),
+    mButton(MAIL_SITE, 'العودة إلى المتجر', t),
     mGap(10),
   ].join('\n');
   return mailShell({
@@ -1748,7 +1868,7 @@ function buildCodeEmail({ product, code, orderId, validity }) {
     title: 'طلبك جاهز — Glitch Q',
     preheader: v.daysLeft >= 0 ? `كودك جاهز وصالح حتى ${vc.full}. افتح الرسالة لنسخه وتفعيله.` : 'كودك جاهز. افتح الرسالة لنسخه وتفعيله.',
     body,
-    note: 'وصلتك هذه الرسالة لأن طلباً مرتبطاً بهذا البريد تم تسليمه من متجر Glitch Q.',
+    note: 'وصلتك هذه الرسالة لأن طلباً مرتبطاً بهذا البريد تم تسليمه من متجرنا.',
   });
 }
 
@@ -1784,7 +1904,7 @@ function buildLoginAlertEmail({ device, place, when }) {
   const red = MAIL_TONE.red;
   const body = [
     mH1('تسجيل دخول جديد إلى حسابك'),
-    mP('سُجّل دخول إلى حسابك في Glitch Q من جهاز لم نتعرّف عليه من قبل:'),
+    mP('سُجّل دخول إلى حسابك من جهاز لم نتعرّف عليه من قبل:'),
     mFacts([
       ['الجهاز', escHtml(device)],
       ['الموقع التقريبي', escHtml(place)],
@@ -1793,11 +1913,11 @@ function buildLoginAlertEmail({ device, place, when }) {
     mGap(8),
     mSmall('الموقع تقريبي ويُستنتج من عنوان الشبكة، وقد لا يطابق مكانك الفعلي.'),
     mGap(16),
-    mBox(`<div class="t-h" style="font-size:15px;line-height:1.8;font-weight:800;color:#10131A;">كنت أنت؟</div><div class="t-p" style="font-size:14px;line-height:1.9;color:#3A4357;">لا تحتاج لأي إجراء.</div>`),
+    mBox(`<div dir="rtl" style="font-size:15px;line-height:1.8;font-weight:800;color:${MC.h};">كنت أنت؟</div><div dir="rtl" style="font-size:14px;line-height:1.9;color:${MC.p};">لا تحتاج لأي إجراء.</div>`),
     mGap(12),
-    mTintBox(red, `<div class="rink" style="font-size:15px;line-height:1.8;font-weight:800;color:${red.ink};margin-bottom:12px;">لم تكن أنت؟ تحرّك الآن</div>${mSteps([
-      'افتح حسابك ← <strong>إعدادات الحساب</strong> وغيّر كلمة المرور.',
-      'اضغط <strong>«تسجيل الخروج من كل الأجهزة»</strong>.',
+    mTintBox(red, `<div dir="rtl" style="${MB}font-size:15px;line-height:1.8;font-weight:800;color:${red.ink};margin-bottom:12px;">لم تكن أنت؟ تحرّك الآن</div>${mSteps([
+      'افتح حسابك ← <strong style="color:#FFFFFF;">إعدادات الحساب</strong> وغيّر كلمة المرور.',
+      'اضغط <strong style="color:#FFFFFF;">«تسجيل الخروج من كل الأجهزة»</strong>.',
       'إن كنت تستخدم كلمة المرور نفسها في مكان آخر، فغيّرها هناك أيضاً.',
     ], red)}`),
     mGap(26),
@@ -1830,5 +1950,56 @@ function buildLoginAlertText({ device, place, when }) {
 3) إن كنت تستخدم كلمة المرور نفسها في مكان آخر، فغيّرها هناك أيضاً.
 
 وصلتك هذه الرسالة لأنك فعّلت «تنبيه الدخول من جهاز جديد» ويمكنك إيقافه في أي وقت.
+Glitch Q`;
+}
+
+
+/* ── 4) newsletter (written by the owner in the admin panel) ─────────── */
+// Latin words/numbers inside Arabic text are isolated so the sentence order survives any mail app; everything is escaped first-class.
+const NL_WORD = "[A-Za-z0-9](?:[A-Za-z0-9._'’&+\\-\\/:@#]*[A-Za-z0-9])?%?";
+const NL_LATIN = new RegExp(NL_WORD + '(?: ' + NL_WORD + ')*', 'g');
+function nlMix(raw) {
+  raw = String(raw); let out = '', last = 0, m; NL_LATIN.lastIndex = 0;
+  while ((m = NL_LATIN.exec(raw))) { out += escHtml(raw.slice(last, m.index)) + lat(escHtml(m[0])); last = m.index + m[0].length; }
+  return out + escHtml(raw.slice(last));
+}
+const mH2 = (s) => `<h2 dir="rtl" style="margin:10px 0 8px;${MB}font-size:18px;line-height:1.6;font-weight:800;color:${MC.h};">${s}</h2>`;
+const mList = (items) => `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;">${items.map(s => `
+  <tr><td dir="rtl" width="22" valign="top" style="padding:0 0 8px;font-family:${MAIL_FONT};font-size:12px;line-height:2.3;color:${MAIL_TONE.crimson.bar};">&#9679;</td><td dir="rtl" valign="top" style="padding:0 0 8px;${MB}font-size:15px;line-height:1.9;color:${MC.p};">${s}</td></tr>`).join('')}
+</table>`;
+// blank line = new paragraph · "## " = sub-heading · lines that all start with "- " = a list
+function nlBlocks(text) {
+  return String(text).replace(/\r/g, '').split(/\n{2,}/).map(b => b.trim()).filter(Boolean).map(b => {
+    if (/^##\s+/.test(b)) return mH2(nlMix(b.replace(/^##\s+/, '')));
+    const lines = b.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.every(l => /^[-•*]\s+/.test(l))) return mList(lines.map(l => nlMix(l.replace(/^[-•*]\s+/, ''))));
+    return mP(lines.map(nlMix).join('<br>'));
+  }).join('\n');
+}
+function buildNewsletterEmail({ subject, preheader, text, ctaLabel, ctaUrl, unsubUrl }) {
+  const t = MAIL_TONE.crimson;
+  const body = [
+    mH1(nlMix(subject)),
+    nlBlocks(text),
+    ctaLabel && ctaUrl ? `${mGap(10)}\n${mButton(escHtml(ctaUrl), nlMix(ctaLabel), t)}` : '',
+    mGap(10),
+  ].join('\n');
+  return mailShell({
+    tone: 'crimson',
+    label: 'جديد من المتجر',
+    title: subject,
+    preheader: preheader || String(text).replace(/\s+/g, ' ').slice(0, 110),
+    body,
+    note: 'وصلتك هذه الرسالة لأنك اشتركت في النشرة البريدية للمتجر.',
+    extraFoot: `<p dir="rtl" style="margin:0 0 14px;${MB}font-size:12.5px;line-height:1.8;color:${MC.dim};">لا تريد استلام النشرة؟ <a href="${escHtml(unsubUrl)}" target="_blank" style="color:${MC.p};text-decoration:underline;">إلغاء الاشتراك</a></p>`,
+  });
+}
+function buildNewsletterText({ subject, text, ctaLabel, ctaUrl, unsubUrl }) {
+  return `${subject}
+
+${text}${ctaLabel && ctaUrl ? `\n\n${ctaLabel}: ${ctaUrl}` : ''}
+
+—
+لإلغاء الاشتراك من النشرة: ${unsubUrl}
 Glitch Q`;
 }

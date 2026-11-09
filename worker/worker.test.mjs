@@ -493,7 +493,7 @@ seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'OFFX', type: 'fixe
 seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'FULL', type: 'fixed', value: 300, active: true, featured: true, maxUses: 2, usedCount: 2 }] });
 [s, j] = await call('/offer', null, { method: 'GET' }); ck('offer: featured but fully used → ok:false', j.ok === false, JSON.stringify(j));
 { const ip = '9.9.9.9'; let last = 0; for (let i = 0; i < 70; i++) [last] = await call('/offer', null, { method: 'GET', ip }); ck('offer: per-IP rate limit', last === 429, last); }
-[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v7', j.v === 7, JSON.stringify(j));
+[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v8', j.v === 8, JSON.stringify(j));
 
 /* ───────── reset-password limiter, maintenance/ticker ───────── */
 seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { text: 'hello' });
@@ -501,6 +501,12 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
 [s, j] = await call('/ticker', null, { method: 'GET' }); ck('ticker served', j.text === 'hello');
 { const ip = '7.7.7.7'; calls = []; for (let i = 0; i < 10; i++) await call('/reset-password', { email: `v${i}@x.com` }, { ip });
   ck('reset-password: per-IP cap (exactly 5 mails from one IP, 10 attempts)', fs.brevo.length === 5, fs.brevo.length); }
+{ /* the link in the e-mail opens the store's own (current) reset page, not the stale Firebase-hosted copy */
+  const m = fs.brevo[0] && fs.brevo[0].htmlContent || '';
+  ck('reset-password: the e-mailed link points at the store site reset page with the one-time code', /href="https:\/\/glitchqq\.github\.io\/glitch-q\/reset\.html\?mode=resetPassword&amp;oobCode=abc"/.test(m) && !/web\.app/.test(m), (m.match(/href="[^"]*reset[^"]*"/) || [])[0]);
+  const png = readFileSync(new URL('../assets/logo/mail-header.png', import.meta.url));
+  ck('mail header banner exists, is a 1200x192 PNG and OPAQUE (RGB, no alpha) so the logo is readable on any recoloured background', png.slice(1, 4).toString() === 'PNG' && png.readUInt32BE(16) === 1200 && png.readUInt32BE(20) === 192 && png[25] === 2, `${png.readUInt32BE(16)}x${png.readUInt32BE(20)} colorType=${png[25]}`);
+}
 
 /* ───────── e-mail templates (pure functions: pulled out of worker.js and called directly) ───────── */
 {
@@ -508,19 +514,25 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
   const start = src.lastIndexOf('/* ═══', src.indexOf('function escHtml'));
   const T = new Function(src.slice(start) + ';return {buildResetEmail,buildResetText,buildCodeEmail,buildCodeText,buildLoginAlertEmail,buildLoginAlertText,codeValidity,monthEndISO,arDays};')();
   const evil = '<img src=x onerror=alert(1)>"&';
-  const link = 'https://glitch-q.web.app/reset.html?mode=resetPassword&oobCode=abc123';
+  const link = 'https://glitchqq.github.io/glitch-q/reset.html?mode=resetPassword&oobCode=abc123';
   const reset = T.buildResetEmail(link), code = T.buildCodeEmail({ product: evil, code: 'AAAA-BBBB\n<b>CCCC</b>', orderId: evil });
   const alert = T.buildLoginAlertEmail({ device: evil, place: '<script>x</script>', when: evil });
   const all = { reset, code, alert };
 
   for (const [n, h] of Object.entries(all)) {
-    ck(`mail ${n}: RTL Arabic document, dark-mode block, preheader`, /<html dir="rtl" lang="ar"/.test(h) && /prefers-color-scheme:dark/.test(h) && /display:none;max-height:0/.test(h));
-    ck(`mail ${n}: no scripts, iframes or plain-http links; the only image is the store logo with alt text`, !/<script|<iframe|http:\/\//i.test(h.replace(/xmlns="http:\/\/www\.w3\.org\/1999\/xhtml"/, '')) && [...h.matchAll(/<img\b[^>]*>/g)].every(m => /src="https:\/\/glitchqq\.github\.io\/glitch-q\/assets\/logo\/logo-email\.png"/.test(m[0]) && /alt="GLITCH Q"/.test(m[0])) && (h.match(/<img\b/g) || []).length === 1);
+    ck(`mail ${n}: RTL Arabic document, dark-native (declares a dark colour scheme), hidden preheader`, /<html dir="rtl" lang="ar"/.test(h) && /<meta name="color-scheme" content="dark">/.test(h) && /display:none;max-height:0/.test(h));
+    ck(`mail ${n}: no scripts, iframes or plain-http links; the only image is the opaque header banner with alt text`, !/<script|<iframe|http:\/\//i.test(h.replace(/xmlns="http:\/\/www\.w3\.org\/1999\/xhtml"/, '')) && [...h.matchAll(/<img\b[^>]*>/g)].every(m => /src="https:\/\/glitchqq\.github\.io\/glitch-q\/assets\/logo\/mail-header\.png"/.test(m[0]) && /alt="GLITCH Q"/.test(m[0]) && /width="600" height="96"/.test(m[0])) && (h.match(/<img\b/g) || []).length === 1);
+    /* Gmail (and others) drop dir= from <html>/<body>: every text block must carry its own direction, or Arabic sentences with Latin words come out scrambled */
+    ck(`mail ${n}: every paragraph/heading/cell that holds text carries its own dir="rtl"`, [...h.matchAll(/<(p|h1|td)\b([^>]*)>(?=[^<]*[؀-ۿ])/g)].every(m => /\bdir="rtl"/.test(m[2])), [...h.matchAll(/<(p|h1|td)\b([^>]*)>(?=[^<]*[؀-ۿ])/g)].filter(m => !/\bdir="rtl"/.test(m[2])).map(m => m[0]).join(' | '));
+    { /* what a reader sees inside Arabic text: no bare Latin word outside an isolated (dir=ltr/auto) span, code box or link */
+      const vis = h.replace(/<head>[\s\S]*?<\/head>/, '').replace(/<span dir="(?:ltr|auto)"[^>]*>[\s\S]*?<\/span>/g, ' ').replace(/<div[^>]*\bdir="(?:ltr|auto)"[^>]*>[\s\S]*?<\/div>/g, ' ').replace(/<a\b[\s\S]*?<\/a>/g, ' ').replace(/<[^>]+>/g, ' ').replace(/&#?\w+;/g, ' ');
+      ck(`mail ${n}: no Latin word sits loose inside Arabic text (isolated, so the sentence order survives any mail app)`, !/[A-Za-z]{2,}/.test(vis), (vis.match(/[A-Za-z]{2,}/g) || []).join(',')); }
+    ck(`mail ${n}: dark-native — no light card/page/box backgrounds left`, !/(?:background-color|bgcolor)[:=]"?#(?:FFFFFF|FFF|F5F7FB|EDF0F6|FFF1F3|FFF6E0|FFF0F1|E8F8F1)\b/i.test(h.replace(/background-color:#FFFFFF;"?>\s*<\/td>/g, '')));
     ck(`mail ${n}: every href is https`, [...h.matchAll(/href="([^"]*)"/g)].every(m => m[1].startsWith('https://')));
     ck(`mail ${n}: old purple palette is gone`, !/7c3aed|c026d3|4c1d95/i.test(h));
   }
-  ck('mail reset: link is in the button, the fallback and the text version', (reset.match(/href="https:\/\/glitch-q\.web\.app\/reset\.html\?mode=resetPassword&amp;oobCode=abc123"/g) || []).length === 2 && T.buildResetText(link).includes(link));
-  ck('mail reset: states the 1-hour / single-use rule and the never-ask-for-password promise', /ساعة واحدة/.test(reset) && /مرة واحدة فقط/.test(reset) && /لن يطلب منك كلمة المرور أبداً/.test(reset));
+  ck('mail reset: link is in the button, the fallback and the text version', (reset.match(/href="https:\/\/glitchqq\.github\.io\/glitch-q\/reset\.html\?mode=resetPassword&amp;oobCode=abc123"/g) || []).length === 2 && T.buildResetText(link).includes(link));
+  ck('mail reset: states the 1-hour / single-use rule and the never-ask-for-password promise', /ساعة واحدة/.test(reset) && /مرة واحدة فقط/.test(reset) && /لن نطلب منك كلمة المرور أبداً/.test(reset));
   ck('mail code: product, order id and code are escaped (no live markup)', !/<img src=x|<b>CCCC/.test(code) && /&lt;img src=x onerror=alert\(1\)&gt;&quot;&amp;/.test(code) && /&lt;b&gt;CCCC&lt;\/b&gt;/.test(code));
   ck('mail code: multi-line codes keep their line breaks', /white-space:pre-wrap/.test(code) && /AAAA-BBBB\n&lt;b&gt;/.test(code));
   ck('mail code: the preheader never contains the code', !/AAAA-BBBB/.test(code.slice(0, code.indexOf('</div>'))));
@@ -547,8 +559,8 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
   { const warn = T.buildCodeEmail({ product: 'P', code: 'C', validity: T.codeValidity('', at('2026-11-28T12:00:00Z')) });
     const last = T.buildCodeEmail({ product: 'P', code: 'C', validity: T.codeValidity('', at('2026-11-30T12:00:00Z')) });
     const gone = T.buildCodeEmail({ product: 'P', code: 'C', validity: T.codeValidity('2026-11-30', at('2026-12-02T12:00:00Z')) });
-    ck('mail code: 2 days left → warning tone, "يومان"', /يتبقى يومان/.test(warn) && /FFF6E0/i.test(warn.slice(warn.indexOf('طلبك جاهز</h1>'))));
-    ck('mail code: last day → "today is the last day"', /اليوم آخر يوم لصلاحية الكود/.test(last) && /FFF0F1/i.test(last.slice(last.indexOf('طلبك جاهز</h1>'))));
+    ck('mail code: 2 days left → warning tone, "يومان"', /يتبقى يومان/.test(warn) && /241B09/i.test(warn.slice(warn.indexOf('طلبك جاهز</h1>'))));
+    ck('mail code: last day → "today is the last day"', /اليوم آخر يوم لصلاحية الكود/.test(last) && /2A1015/i.test(last.slice(last.indexOf('طلبك جاهز</h1>'))));
     ck('mail code: already past the deadline → says expired', /انتهت مدة صلاحية هذا الكود/.test(gone) && !/يتبقى/.test(gone)); }
   { /* admin.js computes the same date for the notification the customer sees */
     const adm = readFileSync(new URL('../admin.js', import.meta.url), 'utf8');
@@ -558,6 +570,102 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
     ck('validity: admin.js codeUntil() agrees with the Worker on every probe date', !!codeUntil && probes.every(d => codeUntil(Date.parse(d)) === T.monthEndISO(Date.parse(d))), probes.map(d => codeUntil && codeUntil(Date.parse(d)) + '/' + T.monthEndISO(Date.parse(d))).join(' ')); 
     ck('validity: completing an order stores the deadline once (never overwritten)', /if\(!o\.codeValidUntil\)upd0\.codeValidUntil=\(notif&&notif\.until\)\|\|codeUntil\(\)/.test(adm)); }
   ck('mail text versions carry the same facts', T.buildCodeText({ product: 'P', code: 'C-1', orderId: 'O1' }).includes('C-1') && T.buildLoginAlertText({ device: 'D', place: 'Pl', when: 'W' }).includes('الجهاز: D'));
+}
+
+/* ───────── newsletter: owner composer + signed unsubscribe ───────── */
+{
+  const sha = async x => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(x)))).map(b => b.toString(16).padStart(2, '0')).join('');
+  const sub = async (email, extra = {}) => { const id = (await sha(email)).slice(0, 40); put('newsletter/' + id, { email, date: '2026-11-01', ...extra }); return id; };
+  const raw = async (path, { method = 'GET', ip = fresh(), origin } = {}) => {
+    const h = { 'CF-Connecting-IP': ip }; if (origin) h.Origin = origin;
+    const r = await worker.fetch(new Request('https://w.example' + path, { method, headers: h }), env, { waitUntil() {} });
+    return [r.status, await r.text(), r.headers];
+  };
+  const mail = { subject: 'عرض نهاية الأسبوع', preheader: 'خصم على بطاقات PlayStation', body: 'مرحباً بك!\n\nخصم 10% على كل البطاقات حتى الجمعة.\n\n## ما الجديد\n\n- بطاقات PlayStation Plus\n- كوبون WEEKEND\n\nلا تفوّت العرض.', ctaLabel: 'تسوّق الآن', ctaUrl: 'https://glitchqq.github.io/glitch-q/' };
+  const nlCall = async (over, tokenOver) => call('/admin/newsletter', { idToken: tokenOver === undefined ? await adm() : tokenOver, ...mail, ...over });
+  seed();
+  const ids = []; for (const e of ['a1@x.com', 'a2@x.com', 'a3@x.com', 'a4@x.com', 'a5@x.com']) ids.push(await sub(e));
+  put('newsletter/legacyDocId01', { email: 'legacy@x.com' }); put('newsletter/badmailDocId1', { email: 'not-an-email' });
+
+  let [st, jj] = await nlCall({ mode: 'send', campaign: 'c1abcdef' }, null); ck('newsletter: no token → 401', st === 401);
+  [st, jj] = await nlCall({ mode: 'send', campaign: 'c1abcdef' }, await tok('u1')); ck('newsletter: ordinary customer → 403, nothing sent', st === 403 && fs.brevo.length === 0);
+  [st] = await nlCall({ mode: 'send', campaign: 'c1abcdef' }, await adm({ firebase: { sign_in_provider: 'password' } })); ck('newsletter: password-login admin → 403', st === 403);
+  [st] = await nlCall({ mode: 'bogus' }); ck('newsletter: unknown mode → 400', st === 400);
+  [st] = await nlCall({ mode: 'preview', subject: 'x' }); ck('newsletter: too-short subject → 400', st === 400);
+  [st] = await nlCall({ mode: 'preview', body: 'قصير' }); ck('newsletter: too-short body → 400', st === 400);
+  [st] = await nlCall({ mode: 'preview', ctaUrl: 'javascript:alert(1)' }); ck('newsletter: a non-https button link is refused', st === 400);
+  [st] = await nlCall({ mode: 'preview', ctaUrl: 'http://x.com/a' }); ck('newsletter: an http button link is refused', st === 400);
+  [st] = await nlCall({ mode: 'preview', ctaLabel: '', ctaUrl: 'https://x.com/a' }); ck('newsletter: a link without a label is refused', st === 400);
+
+  // preview: HTML only, nothing leaves the Worker
+  const b0 = fs.brevo.length;
+  [st, jj] = await nlCall({ mode: 'preview' });
+  const H = jj.html || '';
+  ck('newsletter preview: returns the dark crimson mail, sends nothing', st === 200 && /<html dir="rtl"/.test(H) && /mail-header\.png/.test(H) && fs.brevo.length === b0 && !/\{\{params/.test(H));
+  ck('newsletter preview: subject is the headline, paragraphs/heading/list are rendered, button points at the link', /عرض نهاية الأسبوع<\/h1>/.test(H) && /<h2[^>]*>ما الجديد<\/h2>/.test(H) && (H.match(/&#9679;<\/td>/g) || []).length === 2 && /href="https:\/\/glitchqq\.github\.io\/glitch-q\/"[^>]*>تسوّق الآن/.test(H));
+  ck('newsletter preview: Latin words are isolated (PlayStation Plus, WEEKEND, 10%)', /<span dir="ltr"[^>]*>PlayStation Plus<\/span>/.test(H) && /<span dir="ltr"[^>]*>WEEKEND<\/span>/.test(H) && /<span dir="ltr"[^>]*>10%<\/span>/.test(H));
+  ck('newsletter preview: carries an unsubscribe link slot', /إلغاء الاشتراك<\/a>/.test(H));
+  [st, jj] = await nlCall({ mode: 'preview', subject: 'خصم <script>alert(1)</script> {{params.unsub}}', body: 'سطر <img src=x onerror=alert(1)> {{x}} {%y%}\n\nثاني' });
+  ck('newsletter: owner text is escaped and template tokens are stripped', !/<script|<img src=x|\{\{|\{%/.test(jj.html) && /&lt;script&gt;/.test(jj.html));
+
+  // test send: exactly one e-mail, to the owner, with a working unsubscribe link
+  [st, jj] = await nlCall({ mode: 'test' });
+  let bm = fs.brevo[fs.brevo.length - 1] || {};
+  ck('newsletter test: one version, addressed to the OWNER only, "[تجربة]" subject', st === 200 && bm.messageVersions && bm.messageVersions.length === 1 && bm.messageVersions[0].to[0].email === 'kadirom7k777@gmail.com' && bm.subject.startsWith('[تجربة]') && !bm.to, JSON.stringify(bm).slice(0, 200));
+  ck('newsletter test: body uses the per-recipient placeholder and a plain-text part', /href="\{\{params\.unsub\}\}"/.test(bm.htmlContent) && /\{\{params\.unsub\}\}/.test(bm.textContent) && bm.tags[0] === 'newsletter');
+  const link0 = bm.messageVersions[0].params.unsub;
+  ck('newsletter test: unsubscribe link is on the Worker origin with a signed token', /^https:\/\/w\.example\/newsletter\/unsubscribe\?i=[a-f0-9]{40}&t=[a-f0-9]{32}$/.test(link0), link0);
+
+  // send in chunks and continue the same campaign next day
+  fs.brevo.length = 0;
+  [st, jj] = await nlCall({ mode: 'send', campaign: 'c1abcdef', max: 3 });
+  const vers = fs.brevo.flatMap(b => b.messageVersions);
+  ck('newsletter send: respects the per-run cap (3 of 6 valid), skips the invalid address, reports the rest', st === 200 && jj.sent === 3 && jj.remaining === 3 && jj.total === 6 && vers.length === 3 && !vers.some(v => v.to[0].email === 'not-an-email'), JSON.stringify(jj));
+  ck('newsletter send: every recipient gets their OWN signed link (id matches the stored doc)', (await Promise.all(vers.map(async v => { const m = v.params.unsub.match(/i=([^&]+)&t=([a-f0-9]{32})/); return m && fs.docs.has('newsletter/' + m[1]) && JSON.stringify(get('newsletter/' + m[1]).email) === JSON.stringify(v.to[0].email); }))).every(Boolean) && new Set(vers.map(v => v.params.unsub)).size === 3);
+  ck('newsletter send: sent subscribers are marked with the campaign id', [...fs.docs.keys()].filter(k => k.startsWith('newsletter/') && get(k).lastCampaign === 'c1abcdef').length === 3);
+  fs.brevo.length = 0;
+  [st, jj] = await nlCall({ mode: 'send', campaign: 'c1abcdef', max: 250 });
+  const vers2 = fs.brevo.flatMap(b => b.messageVersions);
+  ck('newsletter send: continuing the same campaign sends only to those not yet reached (no duplicates)', st === 200 && jj.sent === 3 && jj.remaining === 0 && jj.already === 3 && vers2.length === 3 && !vers2.some(v => vers.some(w => w.to[0].email === v.to[0].email)), JSON.stringify(jj));
+  fs.brevo.length = 0;
+  [st, jj] = await nlCall({ mode: 'send', campaign: 'c1abcdef' });
+  ck('newsletter send: a third press sends nothing', st === 200 && jj.sent === 0 && fs.brevo.length === 0);
+  [st] = await nlCall({ mode: 'send', campaign: '' }); ck('newsletter send: a campaign id is required', st === 400);
+
+  // chunking: >100 recipients are split into several Brevo calls (≤ 100 each)
+  for (let i = 0; i < 230; i++) await sub(`bulk${i}@x.com`);
+  fs.brevo.length = 0; const c0 = calls.length;
+  [st, jj] = await nlCall({ mode: 'send', campaign: 'cBulk0001', max: 1000 });
+  const subreq = calls.length - c0;
+  ck('newsletter send: batches of at most 100 per Brevo call', st === 200 && fs.brevo.length >= 3 && fs.brevo.every(b => b.messageVersions.length <= 100) && fs.brevo.flatMap(b => b.messageVersions).length === jj.sent, `${fs.brevo.length} calls, sent ${jj.sent}`);
+  ck('newsletter send: a full 1000-recipient run uses well under the 50-subrequest Worker limit', jj.sent > 200 && subreq <= 30, `subrequests=${subreq} for ${jj.sent}`);
+
+  // provider failure: stops, reports, marks nothing for the failed batch
+  seed(); for (const e of ['f1@x.com', 'f2@x.com']) await sub(e);
+  fs.failBrevo = true;
+  [st, jj] = await nlCall({ mode: 'send', campaign: 'cFail0001' });
+  fs.failBrevo = false;
+  ck('newsletter send: provider refusal → 502, nothing marked as sent', st === 502 && jj.ok === false && jj.sent === 0 && [...fs.docs.keys()].every(k => !k.startsWith('newsletter/') || !get(k).lastCampaign), JSON.stringify(jj));
+  [st, jj] = await nlCall({ mode: 'send', campaign: 'cFail0001' });
+  ck('newsletter send: after the outage the same campaign delivers to both', st === 200 && jj.sent === 2);
+
+  // ── unsubscribe link: no Origin needed, signed, confirm-then-delete, idempotent ──
+  seed(); const idU = await sub('leaver@x.com'); const idK = await sub('keeper@x.com');
+  const mkLink = async id => { const b = fs.brevo.length; const emailOf = get('newsletter/' + id).email; await nlCall({ mode: 'send', campaign: 'cU' + id.slice(0, 8), max: 1000 }); const v = fs.brevo.slice(b).flatMap(x => x.messageVersions).find(v => v.to[0].email === emailOf); return v.params.unsub.replace('https://w.example', ''); };
+  const linkU = await mkLink(idU), linkK = await mkLink(idK);
+  let r = await raw(linkU);
+  ck('unsubscribe GET: works with no Origin header, shows a confirm page, deletes NOTHING', r[0] === 200 && /نعم، ألغِ اشتراكي/.test(r[1]) && fs.docs.has('newsletter/' + idU) && /text\/html/.test(r[2].get('content-type')) && /default-src 'none'/.test(r[2].get('content-security-policy')));
+  ck('unsubscribe page: carries no e-mail address, no-store, not framable', !/leaver@x\.com/.test(r[1]) && r[2].get('cache-control') === 'no-store' && r[2].get('x-frame-options') === 'DENY');
+  r = await raw(linkU, { method: 'POST' });
+  ck('unsubscribe POST: removes that subscriber only', r[0] === 200 && /تم إلغاء اشتراكك/.test(r[1]) && !fs.docs.has('newsletter/' + idU) && fs.docs.has('newsletter/' + idK));
+  r = await raw(linkU, { method: 'POST' }); ck('unsubscribe POST again: still fine (idempotent)', r[0] === 200 && /تم إلغاء اشتراكك/.test(r[1]));
+  r = await raw(linkK.replace(/t=[a-f0-9]{32}/, 't=' + '0'.repeat(32)), { method: 'POST' }); ck('unsubscribe: a wrong token is refused and deletes nothing', r[0] === 400 && fs.docs.has('newsletter/' + idK));
+  r = await raw(linkU.replace(/i=[^&]+/, 'i=' + idK), { method: 'POST' }); ck("unsubscribe: someone else's id with this token is refused", r[0] === 400 && fs.docs.has('newsletter/' + idK));
+  r = await raw('/newsletter/unsubscribe?i=' + idK, { method: 'POST' }); ck('unsubscribe: missing token is refused', r[0] === 400 && fs.docs.has('newsletter/' + idK));
+  r = await raw(linkK, { method: 'PUT' }); ck('unsubscribe: other methods → 405', r[0] === 405);
+  { let last; const ip = '9.9.9.9'; for (let i = 0; i < 32; i++) last = await raw(linkK.replace(/t=[a-f0-9]{32}/, 't=bad'), { ip }); ck('unsubscribe: per-IP limiter answers 429 after 30 tries', last[0] === 429); }
+  r = await raw('/newsletter/subscribe', { method: 'POST' }); ck('other routes still demand an allowed Origin (only unsubscribe is exempt)', r[0] === 403);
+  [st] = await call('/newsletter/subscribe', { email: 'leaver@x.com' }); ck('a person who unsubscribed can subscribe again', st === 200 && fs.docs.has('newsletter/' + idU));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

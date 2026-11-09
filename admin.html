@@ -402,6 +402,15 @@ body{background:radial-gradient(900px 520px at 100% -10%,rgba(212,6,42,.16),tran
 .ins-it b{color:var(--text)}
 @media(max-width:700px){.stat-val{font-size:22px}.eco-row{font-size:12px}}
 @media(max-width:480px){.tb-title{font-size:18px;white-space:nowrap}}
+.ln-list{margin:6px 0 0;padding:0 18px 0 0;font-size:12.5px;line-height:1.9;color:var(--mid)}
+.ln-n{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--violet);color:#fff;font-size:12px;font-weight:800;margin-inline-end:8px}
+.ln-chk{display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 0;cursor:pointer}
+.ln-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.ln-bar{height:8px;background:var(--brd);border-radius:99px;overflow:hidden;margin:8px 0}.ln-bar i{display:block;height:100%;width:0;background:var(--violet);transition:width .25s}
+.ln-n{border-radius:50%!important;clip-path:none!important;flex-shrink:0}
+.ln-grid .stat-card{display:flex;flex-direction:column;gap:2px;padding:12px 14px}
+.ln-grid .stat-val{font-size:22px}
+.nl-frame{width:100%;height:620px;border:1px solid var(--brd);border-radius:12px;background:#050507}
 </style>
 </head>
 <body>
@@ -449,6 +458,7 @@ body{background:radial-gradient(900px 520px at 100% -10%,rgba(212,6,42,.16),tran
       <button class="sb-item" onclick="switchTab('send')"><i class="fa-solid fa-paper-plane"></i> إرسال كود يدوي</button>
       <button class="sb-item" onclick="switchTab('regions')"><i class="fa-solid fa-earth-africa"></i> المناطق (الريجنات)</button>
       <button class="sb-item" onclick="switchTab('settings')"><i class="fa-solid fa-sliders"></i> إعدادات الموقع</button>
+      <button class="sb-item" onclick="switchTab('launch')"><i class="fa-solid fa-rocket"></i> إطلاق جديد</button>
     </nav>
     <div class="sb-footer">
       <div class="sb-user">
@@ -773,6 +783,37 @@ body{background:radial-gradient(900px 520px at 100% -10%,rgba(212,6,42,.16),tran
 
       <!-- NEWSLETTER -->
       <div id="tab-newsletter" class="tab-panel">
+        <div class="sec" id="nlComposer">
+          <div class="sec-title"><i class="fa-solid fa-pen-to-square"></i> اكتب نشرة جديدة</div>
+          <label class="form-label" for="nlSubject">عنوان الرسالة <span class="pf-hint" style="display:inline">(يظهر كموضوع وكعنوان كبير)</span></label>
+          <input type="text" id="nlSubject" class="adm-inp" maxlength="120" placeholder="مثال: عرض نهاية الأسبوع على بطاقات PlayStation" oninput="nlDirty()">
+          <label class="form-label" for="nlPre" style="margin-top:12px">سطر المعاينة <span class="pf-hint" style="display:inline">(اختياري — يظهر بجانب الموضوع في قائمة البريد)</span></label>
+          <input type="text" id="nlPre" class="adm-inp" maxlength="140" placeholder="جملة قصيرة تشجّع على فتح الرسالة" oninput="nlDirty()">
+          <label class="form-label" for="nlBody" style="margin-top:12px">نص الرسالة</label>
+          <textarea id="nlBody" class="adm-inp" rows="11" maxlength="6000" style="min-height:220px;resize:vertical;line-height:1.9" placeholder="اكتب رسالتك هنا…&#10;&#10;سطر فارغ = فقرة جديدة." oninput="nlDirty()"></textarea>
+          <div class="pf-hint">سطر فارغ = فقرة جديدة · ابدأ السطر بـ <b>##</b> لعنوان فرعي · الأسطر التي تبدأ بـ <b>-</b> تصير قائمة نقطية · <span id="nlLen">0</span>/6000</div>
+          <div class="form-row" style="margin-top:12px">
+            <div style="flex:1"><label class="form-label" for="nlCta">نص الزر (اختياري)</label><input type="text" id="nlCta" class="adm-inp" maxlength="40" placeholder="تسوّق الآن" oninput="nlDirty()"></div>
+            <div style="flex:2"><label class="form-label" for="nlCtaUrl">رابط الزر (https فقط)</label><input type="url" id="nlCtaUrl" class="adm-inp" dir="ltr" placeholder="https://glitchqq.github.io/glitch-q" oninput="nlDirty()"></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+            <button class="btn btn-o" id="nlPreviewBtn" onclick="nlPreview()"><i class="fa-solid fa-eye"></i> معاينة</button>
+            <button class="btn btn-c" id="nlTestBtn" onclick="nlTest()"><i class="fa-solid fa-paper-plane"></i> إرسال تجربة إلى بريدي</button>
+          </div>
+          <div id="nlMsg" class="pf-hint" style="margin-top:10px"></div>
+          <div id="nlPreviewBox" style="display:none;margin-top:14px"><div class="pf-hint" style="margin-bottom:6px">هكذا ستصل الرسالة (المعاينة لا ترسل شيئاً):</div><iframe id="nlFrame" class="nl-frame" sandbox="" title="معاينة النشرة"></iframe></div>
+        </div>
+
+        <div class="sec" id="nlSendBox" style="border-color:rgba(245,34,63,.35)">
+          <div class="sec-title"><i class="fa-solid fa-bullhorn"></i> أرسل للمشتركين</div>
+          <p class="pf-hint" style="margin-bottom:10px">يُفتح الإرسال بعد أن ترسل <b>تجربة لبريدك</b> وتتأكد أن الرسالة سليمة (يجب أن يكون النص هو نفسه). كل مشترك يصله رابط إلغاء اشتراك خاص به. من وصلته نفس النشرة من قبل يُتخطّى تلقائياً، فلن تصل مرتين.</p>
+          <div class="form-row">
+            <div style="flex:1"><label class="form-label" for="nlMax">أقصى عدد في هذه المرة</label><input type="number" id="nlMax" class="adm-inp" min="1" max="1000" value="250"><div class="pf-hint">حساب Brevo المجاني يسمح بنحو 300 رسالة يومياً (تشمل أكواد الطلبات وإعادة التعيين). إن بقي مشتركون، اضغط الإرسال غداً وستكمل من حيث توقفت.</div></div>
+          </div>
+          <button class="btn btn-r" id="nlSendBtn" onclick="nlSend()" disabled style="margin-top:8px"><i class="fa-solid fa-bullhorn"></i> إرسال النشرة للمشتركين</button>
+          <div id="nlSendMsg" style="margin-top:12px"></div>
+        </div>
+
         <div class="sec">
           <div class="sec-title"><i class="fa-solid fa-envelope"></i> النشرة البريدية</div>
           <div id="nlStats" style="margin-bottom:14px"></div>
@@ -910,6 +951,46 @@ body{background:radial-gradient(900px 520px at 100% -10%,rgba(212,6,42,.16),tran
           <hr style="border:none;border-top:1px solid var(--brd);margin:16px 0">
           <label class="form-label">تصدير بيانات الطلبات</label>
           <button onclick="exportOrders()" class="btn btn-o"><i class="fa-solid fa-download"></i> تصدير CSV</button>
+        </div>
+      </div>
+
+      <!-- LAUNCH RESET (owner-run, one time) -->
+      <div id="tab-launch" class="tab-panel">
+        <div class="sec" style="border-color:rgba(255,92,108,.45)">
+          <div class="sec-title" style="color:var(--red)"><i class="fa-solid fa-rocket"></i> إطلاق جديد — البدء من الصفر</div>
+          <p class="pf-hint" style="margin-bottom:14px">أداة تُستخدم <b>مرة واحدة</b> عند الإطلاق الرسمي: تُصفّر نقاط كل الحسابات وتحذف كل الطلبات التجريبية ليبدأ المتجر نظيفاً. لا يحدث أي شيء إلا بعد أن تفحص الأرقام، وتنزّل نسخة احتياطية، وتكتب عبارة التأكيد بنفسك.</p>
+          <div class="form-row" style="align-items:stretch">
+            <div class="adm-card" style="flex:1;margin:0"><div class="adm-card-title" style="color:var(--red)"><i class="fa-solid fa-eraser"></i> سيتم</div>
+              <ul class="ln-list"><li>تصفير النقاط وصندوق المكافآت في <b>كل الحسابات</b></li><li>تصفير عدّادات الطلبات والإنفاق والإحالات والسلسلة اليومية والعجلة والإنجازات</li><li>حذف <b>كل الطلبات</b> وسجلّ الأرباح وطلبات المكافآت</li></ul></div>
+            <div class="adm-card" style="flex:1;margin:0"><div class="adm-card-title" style="color:var(--green)"><i class="fa-solid fa-shield-halved"></i> لن يُمسّ أبداً</div>
+              <ul class="ln-list"><li>الحسابات نفسها وكلمات مرورها</li><li>المنتجات والأقسام والأسعار وأسعار التكلفة وقواعد النقاط</li><li>الكوبونات والنشرة البريدية والتقييمات والبلاغات والإعدادات</li></ul></div>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-title"><span class="ln-n">1</span> افحص ما سيتأثر</div>
+          <button class="btn btn-o" id="lnScanBtn" onclick="launchScan()"><i class="fa-solid fa-magnifying-glass"></i> فحص (قراءة فقط)</button>
+          <div id="lnScan" style="margin-top:14px"></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-title"><span class="ln-n">2</span> نزّل نسخة احتياطية</div>
+          <p class="pf-hint" style="margin-bottom:12px">ملف JSON يحوي كل الطلبات (بما فيها الأكواد المُسلَّمة) وسجلّ الأرباح وطلبات المكافآت وحسابات المستخدمين كما هي الآن. احتفظ به في مكان آمن — يحوي بيانات حساسة.</p>
+          <button class="btn btn-c" id="lnBackupBtn" onclick="launchBackup()" disabled><i class="fa-solid fa-download"></i> تنزيل النسخة الاحتياطية</button>
+          <span id="lnBackupMsg" class="pf-hint" style="margin-inline-start:10px"></span>
+        </div>
+
+        <div class="sec" style="border-color:rgba(255,92,108,.45)">
+          <div class="sec-title" style="color:var(--red)"><span class="ln-n" style="background:var(--red);color:#fff">3</span> أكّد ونفّذ</div>
+          <div class="form-row">
+            <div style="flex:1"><label class="form-label">النقاط بعد التصفير</label><input type="number" id="lnPts" class="adm-inp" min="0" max="100" value="0"><div class="pf-hint">0 = تصفير كامل. (الحسابات الجديدة تبدأ بـ 5 نقاط ترحيبية.)</div></div>
+          </div>
+          <label class="ln-chk"><input type="checkbox" id="lnNotifs" checked> مسح إشعارات العملاء أيضاً (تحوي أكواد وأرقام الطلبات القديمة)</label>
+          <label class="ln-chk"><input type="checkbox" id="lnStats"> تصفير عدّاد الزوار</label>
+          <label class="form-label" style="margin-top:12px">للتأكيد اكتب العبارة: <b style="color:var(--red)">ابدأ من الصفر</b></label>
+          <input type="text" id="lnPhrase" class="adm-inp" autocomplete="off" placeholder="ابدأ من الصفر" oninput="launchGate()">
+          <button class="btn btn-r" id="lnRunBtn" onclick="launchRun()" disabled style="margin-top:6px"><i class="fa-solid fa-rocket"></i> تنفيذ الإطلاق الجديد</button>
+          <div id="lnProg" style="margin-top:14px"></div>
         </div>
       </div>
 

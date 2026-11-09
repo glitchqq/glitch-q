@@ -256,3 +256,186 @@ async function renderInsights(orders,users){
   };
   if(typeof TAB_TITLES==='object')TAB_TITLES.economy='الأرباح والنقاط';
 })();
+
+/* ══ LAUNCH RESET ("إطلاق جديد") ══
+   One-time tool the OWNER runs from this panel: zero every account's points and counters and delete all orders, so the store
+   starts clean. Nothing is written until: (1) a read-only scan has been shown, (2) a JSON backup has been downloaded,
+   (3) the owner typed the confirmation phrase. Writes are chunked batches; a failure part-way is safe to re-run.
+   Never touched: accounts/passwords, products, categories, prices, economics, coupons, newsletter, reviews, reports, settings. */
+const LAUNCH_PHRASE='ابدأ من الصفر';
+const LN_CHUNK=400;                                   /* Firestore allows 500 writes per batch */
+let lnData=null,lnBacked=false,lnRunning=false;
+
+/* the fields that make a customer "brand new" again (name, e-mail, nick, avatar, region, favourites, referredBy… stay) */
+function launchUserFields(pts,clearNotifs){
+  const f={points:pts,rewardPool:0,orders:0,totalSpend:0,redeemed:0,referrals:0,refRewarded:false,
+    streak:0,lastLogin:null,spins:0,lastSpinAt:0,gifts:0,shares:0,claimedMilestones:[],badges:['newcomer']};
+  if(clearNotifs)f.notifications=[];
+  return f;
+}
+function launchReset(){                               /* called when the tab opens */
+  lnData=null;lnBacked=false;
+  const set=(id,h)=>{const el=document.getElementById(id);if(el)el.innerHTML=h;};
+  set('lnScan','');set('lnBackupMsg','');set('lnProg','');
+  const p=document.getElementById('lnPhrase');if(p)p.value='';
+  const b=document.getElementById('lnBackupBtn');if(b)b.disabled=true;
+  launchGate();
+}
+function launchGate(){
+  const run=document.getElementById('lnRunBtn');if(!run)return;
+  const typed=(document.getElementById('lnPhrase').value||'').trim()===LAUNCH_PHRASE;
+  run.disabled=!(lnData&&lnBacked&&typed&&!lnRunning);
+}
+async function launchScan(){
+  const box=document.getElementById('lnScan'),btn=document.getElementById('lnScanBtn');
+  box.innerHTML=loading();btn.disabled=true;lnBacked=false;launchGate();
+  document.getElementById('lnBackupMsg').textContent='';
+  try{
+    const read=async c=>(await db.collection(c).get()).docs.map(d=>({id:d.id,data:d.data()}));
+    const [users,orders,econ,claims]=await Promise.all([read('users'),read('orders'),read('order_econ'),read('reward_claims')]);
+    let log=null;try{const l=await db.collection('settings').doc('launchLog').get();log=l.exists?l.data():null;}catch(e){}
+    lnData={users,orders,econ,claims,log,at:new Date().toISOString()};
+    const pts=users.reduce((s,u)=>s+(Math.max(0,Math.floor(Number(u.data.points)||0))),0);
+    const pool=users.reduce((s,u)=>s+(Number(u.data.rewardPool)||0),0);
+    const withPts=users.filter(u=>(Number(u.data.points)||0)>0).length;
+    const nots=users.reduce((s,u)=>s+((u.data.notifications||[]).length),0);
+    const byStatus={};orders.forEach(o=>{const k=o.data.status||'—';byStatus[k]=(byStatus[k]||0)+1;});
+    const cell=(n,l,c)=>`<div class="stat-card"><span class="stat-val"${c?` style="color:${c}"`:''}>${esc(Number(n).toLocaleString('en-US'))}</span><span class="stat-lbl">${esc(l)}</span></div>`;
+    box.innerHTML=`<div class="ln-grid">
+      ${cell(users.length,'حساب (لن يُحذف)')}${cell(withPts,'حساب لديه نقاط','var(--gold)')}${cell(pts,'مجموع النقاط → سيصبح 0','var(--gold)')}${cell(pool,'صندوق مكافآت (دج) → 0','var(--gold)')}
+      ${cell(orders.length,'طلب → سيُحذف','var(--red)')}${cell(econ.length,'سجل أرباح → سيُحذف','var(--red)')}${cell(claims.length,'طلب مكافأة → سيُحذف','var(--red)')}${cell(nots,'إشعار عملاء (اختياري)')}
+    </div>
+    ${orders.length?`<p class="pf-hint" style="margin-top:10px">حالات الطلبات: ${Object.entries(byStatus).map(([k,v])=>`${esc(k)} ${esc(v)}`).join(' · ')}</p>`:''}
+    ${orders.some(o=>o.data.status!=='done'&&o.data.status!=='cancelled'&&o.data.status!=='rejected')?`<div class="adm-card" style="border-color:var(--gold);margin-top:10px"><i class="fa-solid fa-triangle-exclamation" style="color:var(--gold)"></i> يوجد طلبات غير مكتملة (قيد الانتظار/المعالجة). إن كان بينها طلب <b>حقيقي</b> لم تسلّمه فسلّمه أولاً — الحذف نهائي.</div>`:''}
+    ${log?`<div class="adm-card" style="border-color:var(--red);margin-top:10px"><i class="fa-solid fa-clock-rotate-left" style="color:var(--red)"></i> سبق تنفيذ الإطلاق الجديد في <b>${esc(String(log.at||'').slice(0,16).replace('T',' '))}</b>. التنفيذ مرة أخرى سيحذف كل ما جرى منذ ذلك الوقت.</div>`:''}`;
+    document.getElementById('lnBackupBtn').disabled=false;
+  }catch(e){
+    lnData=null;box.innerHTML=errState('تعذّر الفحص: '+(e&&e.message||'خطأ')+' — تأكد أن قواعد Firestore منشورة وأنك مسجّل بحساب المالك.');
+  }finally{btn.disabled=false;launchGate();}
+}
+function launchBackup(){
+  if(!lnData){aToast('افحص أولاً','warn');return;}
+  const dump=rows=>rows.map(r=>({id:r.id,...r.data}));
+  const payload={app:'glitch-q',kind:'launch-reset-backup',exportedAt:new Date().toISOString(),
+    note:'نسخة قبل «إطلاق جديد». تحوي أكواد مُسلَّمة وبيانات عملاء — احتفظ بها بأمان.',
+    counts:{users:lnData.users.length,orders:lnData.orders.length,order_econ:lnData.econ.length,reward_claims:lnData.claims.length},
+    users:dump(lnData.users),orders:dump(lnData.orders),order_econ:dump(lnData.econ),reward_claims:dump(lnData.claims)};
+  const blob=new Blob([JSON.stringify(payload,null,1)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='glitchq-backup-'+new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')+'.json';
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);
+  lnBacked=true;
+  document.getElementById('lnBackupMsg').innerHTML='<i class="fa-solid fa-circle-check" style="color:var(--green)"></i> تم تنزيل النسخة ('+Math.round(blob.size/1024).toLocaleString('en-US')+' KB) — تأكد أنها في جهازك';
+  launchGate();
+}
+async function launchRun(){
+  if(lnRunning||!lnData||!lnBacked)return;
+  if((document.getElementById('lnPhrase').value||'').trim()!==LAUNCH_PHRASE){aToast('اكتب عبارة التأكيد كما هي','warn');return;}
+  if(!RL.ok('launch-run',2,300000)){aToast('انتظر قليلاً','warn');return;}
+  const keepPts=Math.max(0,Math.min(100,Math.floor(Number(document.getElementById('lnPts').value)||0)));
+  const clearNotifs=document.getElementById('lnNotifs').checked,clearStats=document.getElementById('lnStats').checked;
+  if(!confirm(`سيتم الآن: حذف ${lnData.orders.length} طلب وتصفير ${lnData.users.length} حساب. هذا نهائي. هل نسخت الملف الاحتياطي؟`))return;
+  lnRunning=true;launchGate();
+  const prog=document.getElementById('lnProg');
+  const total=lnData.orders.length+lnData.econ.length+lnData.claims.length+lnData.users.length+(clearStats?1:0);
+  let done=0;
+  const draw=(msg,err)=>{prog.innerHTML=`<div class="ln-bar"><i style="width:${total?Math.round(done/total*100):100}%"></i></div><div class="pf-hint"${err?' style="color:var(--red)"':''}>${esc(msg)} (${done.toLocaleString('en-US')} / ${total.toLocaleString('en-US')})</div>`;};
+  const chunked=async(label,rows,mk)=>{
+    for(let i=0;i<rows.length;i+=LN_CHUNK){
+      const b=db.batch();rows.slice(i,i+LN_CHUNK).forEach(r=>mk(b,r));
+      await b.commit();done+=Math.min(LN_CHUNK,rows.length-i);draw(label);
+    }
+  };
+  let step='';
+  try{
+    draw('بدء التنفيذ…');
+    step='حذف الطلبات';          await chunked(step,lnData.orders,(b,r)=>b.delete(db.collection('orders').doc(r.id)));
+    step='حذف سجلّ الأرباح';     await chunked(step,lnData.econ,(b,r)=>b.delete(db.collection('order_econ').doc(r.id)));
+    step='حذف طلبات المكافآت';   await chunked(step,lnData.claims,(b,r)=>b.delete(db.collection('reward_claims').doc(r.id)));
+    const f=launchUserFields(keepPts,clearNotifs);
+    step='تصفير الحسابات';       await chunked(step,lnData.users,(b,r)=>b.update(db.collection('users').doc(r.id),f));
+    if(clearStats){step='تصفير عدّاد الزوار';await db.collection('settings').doc('stats').set({visitors:0},{merge:true});done++;draw(step);}
+    step='تسجيل العملية';
+    const who=(typeof auth!=='undefined'&&auth.currentUser&&auth.currentUser.email)||'';
+    await db.collection('settings').doc('launchLog').set({at:new Date().toISOString(),by:who,orders:lnData.orders.length,order_econ:lnData.econ.length,reward_claims:lnData.claims.length,users:lnData.users.length,pointsAfter:keepPts,clearedNotifications:clearNotifs});
+    /* verify against the database, not against what we meant to write */
+    const left=async c=>(await db.collection(c).get()).docs.length;
+    const [o,e,c,us]=await Promise.all([left('orders'),left('order_econ'),left('reward_claims'),db.collection('users').get()]);
+    const dirty=us.docs.filter(d=>{const u=d.data();return (Number(u.points)||0)!==keepPts||(Number(u.rewardPool)||0)!==0||(Number(u.orders)||0)!==0;}).length;
+    const good=o===0&&e===0&&c===0&&dirty===0;
+    prog.innerHTML=`<div class="adm-card" style="border-color:${good?'var(--green)':'var(--red)'}"><i class="fa-solid ${good?'fa-circle-check':'fa-triangle-exclamation'}" style="color:${good?'var(--green)':'var(--red)'}"></i> ${good
+      ?`<b>تم الإطلاق الجديد.</b> الطلبات المتبقية: 0 · سجل الأرباح: 0 · طلبات المكافآت: 0 · حسابات فيها نقاط غير ${keepPts}: 0 (من ${us.docs.length.toLocaleString('en-US')} حساب).`
+      :`<b>اكتمل التنفيذ لكن التحقق وجد بقايا:</b> طلبات ${o} · أرباح ${e} · مكافآت ${c} · حسابات غير مصفّرة ${dirty}. أعد الفحص ثم نفّذ مرة أخرى (آمن).`}</div>`;
+    aToast(good?'تم الإطلاق الجديد':'بقيت عناصر — أعد التنفيذ',good?'ok':'warn');
+    lnData=null;lnBacked=false;document.getElementById('lnBackupBtn').disabled=true;document.getElementById('lnScan').innerHTML='';
+    document.getElementById('lnPhrase').value='';
+  }catch(err){
+    draw('توقف عند «'+step+'»: '+(err&&err.message||'خطأ')+' — ما نُفّذ قبلها تم، وإعادة الفحص ثم التنفيذ آمنة.',true);
+    aToast('توقف التنفيذ: '+step,'err');
+    lnData=null;lnBacked=false;document.getElementById('lnBackupBtn').disabled=true;   /* the lists are stale now: a retry starts from a fresh scan + backup */
+  }finally{lnRunning=false;launchGate();}
+}
+window.launchScan=launchScan;window.launchBackup=launchBackup;window.launchRun=launchRun;window.launchGate=launchGate;window.launchReset=launchReset;
+
+/* ══ NEWSLETTER COMPOSER ══
+   The page only collects the text. Rendering (preview), the test mail and the real send all happen in the Worker, which checks
+   that the caller is the owner. The real send unlocks only after a test mail for the SAME content went out to the owner. */
+const NL_ERR={'Subject required':'اكتب عنواناً للرسالة (3 أحرف على الأقل)','Message is too short':'نص الرسالة قصير جداً','The button needs a label and an https link':'الزر يحتاج نصاً ورابطاً يبدأ بـ https://','Email sending limit reached':'وصلت حد الإرسال في Brevo (غالباً 300 يومياً). اضغط الإرسال غداً لإكمال الباقي.','Email not configured':'مفتاح Brevo أو إعدادات الـWorker غير مكتملة','Email provider refused the message':'مزوّد البريد (Brevo) رفض الرسالة','Too many requests':'محاولات كثيرة — انتظر قليلاً','Forbidden':'هذا الحساب ليس حساب المالك'};
+let nlTested='',nlBusy=false;
+function nlVals(){const g=id=>(document.getElementById(id)?.value||'');return{subject:g('nlSubject').trim(),preheader:g('nlPre').trim(),body:g('nlBody'),ctaLabel:g('nlCta').trim(),ctaUrl:g('nlCtaUrl').trim()};}
+/* a content fingerprint: same text → same campaign (so a second press continues it, never duplicates); edited text → a new campaign */
+function nlCampaign(v){const s=[v.subject,v.preheader,v.body.replace(/\r/g,''),v.ctaLabel,v.ctaUrl].join('\u0001');let a=5381,b=52711;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);a=((a*33)^c)>>>0;b=((b*31)+c)>>>0;}return 'c'+a.toString(36)+b.toString(36)+s.length.toString(36);}
+function nlDirty(){
+  const v=nlVals(),len=document.getElementById('nlLen');if(len)len.textContent=v.body.length;
+  nlGate();
+}
+function nlGate(){
+  const btn=document.getElementById('nlSendBtn');if(!btn)return;const v=nlVals();
+  const ready=v.subject.length>=3&&v.body.trim().length>=10&&nlTested===nlCampaign(v)&&!nlBusy;
+  btn.disabled=!ready;
+  btn.title=ready?'':'أرسل تجربة لبريدك لنفس النص أولاً';
+}
+function nlSay(id,html){const el=document.getElementById(id);if(el)el.innerHTML=html;}
+async function nlPost(mode,extra){
+  const v=nlVals();
+  try{
+    const tok=await auth.currentUser.getIdToken();
+    const r=await fetch(WORKER+'/admin/newsletter',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({idToken:tok,mode},v,extra||{}))});
+    const j=await r.json().catch(()=>({}));
+    return Object.assign({status:r.status,ok:!!(r.ok&&j.ok)},j,{error:j.error?(NL_ERR[j.error]||j.error):(r.ok?'':'خطأ '+r.status)});
+  }catch(e){return{ok:false,error:'تعذّر الاتصال بالخادم'};}
+}
+async function nlPreview(){
+  const b=document.getElementById('nlPreviewBtn');b.disabled=true;nlSay('nlMsg','جاري التحضير…');
+  const r=await nlPost('preview');b.disabled=false;
+  if(!r.ok){nlSay('nlMsg','<span style="color:var(--red)">'+esc(r.error)+'</span>');return;}
+  nlSay('nlMsg','');document.getElementById('nlPreviewBox').style.display='block';
+  document.getElementById('nlFrame').srcdoc=r.html;
+}
+async function nlTest(){
+  if(nlBusy)return;nlBusy=true;const b=document.getElementById('nlTestBtn');b.disabled=true;nlSay('nlMsg','جاري إرسال التجربة…');
+  const r=await nlPost('test');nlBusy=false;b.disabled=false;
+  if(!r.ok){nlSay('nlMsg','<span style="color:var(--red)">'+esc(r.error)+'</span>');nlGate();return;}
+  nlTested=nlCampaign(nlVals());
+  nlSay('nlMsg','<span style="color:var(--green)"><i class="fa-solid fa-circle-check"></i> أُرسلت التجربة إلى '+esc(r.to||'بريدك')+'. افتحها (وتحقق من الوصول وشكل الشعار ورابط إلغاء الاشتراك)، ثم أرسل للمشتركين.</span>');
+  nlGate();
+}
+async function nlSend(){
+  if(nlBusy)return;const v=nlVals(),camp=nlCampaign(v);
+  if(nlTested!==camp){aToast('أرسل تجربة لنفس النص أولاً','warn');return;}
+  if(!RL.ok('nl-send',3,60000)){aToast('انتظر قليلاً','warn');return;}
+  const max=Math.max(1,Math.min(1000,Math.floor(Number(document.getElementById('nlMax').value)||250)));
+  const n=Number(window.nlCount)||0;
+  if(!confirm('سيُرسل «'+v.subject+'» إلى '+(n?'حتى '+n+' مشترك':'المشتركين')+' (بحد أقصى '+max+' في هذه المرة). من وصلته هذه النشرة من قبل يُتخطّى. متابعة؟'))return;
+  nlBusy=true;nlGate();const b=document.getElementById('nlSendBtn');b.disabled=true;nlSay('nlSendMsg','<span class="pf-hint">جاري الإرسال… لا تغلق الصفحة.</span>');
+  const r=await nlPost('send',{campaign:camp,max});nlBusy=false;
+  if(r.ok){
+    nlSay('nlSendMsg','<div class="adm-card" style="border-color:var(--green)"><i class="fa-solid fa-circle-check" style="color:var(--green)"></i> أُرسلت إلى <b>'+esc(r.sent)+'</b> مشترك'+(r.already?' (تخطّينا '+esc(r.already)+' وصلتهم من قبل)':'')+'.'+(r.remaining>0?' <b>بقي '+esc(r.remaining)+'</b> — اضغط الإرسال مرة أخرى (اليوم أو غداً) لإكمال الباقي.':' اكتمل الإرسال لكل المشتركين.')+'</div>');
+    aToast('تم الإرسال','ok');
+  }else{
+    nlSay('nlSendMsg','<div class="adm-card" style="border-color:var(--red)"><i class="fa-solid fa-triangle-exclamation" style="color:var(--red)"></i> '+esc(r.error)+(r.sent?' — أُرسلت قبل التوقف إلى '+esc(r.sent)+' مشترك'+(r.remaining?' وبقي '+esc(r.remaining):''):'')+'. إعادة الضغط آمنة: لن تصل الرسالة لأحد مرتين.</div>');
+    aToast('توقف الإرسال','err');
+  }
+  nlGate();
+}
+window.nlDirty=nlDirty;window.nlPreview=nlPreview;window.nlTest=nlTest;window.nlSend=nlSend;

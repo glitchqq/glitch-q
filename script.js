@@ -707,7 +707,19 @@ function toggleLang(){
   if(S.currentPage==='profile')renderProfilePage();
 }
 window.toggleLang=toggleLang;
-function toggleUMenu(){$('uDrop')?.classList.toggle('hidden');}
+/* The account menu is pinned to the viewport (not to its button) and clamped inside it, so on a phone — where the button sits
+   at the screen edge — it can never be cut off or split by the edge. */
+function placeUDrop(){
+  const d=$('uDrop'),b=$('uMenuBtn');if(!d||!b||d.classList.contains('hidden'))return;
+  const vw=document.documentElement.clientWidth,r=b.getBoundingClientRect(),m=8;
+  d.style.position='fixed';d.style.maxWidth=(vw-m*2)+'px';
+  const w=d.offsetWidth,rtl=document.documentElement.dir!=='ltr';
+  let left=rtl?r.right-w:r.left;                       // end-aligned with the button, like a normal dropdown
+  left=Math.max(m,Math.min(left,vw-w-m));              // …then kept fully on screen
+  d.style.left=left+'px';d.style.right='auto';d.style.top=(r.bottom+8)+'px';
+}
+function toggleUMenu(){const d=$('uDrop');if(!d)return;d.classList.toggle('hidden');placeUDrop();}
+window.addEventListener('resize',placeUDrop);window.addEventListener('scroll',placeUDrop,{passive:true});
 window.toggleUMenu=toggleUMenu;
 document.addEventListener('click',e=>{if(!e.target.closest('#uMenuWrap'))$('uDrop')?.classList.add('hidden');});
 
@@ -1939,7 +1951,7 @@ window.addEventListener('DOMContentLoaded',async()=>{
   const url=new URLSearchParams(window.location.search);
   if(url.get('mode')==='resetPassword'&&url.get('oobCode')){
     /* old links that land on the main site go to the branded reset page */
-    window.location.replace('https://glitch-q.web.app/reset.html'+window.location.search);
+    window.location.replace('reset.html'+window.location.search);
     return;
   }
   maybePromptRegion();

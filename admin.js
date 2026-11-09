@@ -109,7 +109,7 @@ window.addEventListener('resize',()=>{if(window.innerWidth>768){document.getElem
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSidebarMobile();});
 
 /* ══ TABS ══ */
-const TAB_TITLES={dashboard:'لوحة الإحصاء',orders:'الطلبات',products:'المنتجات والأقسام',coupons:'الكوبونات والخصومات',users:'المستخدمون',reviews:'التقييمات',newsletter:'النشرة البريدية',reports:'البلاغات',abuse:'مكافحة الاحتيال',faq:'الأسئلة الشائعة',send:'إرسال كود',regions:'المناطق (الريجنات)',settings:'الإعدادات'};
+const TAB_TITLES={dashboard:'لوحة الإحصاء',orders:'الطلبات',products:'المنتجات والأقسام',coupons:'الكوبونات والخصومات',users:'المستخدمون',reviews:'التقييمات',launch:'إطلاق جديد',newsletter:'النشرة البريدية',reports:'البلاغات',abuse:'مكافحة الاحتيال',faq:'الأسئلة الشائعة',send:'إرسال كود',regions:'المناطق (الريجنات)',settings:'الإعدادات'};
 
 function switchTab(name){
   if(window.innerWidth<=768)closeSidebarMobile();
@@ -130,6 +130,7 @@ function switchTab(name){
   if(name==='faq')loadFAQ();
   if(name==='regions')loadRegions();
   if(name==='settings')loadSettings2();
+  if(name==='launch')launchReset();
 }
 
 /* ══ CLOCK ══ */
@@ -630,7 +631,7 @@ async function loadNewsletter(){
   const el=document.getElementById('nlList');el.innerHTML=loading();
   try{
     const snap=await db.collection('newsletter').orderBy('date','desc').get();
-    document.getElementById('nlStats').innerHTML=`<span class="badge badge-info">${esc(snap.size)} مشترك</span>`;
+    window.nlCount=snap.size;document.getElementById('nlStats').innerHTML=`<span class="badge badge-info">${esc(snap.size)} مشترك</span>`;
     el.innerHTML='';
     snap.docs.forEach((d,i)=>{const div=document.createElement('div');div.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(124,156,255,.04);border-radius:8px;margin-bottom:5px;font-size:12px';div.innerHTML=`<span>${esc(i+1)}. ${san(d.data().email||'')}</span><button onclick="copyText('${jsq(d.data().email||'')}')" class="btn btn-o btn-sm" style="padding:4px 8px"><i class="fa-solid fa-copy"></i></button>`;el.appendChild(div);});
   }catch(e){el.innerHTML=errState('خطأ');}

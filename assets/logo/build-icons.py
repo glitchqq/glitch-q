@@ -38,6 +38,18 @@ p{{font-size:32px;font-weight:500;color:#C9C9D4}}
 <div class="ic">{icon_svg(250)}</div>
 <div class="in"><div class="lk">{lockup}</div><h1>بطاقات PlayStation<br><b>بالدينار الجزائري</b></h1><p>ادفع عبر بريدي موب · يصلك الكود خلال 5 – 60 دقيقة</p></div>'''
 
+def mail_header_html():
+    """E-mail header banner: OPAQUE near-black plate with the lockup baked in, so the logo stays readable even when a mail
+    app (Gmail dark mode, Outlook…) recolours or drops the cell background behind it. 600x96 CSS px, exported @2x."""
+    lockup = (HERE / 'glitchq-lockup.svg').read_text(encoding='utf-8').replace('<svg ', '<svg style="display:block;width:250px;height:auto" ', 1)
+    return f'''<!doctype html><meta charset="utf-8"><style>
+*{{margin:0;box-sizing:border-box}}
+body{{width:600px;height:96px;background:#0A0A0E;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}}
+.g{{position:absolute;inset:0;background:radial-gradient(420px 120px at 50% 130%,rgba(225,6,44,.45),transparent 70%)}}
+.s{{position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(255,255,255,.03) 0 1px,transparent 1px 4px)}}
+.l{{position:relative;direction:ltr}}
+</style><div class="g"></div><div class="s"></div><div class="l">{lockup}</div>'''
+
 async def main():
     (HERE / 'favicon.svg').write_text(icon_svg(), encoding='utf-8')
     (HERE / 'glitchq-icon.svg').write_text(icon_svg(), encoding='utf-8')
@@ -54,5 +66,6 @@ async def main():
         await png(og_html(), 'og-image.png', 1200, 630, transparent=False)
         lock = (HERE / 'glitchq-lockup.svg').read_text(encoding='utf-8').replace('<svg ', '<svg style="display:block;width:680px;height:auto" ', 1)
         await png(f'<body style="margin:0;background:transparent;width:680px">{lock}</body>', 'logo-email.png', 680, 140)
+        await png(mail_header_html(), 'mail-header.png', 600, 96, scale=2, transparent=False)
         await b.close()
 asyncio.run(main())
