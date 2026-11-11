@@ -493,7 +493,7 @@ seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'OFFX', type: 'fixe
 seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'FULL', type: 'fixed', value: 300, active: true, featured: true, maxUses: 2, usedCount: 2 }] });
 [s, j] = await call('/offer', null, { method: 'GET' }); ck('offer: featured but fully used → ok:false', j.ok === false, JSON.stringify(j));
 { const ip = '9.9.9.9'; let last = 0; for (let i = 0; i < 70; i++) [last] = await call('/offer', null, { method: 'GET', ip }); ck('offer: per-IP rate limit', last === 429, last); }
-[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v8', j.v === 8, JSON.stringify(j));
+[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v9', j.v === 9, JSON.stringify(j));
 
 /* ───────── reset-password limiter, maintenance/ticker ───────── */
 seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { text: 'hello' });
@@ -506,6 +506,34 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
   ck('reset-password: the e-mailed link points at the store site reset page with the one-time code', /href="https:\/\/glitchqq\.github\.io\/glitch-q\/reset\.html\?mode=resetPassword&amp;oobCode=abc"/.test(m) && !/web\.app/.test(m), (m.match(/href="[^"]*reset[^"]*"/) || [])[0]);
   const png = readFileSync(new URL('../assets/logo/mail-header.png', import.meta.url));
   ck('mail header banner exists, is a 1200x192 PNG and OPAQUE (RGB, no alpha) so the logo is readable on any recoloured background', png.slice(1, 4).toString() === 'PNG' && png.readUInt32BE(16) === 1200 && png.readUInt32BE(20) === 192 && png[25] === 2, `${png.readUInt32BE(16)}x${png.readUInt32BE(20)} colorType=${png[25]}`);
+}
+
+/* ───────── security audit round: durable limits across Worker instances + body-size caps ───────── */
+{
+  // every `import` with a different query string is a fresh module = a fresh Cloudflare isolate with empty in-memory limiters
+  let inst = 0;
+  const raw = async (path, body, ip, W) => {
+    const w = W || (await import('./worker.js?isolate=' + (++inst))).default;
+    const r = await w.fetch(new Request('https://w.example' + path, { method: 'POST', headers: { Origin: ORIGIN, 'CF-Connecting-IP': ip, 'Content-Type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) }), env, { waitUntil() {} });
+    let j = {}; try { j = await r.json(); } catch {} return [r.status, j];
+  };
+  seed(); fs.brevo.length = 0;
+  for (let i = 0; i < 6; i++) await raw('/reset-password', { email: 'Victim@x.com' }, '20.0.0.' + (i + 1));   // new instance AND new IP every time
+  ck('reset-password: durable per-address cap holds across Worker instances and IPs (3 mails/hour from 6 attempts)', fs.brevo.length === 3, fs.brevo.length);
+  const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Algiers', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  ck('reset-password: the counter lives in an owner-only Firestore document, not in the browser-visible collections', [...fs.docs.keys()].some(k => /^rate_limits\/reset_[0-9a-f]{40}$/.test(k)) && !('rate_limits/reset_victim@x.com' in Object.fromEntries(fs.docs)));
+  put('rate_limits/resetmail_' + dayKey, { n: 120, until: Date.now() + 3600000 });
+  fs.brevo.length = 0;
+  let [rs, rj] = await raw('/reset-password', { email: 'someone-else@x.com' }, '20.0.1.1');
+  ck('reset-password: once the daily reset-mail cap is reached no further mail is sent (quota stays free for order codes), still a neutral answer', fs.brevo.length === 0 && rs === 200 && rj.ok === true, fs.brevo.length + ' ' + rs);
+  put('rate_limits/resetmail_' + dayKey, { n: 5, until: Date.now() + 3600000 });
+  await raw('/reset-password', { email: 'another@x.com' }, '20.0.1.2');
+  ck('reset-password: below the daily cap mails still go out', fs.brevo.length === 1, fs.brevo.length);
+  const big = JSON.stringify({ email: 'a@b.co', pad: 'x'.repeat(200000) });
+  [rs] = await raw('/reset-password', big, '20.0.2.1'); ck('reset-password: oversized body rejected (400) instead of being parsed', rs === 400, rs);
+  [rs] = await raw('/account/revoke-sessions', JSON.stringify({ idToken: 'x', pad: 'x'.repeat(200000) }), '20.0.2.2'); ck('revoke-sessions: oversized body rejected (400)', rs === 400, rs);
+  [rs] = await raw('/account/login-alert', JSON.stringify({ idToken: 'x', pad: 'x'.repeat(200000) }), '20.0.2.3'); ck('login-alert: oversized body rejected (400)', rs === 400, rs);
+  [rs] = await raw('/account/login-alert', JSON.stringify({ idToken: await mk({ email_verified: true }) }), '20.0.2.4'); ck('login-alert: a normal token body is still accepted by the size cap', rs === 200 || rs === 500 || rs === 502, rs);
 }
 
 /* ───────── e-mail templates (pure functions: pulled out of worker.js and called directly) ───────── */

@@ -66,7 +66,7 @@ export default {
 
     try {
       const routes = {
-        '/health':                 () => json({ ok: true, v: 8 }, 200, cors),
+        '/health':                 () => json({ ok: true, v: 9 }, 200, cors),
         '/maintenance':            () => handleMaintenance(request, env, cors),
         '/ticker':                 () => handleTicker(request, env, cors),
         '/stats/visit':            () => handleVisit(request, env, cors),
@@ -1149,14 +1149,33 @@ async function handleAdminSendCode(request, env, cors) {
 // Rate limit for reset: 1 request per email per 5 minutes
 const resetStore = new Map();
 
+// Durable counter (Firestore document rate_limits/{key}, owner/Worker only by the catch-all rule). The in-memory hit() above lives
+// inside ONE Worker instance, and Cloudflare runs many, so it cannot protect a shared quota (Brevo's free plan sends ~300 mails/day for
+// everything: order codes, resets, alerts). Returns true when the caller is OVER the limit. If Firestore itself fails it answers
+// false (the in-memory limiter still applies) rather than blocking every customer.
+async function dHit(env, key, max, windowSec) {
+  try {
+    const r = await fsUpdate(env, `rate_limits/${key}`, cur => {
+      const now = Date.now();
+      const live = cur.exists && Number(cur.data.until) > now;
+      const n = live ? (Number(cur.data.n) || 0) : 0;
+      if (n >= max) return { abort: 'over' };
+      return { fields: { n: n + 1, until: live ? Number(cur.data.until) : now + windowSec * 1000 } };
+    });
+    if (r.aborted || r.contention) return true;
+    return false;
+  } catch (e) { console.error('DHIT_FAIL ' + e.message); return false; }
+}
+const RESET_PER_EMAIL = { max: 3, windowSec: 3600 };   // one victim cannot be flooded
+const RESET_MAILS_PER_DAY = 120;                       // keeps at least half of Brevo's daily quota free for order codes
+
 async function handleResetPassword(request, env, cors) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
 
-  let body;
-  try { body = await request.json(); }
-  catch { return json({ error: 'Invalid JSON' }, 400, cors); }
+  const body = await readJson(request, 1024);   // size-capped like every other route
+  if (!body) return json({ error: 'Invalid JSON' }, 400, cors);
 
-  const email = (body.email || '').trim().toLowerCase().slice(0, 254);
+  const email = String(body.email || '').trim().toLowerCase().slice(0, 254);
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return json({ error: 'Invalid email' }, 400, cors);
   }
@@ -1171,6 +1190,8 @@ async function handleResetPassword(request, env, cors) {
     return json({ ok: true }, 200, cors);
   }
   resetStore.set(resetKey, now);
+  // durable per-address limit (the in-memory one above resets whenever the Worker instance changes)
+  if (await dHit(env, 'reset_' + (await sha256Hex(email)).slice(0, 40), RESET_PER_EMAIL.max, RESET_PER_EMAIL.windowSec)) return json({ ok: true }, 200, cors);
 
   // Generate Firebase password reset link via Admin API
   let resetLink;
@@ -1212,6 +1233,9 @@ async function handleResetPassword(request, env, cors) {
     console.error('Firebase reset error:', e.message);
     return json({ ok: true }, 200, cors);
   }
+
+  // Only a real account reaches this point (an unknown address stopped above). A daily cap on reset mails protects the shared mail quota.
+  if (await dHit(env, 'resetmail_' + dzDay(), RESET_MAILS_PER_DAY, 90000)) { console.error('RESET_DAILY_CAP_REACHED'); return json({ ok: true }, 200, cors); }
 
   // Build branded email (HTML + plain-text alternative)
   const emailHtml = buildResetEmail(resetLink);
@@ -1305,9 +1329,8 @@ async function verifyIdToken(idToken, projectId) {
 
 async function authenticate(request, env, cors) {
   if (request.method !== 'POST') return { err: json({ error: 'Method not allowed' }, 405, cors) };
-  let body;
-  try { body = await request.json(); }
-  catch { return { err: json({ error: 'Invalid JSON' }, 400, cors) }; }
+  const body = await readJson(request, 8192);   // an ID token is at most 4096 characters; the cap stops oversized uploads
+  if (!body) return { err: json({ error: 'Invalid JSON' }, 400, cors) };
   let claims;
   try { claims = await verifyIdToken(body && body.idToken, env.FIREBASE_PROJECT_ID || 'glitch-q'); }
   catch (e) { console.error('VERIFY_UNAVAILABLE ' + e.message); return { err: json({ error: 'Verification unavailable' }, 503, cors) }; }
