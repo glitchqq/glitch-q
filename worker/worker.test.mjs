@@ -66,7 +66,7 @@ globalThis.fetch = async (url, init = {}) => {
   url = String(url); calls.push({ url, init }); await sleep();
   if (url.includes('service_accounts/v1/jwk')) return J({ keys: [jwk] }, 200, { 'cache-control': 'public, max-age=3600' });
   if (url.includes('oauth2.googleapis.com/token')) return J({ access_token: 'tok' });
-  if (url.includes('sendOobCode')) return J({ oobLink: 'https://glitch-q.firebaseapp.com/__/auth/action?mode=resetPassword&oobCode=abc' });
+  if (url.includes('sendOobCode')) { const rt = JSON.parse(init.body).requestType; if (fs.failOob) return J({ error: { message: 'no' } }, 400); return J({ oobLink: 'https://glitch-q.firebaseapp.com/__/auth/action?mode=' + (rt === 'VERIFY_EMAIL' ? 'verifyEmail' : 'resetPassword') + '&oobCode=abc' }); }
   if (url.includes('accounts:update')) return J({});
   if (url.includes('api.brevo.com')) { if (fs.failBrevo) return J({ message: 'no' }, 400); fs.brevo.push(JSON.parse(init.body)); return J({ messageId: 'm' }, 201); }
   if (url.includes('api.telegram.org')) {
@@ -493,7 +493,7 @@ seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'OFFX', type: 'fixe
 seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'FULL', type: 'fixed', value: 300, active: true, featured: true, maxUses: 2, usedCount: 2 }] });
 [s, j] = await call('/offer', null, { method: 'GET' }); ck('offer: featured but fully used → ok:false', j.ok === false, JSON.stringify(j));
 { const ip = '9.9.9.9'; let last = 0; for (let i = 0; i < 70; i++) [last] = await call('/offer', null, { method: 'GET', ip }); ck('offer: per-IP rate limit', last === 429, last); }
-[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v9', j.v === 9, JSON.stringify(j));
+[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v10', j.v === 10, JSON.stringify(j));
 
 /* ───────── reset-password limiter, maintenance/ticker ───────── */
 seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { text: 'hello' });
@@ -540,12 +540,14 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
 {
   const src = readFileSync(new URL('./worker.js', import.meta.url), 'utf8');
   const start = src.lastIndexOf('/* ═══', src.indexOf('function escHtml'));
-  const T = new Function(src.slice(start) + ';return {buildResetEmail,buildResetText,buildCodeEmail,buildCodeText,buildLoginAlertEmail,buildLoginAlertText,codeValidity,monthEndISO,arDays};')();
+  const T = new Function(src.slice(start) + ';return {buildResetEmail,buildResetText,buildVerifyEmail,buildVerifyText,buildCodeEmail,buildCodeText,buildLoginAlertEmail,buildLoginAlertText,codeValidity,monthEndISO,arDays};')();
   const evil = '<img src=x onerror=alert(1)>"&';
   const link = 'https://glitchqq.github.io/glitch-q/reset.html?mode=resetPassword&oobCode=abc123';
   const reset = T.buildResetEmail(link), code = T.buildCodeEmail({ product: evil, code: 'AAAA-BBBB\n<b>CCCC</b>', orderId: evil });
   const alert = T.buildLoginAlertEmail({ device: evil, place: '<script>x</script>', when: evil });
-  const all = { reset, code, alert };
+  const vlink = 'https://glitchqq.github.io/glitch-q/reset.html?mode=verifyEmail&oobCode=abc123';
+  const verify = T.buildVerifyEmail(vlink, '<script>x</script>Ali');
+  const all = { reset, code, alert, verify };
 
   for (const [n, h] of Object.entries(all)) {
     ck(`mail ${n}: RTL Arabic document, dark-native (declares a dark colour scheme), hidden preheader`, /<html dir="rtl" lang="ar"/.test(h) && /<meta name="color-scheme" content="dark">/.test(h) && /display:none;max-height:0/.test(h));
@@ -558,6 +560,25 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
     ck(`mail ${n}: dark-native — no light card/page/box backgrounds left`, !/(?:background-color|bgcolor)[:=]"?#(?:FFFFFF|FFF|F5F7FB|EDF0F6|FFF1F3|FFF6E0|FFF0F1|E8F8F1)\b/i.test(h.replace(/background-color:#FFFFFF;"?>\s*<\/td>/g, '')));
     ck(`mail ${n}: every href is https`, [...h.matchAll(/href="([^"]*)"/g)].every(m => m[1].startsWith('https://')));
     ck(`mail ${n}: old purple palette is gone`, !/7c3aed|c026d3|4c1d95/i.test(h));
+  }
+
+  /* ── account verification mail + phone layout guarantees ── */
+  ck('mail verify: link is in the button, the fallback and the text version', (verify.match(/href="https:\/\/glitchqq\.github\.io\/glitch-q\/reset\.html\?mode=verifyEmail&amp;oobCode=abc123"/g) || []).length === 2 && T.buildVerifyText(vlink, 'Ali').includes(vlink));
+  ck('mail verify: Arabic copy — activate button, what happens next, "not you? ignore", never-ask-for-password promise', /تفعيل الحساب/.test(verify) && /ماذا بعد الضغط/.test(verify) && /لم تنشئ حساباً/.test(verify) && /لن نطلب منك كلمة المرور أبداً/.test(verify));
+  ck('mail verify: the first name is escaped (no live markup)', !/<script>x/.test(verify) && /&lt;script&gt;x&lt;\/script&gt;Ali/.test(verify));
+  ck('mail verify: works without a name too', /فعّل حسابك/.test(T.buildVerifyEmail(vlink, '')) && !/أهلاً/.test(T.buildVerifyEmail(vlink, '')));
+  for (const [n, h] of Object.entries(all)) {
+    ck(`mail ${n}: phone-safe card — fluid 100% width capped at 600px (a fixed width="600" table pushed the whole letter off-screen on Android)`, !/<table[^>]*width="600"/.test(h.replace(/<!--\[if mso\]>[\s\S]*?<!\[endif\]-->/g, '')) && /max-width:600px/.test(h) && /<!--\[if mso\]>/.test(h));
+  }
+  { /* the code must fit a 320px phone at the size we choose, without relying on word wrapping (62% of the font size per mono glyph + letter-spacing, 236px available) */
+    for (const c of ['ZZZZ-1', 'KMPJXkmoiQmPOBWU', 'XXXX-YYYY-ZZZZ-WWWW', 'ABCD-EFGH-IJKL-MNOP-QRST']) {
+      const h = T.buildCodeEmail({ product: 'P', code: c, orderId: 'o1' });
+      const fs_ = Number(/font-size:(\d+)px;line-height:1\.5;font-weight:700;letter-spacing:(\d)px/.exec(h)[1]), ls = Number(/font-size:\d+px;line-height:1\.5;font-weight:700;letter-spacing:(\d)px/.exec(h)[1]);
+      ck(`mail code: a ${c.length}-character code fits a 320px phone (${fs_}px)`, c.length * (0.62 * fs_ + ls) <= 236, `${fs_}px`);
+    }
+    const h = T.buildCodeEmail({ product: 'P', code: 'KMPJXkmoiQmPOBWU' });
+    ck('mail code: the roomy desktop size comes back through a media query', /@media only screen and \(min-width:600px\)/.test(h) && /class="cd26"/.test(h) && /\.cd26\{font-size:26px!important/.test(h));
+    ck('mail code: long unbroken strings can wrap (word-break + overflow-wrap) and the link box cannot widen the letter (table-layout:fixed)', /word-break:break-all;overflow-wrap:anywhere/.test(h) && /table-layout:fixed/.test(reset) && /table-layout:fixed/.test(verify));
   }
   ck('mail reset: link is in the button, the fallback and the text version', (reset.match(/href="https:\/\/glitchqq\.github\.io\/glitch-q\/reset\.html\?mode=resetPassword&amp;oobCode=abc123"/g) || []).length === 2 && T.buildResetText(link).includes(link));
   ck('mail reset: states the 1-hour / single-use rule and the never-ask-for-password promise', /ساعة واحدة/.test(reset) && /مرة واحدة فقط/.test(reset) && /لن نطلب منك كلمة المرور أبداً/.test(reset));
@@ -694,6 +715,70 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
   { let last; const ip = '9.9.9.9'; for (let i = 0; i < 32; i++) last = await raw(linkK.replace(/t=[a-f0-9]{32}/, 't=bad'), { ip }); ck('unsubscribe: per-IP limiter answers 429 after 30 tries', last[0] === 429); }
   r = await raw('/newsletter/subscribe', { method: 'POST' }); ck('other routes still demand an allowed Origin (only unsubscribe is exempt)', r[0] === 403);
   [st] = await call('/newsletter/subscribe', { email: 'leaver@x.com' }); ck('a person who unsubscribed can subscribe again', st === 200 && fs.docs.has('newsletter/' + idU));
+}
+
+/* ───────── account verification route (/account/send-verification) ───────── */
+{
+  let inst = 0;
+  const rawV = async (body, ip, extra = {}) => {
+    const w = (await import('./worker.js?vfy=' + (++inst))).default;
+    const r = await w.fetch(new Request('https://w.example/account/send-verification', { method: 'POST', headers: { Origin: ORIGIN, 'CF-Connecting-IP': ip, 'Content-Type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) }), env, { waitUntil() {} });
+    let j = {}; try { j = await r.json(); } catch {} return [r.status, j];
+  };
+  const unverified = (over = {}) => mk({ sub: 'vu' + (++inst), email: 'new' + inst + '@x.com', email_verified: false, name: 'Psn Wap', ...over });
+  seed(); fs.brevo.length = 0; calls = [];
+  let [rs, rj] = await rawV({ idToken: 'garbage' }, '30.0.0.1');
+  ck('send-verification: a forged/garbage token is refused (401) and nothing is sent', rs === 401 && fs.brevo.length === 0, rs);
+  [rs, rj] = await rawV({}, '30.0.0.2'); ck('send-verification: no token → 401', rs === 401 && fs.brevo.length === 0, rs);
+  [rs, rj] = await rawV({ idToken: await mk({ email_verified: true }) }, '30.0.0.3');
+  ck('send-verification: an already verified account → {ok, already} and no mail', rs === 200 && rj.already === true && fs.brevo.length === 0, rs + ' ' + JSON.stringify(rj));
+  [rs] = await rawV({ idToken: await unverified({ firebase: { sign_in_provider: 'google.com' } }) }, '30.0.0.4');
+  ck('send-verification: only e-mail/password accounts get this mail', rs === 400 && fs.brevo.length === 0, rs);
+  [rs] = await rawV({ idToken: await unverified({ email: '' }) }, '30.0.0.5');
+  ck('send-verification: a token without an e-mail address is refused', rs === 422 && fs.brevo.length === 0, rs);
+
+  calls = []; fs.brevo.length = 0;
+  const tok = await unverified({ email: 'Psnwap@Gmail.com' });
+  [rs, rj] = await rawV({ idToken: tok }, '30.0.1.1');
+  const oob = calls.find(c => c.url.includes('sendOobCode'));
+  ck('send-verification: asks Firebase for a VERIFY_EMAIL link for the token\'s own address (lower-cased), never one taken from the body', rs === 200 && rj.ok === true && oob && JSON.parse(oob.init.body).requestType === 'VERIFY_EMAIL' && JSON.parse(oob.init.body).email === 'psnwap@gmail.com' && JSON.parse(oob.init.body).returnOobLink === true, oob && oob.init.body);
+  const m = fs.brevo[0];
+  ck('send-verification: sends the branded Arabic mail to that address only, link on the store\'s own page', fs.brevo.length === 1 && m.to.length === 1 && m.to[0].email === 'psnwap@gmail.com' && /فعّل حسابك/.test(m.subject) && /href="https:\/\/glitchqq\.github\.io\/glitch-q\/reset\.html\?mode=verifyEmail&amp;oobCode=abc"/.test(m.htmlContent) && !/firebaseapp\.com/.test(m.htmlContent) && /أهلاً/.test(m.htmlContent), m && m.subject);
+  ck('send-verification: the greeting uses the first name from the token', m && />Psn<\/span>/.test(m.htmlContent), '');
+  ck('send-verification: the body cannot redirect the mail (extra fields such as "email"/"to" are ignored)', await (async () => {
+    fs.brevo.length = 0; const t2 = await unverified({ email: 'real@x.com' });
+    await rawV({ idToken: t2, email: 'victim@x.com', to: 'victim@x.com' }, '30.0.1.2');
+    return fs.brevo.length === 1 && fs.brevo[0].to[0].email === 'real@x.com';
+  })());
+
+  { /* limits: one account every 30 s, one address 5 per hour (durable), shared daily cap answers 503 so the browser falls back to Firebase's own mail */
+    seed(); fs.brevo.length = 0;
+    const t3 = await mk({ sub: 'same-uid', email: 'same@x.com', email_verified: false });
+    const w = (await import('./worker.js?vfy-same')).default;
+    const call3 = async ip => { const r = await w.fetch(new Request('https://w.example/account/send-verification', { method: 'POST', headers: { Origin: ORIGIN, 'CF-Connecting-IP': ip, 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken: t3 }) }), env, { waitUntil() {} }); return r.status; };
+    const a1 = await call3('30.1.0.1'), s1 = await call3('30.1.0.2'), s2 = await call3('30.1.0.3');   // one Worker instance: first → mail, then throttled
+    ck('send-verification: the same account cannot trigger mails faster than every 30 seconds on one instance (429)', a1 === 200 && s1 === 429 && s2 === 429 && fs.brevo.length === 1, a1 + ' ' + s1 + ' ' + s2 + ' mails=' + fs.brevo.length);
+    seed(); fs.brevo.length = 0; const sts = [];
+    for (let i = 0; i < 7; i++) { _bump(); sts.push((await rawV({ idToken: await mk({ sub: 'u' + i + 'x' + (++inst), email: 'flood@x.com', email_verified: false }) }, '30.2.0.' + (i + 1)))[0]); }
+    ck('send-verification: durable per-address cap — 7 attempts from different accounts/IPs/instances → 5 mails, then 429', fs.brevo.length === 5 && sts.slice(5).every(x => x === 429), fs.brevo.length + ' ' + sts.join(','));
+    ck('send-verification: the counter lives in an owner-only document (rate_limits/verify_<hash>)', [...fs.docs.keys()].some(k => /^rate_limits\/verify_[0-9a-f]{40}$/.test(k)));
+    const dayKey2 = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Algiers', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    seed(); fs.brevo.length = 0; put('rate_limits/verifymail_' + dayKey2, { n: 100, until: Date.now() + 3600000 });
+    [rs] = await rawV({ idToken: await unverified() }, '30.3.0.1');
+    ck('send-verification: when the shared daily mail cap is used up → 503 (the page falls back to Firebase\'s own mail) and no Brevo call', rs === 503 && fs.brevo.length === 0, rs + ' ' + fs.brevo.length);
+    seed(); fs.brevo.length = 0; fs.failOob = true;
+    [rs] = await rawV({ idToken: await unverified() }, '30.3.0.2'); fs.failOob = false;
+    ck('send-verification: Firebase refusing to create a link → 502, no mail', rs === 502 && fs.brevo.length === 0, rs);
+    seed(); fs.brevo.length = 0; fs.failBrevo = true;
+    [rs] = await rawV({ idToken: await unverified() }, '30.3.0.3'); fs.failBrevo = false;
+    ck('send-verification: mail provider refusing the message → 502 (the page falls back)', rs === 502, rs);
+    [rs] = await rawV(JSON.stringify({ idToken: 'x', pad: 'x'.repeat(200000) }), '30.3.0.4');
+    ck('send-verification: oversized body rejected (400)', rs === 400, rs);
+    const r = await call('/account/send-verification', null, { method: 'GET' });
+    ck('send-verification: GET → 405', r[0] === 405, r[0]);
+    const r2 = await call('/account/send-verification', {}, { origin: 'https://evil.example' });
+    ck('send-verification: foreign Origin → 403', r2[0] === 403, r2[0]);
+  }
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

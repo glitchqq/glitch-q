@@ -66,11 +66,12 @@ export default {
 
     try {
       const routes = {
-        '/health':                 () => json({ ok: true, v: 9 }, 200, cors),
+        '/health':                 () => json({ ok: true, v: 10 }, 200, cors),
         '/maintenance':            () => handleMaintenance(request, env, cors),
         '/ticker':                 () => handleTicker(request, env, cors),
         '/stats/visit':            () => handleVisit(request, env, cors),
         '/reset-password':         () => handleResetPassword(request, env, cors),
+        '/account/send-verification': () => handleSendVerification(request, env, cors),
         '/leaderboard':            () => handleLeaderboard(request, env, cors),
         '/coupon/validate':        () => handleCouponValidate(request, env, cors),
         '/offer':                  () => handleOffer(request, env, cors),
@@ -1273,6 +1274,61 @@ async function handleResetPassword(request, env, cors) {
 }
 
 /* ═══════════════════════════════════════
+   ACCOUNT VERIFICATION — Firebase link + our own branded Brevo mail
+   (replaces Firebase's plain English "Verify your email for project-…" message)
+═══════════════════════════════════════ */
+const VERIFY_PER_EMAIL = { max: 5, windowSec: 3600 };   // one address cannot be flooded
+const VERIFY_MAILS_PER_DAY = 100;                       // reset (120) + this stay under Brevo's ~300/day, leaving room for order codes
+
+async function handleSendVerification(request, env, cors) {
+  const a = await authenticate(request, env, cors);       // the caller proves who they are with their own (unverified) ID token
+  if (a.err) return a.err;
+  const { claims } = a;
+  const uid = claims.sub;
+  const email = String(claims.email || '').trim().toLowerCase().slice(0, 254);
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: 'No email address' }, 422, cors);
+  if (claims.email_verified === true) return json({ ok: true, already: true }, 200, cors);
+  if (!claims.firebase || claims.firebase.sign_in_provider !== 'password') return json({ error: 'Not applicable' }, 400, cors);
+
+  if (hit('vfy:' + clientIp(request), 10, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+  if (throttled('verify_' + uid, 30000)) return json({ error: 'Too many requests' }, 429, cors);
+  if (await dHit(env, 'verify_' + (await sha256Hex(email)).slice(0, 40), VERIFY_PER_EMAIL.max, VERIFY_PER_EMAIL.windowSec)) return json({ error: 'Too many requests' }, 429, cors);
+  // 503 (not 429) when the shared daily quota is used up: the browser then falls back to Firebase's own message instead of leaving the customer with nothing
+  if (await dHit(env, 'verifymail_' + dzDay(), VERIFY_MAILS_PER_DAY, 90000)) { console.error('VERIFY_DAILY_CAP_REACHED'); return json({ error: 'Mail quota reached' }, 503, cors); }
+
+  let verifyLink;
+  try {
+    const adminToken = await getAdminToken(env);
+    if (!adminToken) return json({ error: 'Server not ready' }, 500, cors);
+    const PROJECT_ID = env.FIREBASE_PROJECT_ID || 'glitch-q';
+    const fbRes = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accounts:sendOobCode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}`, 'X-Firebase-Client': 'fire-admin-node/12.0.0', 'X-Goog-User-Project': PROJECT_ID },
+      body: JSON.stringify({ requestType: 'VERIFY_EMAIL', email, returnOobLink: true }),
+    });
+    const fbData = await fbRes.json().catch(() => ({}));
+    if (!fbRes.ok || !fbData.oobLink) { console.error('VERIFY_OOB_ERROR status=' + fbRes.status + ' body=' + JSON.stringify(fbData)); return json({ error: 'Failed' }, 502, cors); }
+    const oobCode = new URL(fbData.oobLink).searchParams.get('oobCode');
+    if (!oobCode) return json({ error: 'Failed' }, 502, cors);
+    verifyLink = `${MAIL_SITE}reset.html?mode=verifyEmail&oobCode=${encodeURIComponent(oobCode)}`;   // the store's own page confirms it (applyActionCode)
+  } catch (e) {
+    console.error('Verify link error:', e.message);
+    return json({ error: 'Failed' }, 502, cors);
+  }
+
+  const firstName = String(claims.name || '').trim().split(/\s+/)[0];
+  const sent = await sendBrevo(env, {
+    to: email,
+    subject: 'فعّل حسابك | Glitch Q',
+    html: buildVerifyEmail(verifyLink, firstName),
+    text: buildVerifyText(verifyLink, firstName),
+  });
+  if (!sent.ok) return json({ error: sent.why }, 502, cors);
+  console.log('VERIFY_MAIL_OK uid=' + uid.slice(0, 8));
+  return json({ ok: true }, 200, cors);
+}
+
+/* ═══════════════════════════════════════
    ACCOUNT SECURITY — every call proves who it is with the caller's Firebase ID token.
    The token is verified here (signature, issuer, audience, expiry) against Google's
    public keys; the uid always comes from the verified token, never from the request body.
@@ -1649,7 +1705,7 @@ const MAIL_TONE = {
 const MB = `font-family:${MAIL_FONT};direction:rtl;text-align:right;`;            // every text block starts from this
 const lat = (s) => `<span dir="ltr" style="unicode-bidi:isolate;">${s}</span>`;     // a Latin word inside Arabic text
 const mGap = (h) => `<div style="height:${h}px;line-height:${h}px;font-size:1px;">&nbsp;</div>`;
-const mH1 = (s) => `<h1 dir="rtl" class="h1" style="margin:0 0 12px;${MB}font-size:26px;line-height:1.45;font-weight:800;color:${MC.h};">${s}</h1>`;
+const mH1 = (s) => `<h1 dir="rtl" class="h1" style="margin:0 0 12px;${MB}font-size:23px;line-height:1.45;font-weight:800;color:${MC.h};">${s}</h1>`;
 const mP = (s, style = '') => `<p dir="rtl" style="margin:0 0 18px;${MB}font-size:15px;line-height:1.95;color:${MC.p};${style}">${s}</p>`;
 const mSmall = (s) => `<p dir="rtl" style="margin:0 0 8px;${MB}font-size:12.5px;line-height:1.8;color:${MC.dim};">${s}</p>`;
 const mHr = () => `<div style="height:1px;line-height:1px;font-size:1px;background-color:${MC.line};">&nbsp;</div>`;
@@ -1658,12 +1714,15 @@ const mBox = (inner, pad = '16px 18px') => `<table role="presentation" dir="rtl"
 const mTintBox = (t, inner) => `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td dir="rtl" bgcolor="${t.tint}" style="background-color:${t.tint};border:1px solid ${t.line};border-radius:12px;padding:16px 18px;${MB}">${inner}</td></tr></table>`;
 const mNote = (t, html) => mTintBox(t, `<div dir="rtl" style="${MB}font-size:14px;line-height:1.9;color:${t.ink};">${html}</div>`);
 
+// A long one-time link in a box. table-layout:fixed keeps the letter exactly as wide as the screen even if a mail app ignores word-break.
+const mLinkBox = (link, t) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr><td bgcolor="${MC.box}" style="background-color:${MC.box};border:1px solid ${MC.line};border-radius:10px;padding:12px 14px;font-family:${MAIL_MONO};font-size:11.5px;line-height:1.7;direction:ltr;text-align:left;word-break:break-all;overflow-wrap:anywhere;overflow:hidden;"><a href="${link}" target="_blank" style="color:${t.ink};text-decoration:underline;word-break:break-all;overflow-wrap:anywhere;">${link}</a></td></tr></table>`;
+
 // The gradient layer keeps Gmail's dark-mode colour shifting from turning the button salmon (it leaves background-images alone).
 function mButton(href, label, t) {
   const bg = `background-color:${t.btn};background-image:linear-gradient(${t.btn},${t.btn});`;
-  return `<table role="presentation" dir="rtl" class="btn-t" cellpadding="0" cellspacing="0" border="0"><tr>
+  return `<table role="presentation" dir="rtl" class="btn-t" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;"><tr>
   <td dir="rtl" class="btn-td" align="center" bgcolor="${t.btn}" style="${bg}border-radius:12px;">
-    <a class="btn-a" href="${href}" target="_blank" style="display:inline-block;padding:15px 38px;font-family:${MAIL_FONT};font-size:16px;line-height:1.3;font-weight:700;color:${t.btnText};text-decoration:none;border-radius:12px;">${label}</a>
+    <a class="btn-a" href="${href}" target="_blank" style="display:block;padding:15px 12px;font-family:${MAIL_FONT};font-size:16px;line-height:1.3;font-weight:700;color:${t.btnText};text-decoration:none;border-radius:12px;">${label}</a>
   </td></tr></table>`;
 }
 
@@ -1711,22 +1770,26 @@ function mailShell({ tone, label, title, preheader, body, note, extraFoot = '' }
   :root{color-scheme:dark;supported-color-schemes:dark}
   body{margin:0;padding:0;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}
   a{text-decoration:none}
-  @media only screen and (max-width:520px){
-    .wrap{padding:10px 6px!important}
-    .px{padding-left:20px!important;padding-right:20px!important}
-    .h1{font-size:23px!important;line-height:1.45!important}
-    .btn-t{width:100%!important}
-    .btn-a{display:block!important;padding-left:12px!important;padding-right:12px!important}
-    .code-lg{font-size:19px!important;letter-spacing:1px!important}
+  @media only screen and (min-width:600px){
+    .wrap{padding:28px 12px!important}
+    .px{padding-left:32px!important;padding-right:32px!important}
+    .h1{font-size:26px!important}
+    .btn-t{width:auto!important}
+    .btn-a{display:inline-block!important;padding-left:38px!important;padding-right:38px!important}
+    .cd26{font-size:26px!important;letter-spacing:2px!important}
+    .cd20{font-size:20px!important;letter-spacing:1px!important}
+    .cd16{font-size:16px!important;letter-spacing:1px!important}
+    .tk{padding-left:22px!important;padding-right:22px!important}
   }
 </style>
 </head>
 <body dir="rtl" bgcolor="${MC.page}" style="margin:0;padding:0;background-color:${MC.page};direction:rtl;">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${MC.page};font-size:1px;line-height:1px;">${escHtml(preheader)}${pad}</div>
 <table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${MC.page}" style="background-color:${MC.page};">
-<tr><td dir="rtl" class="wrap" align="center" style="padding:28px 12px;">
+<tr><td dir="rtl" class="wrap" align="center" style="padding:20px 6px;">
 
-  <table role="presentation" dir="rtl" width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="${MC.card}" style="width:600px;max-width:100%;background-color:${MC.card};border:1px solid ${MC.line};border-radius:18px;border-collapse:separate;overflow:hidden;">
+  <!--[if mso]><table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
+  <table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${MC.card}" style="width:100%;max-width:600px;background-color:${MC.card};border:1px solid ${MC.line};border-radius:18px;border-collapse:separate;overflow:hidden;">
 
     <!-- Header: one opaque banner image — near-black plate + the GLITCH Q lockup (alt text if images are blocked) -->
     <tr><td align="center" bgcolor="${MC.plate}" style="background-color:${MC.plate};padding:0;font-size:0;line-height:0;">
@@ -1743,19 +1806,20 @@ function mailShell({ tone, label, title, preheader, body, note, extraFoot = '' }
     </td></tr>
 
     <!-- Body -->
-    <tr><td dir="rtl" class="px" style="padding:34px 32px 14px;${MB}">
+    <tr><td dir="rtl" class="px" style="padding:30px 20px 14px;${MB}">
 ${mEyebrow(label, t)}
 ${body}
     </td></tr>
 
     <!-- Footer -->
-    <tr><td dir="rtl" class="px" bgcolor="${MC.plate}" style="background-color:${MC.plate};border-top:1px solid ${MC.line};padding:22px 32px 26px;${MB}">
+    <tr><td dir="rtl" class="px" bgcolor="${MC.plate}" style="background-color:${MC.plate};border-top:1px solid ${MC.line};padding:22px 20px 26px;${MB}">
       <p dir="rtl" style="margin:0 0 12px;${MB}font-size:12.5px;line-height:1.8;color:${MC.dim};">${note}</p>
       ${extraFoot}
       <p dir="rtl" style="margin:0;${MB}font-size:11.5px;line-height:1.9;color:${MC.dim};"><span dir="ltr" style="unicode-bidi:isolate;font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:2px;color:${MC.h};">GLITCH Q</span><br>متجر بطاقات ${lat('PlayStation')} في الجزائر<br>رسالة تلقائية، يرجى عدم الرد عليها &middot; &copy; ${year}</p>
     </td></tr>
 
   </table>
+  <!--[if mso]></td></tr></table><![endif]-->
 
 </td></tr>
 </table>
@@ -1776,7 +1840,7 @@ function buildResetEmail(resetLink) {
     `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${MC.box}" style="background-color:${MC.box};border:1px solid ${MC.line};border-radius:12px;border-collapse:separate;"><tr>${cell('مدة الصلاحية', 'ساعة واحدة', `border-left:1px solid ${MC.line};`)}${cell('الاستخدام', 'مرة واحدة فقط', '')}</tr></table>`,
     mGap(24),
     mSmall('إذا لم يعمل الزر، انسخ هذا الرابط والصقه في المتصفح:'),
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="${MC.box}" style="background-color:${MC.box};border:1px solid ${MC.line};border-radius:10px;padding:12px 14px;font-family:${MAIL_MONO};font-size:11.5px;line-height:1.7;direction:ltr;text-align:left;word-break:break-all;"><a href="${link}" target="_blank" style="color:${t.ink};text-decoration:underline;">${link}</a></td></tr></table>`,
+    mLinkBox(link, t),
     mGap(28),
     mHr(),
     mGap(22),
@@ -1812,6 +1876,64 @@ ${resetLink}
 Glitch Q`;
 }
 
+/* ── 1b) account verification ────────────────────────────────────────── */
+// (this part of the file is also evaluated on its own by the template tests, so it must not lean on helpers defined above it)
+const mailName = (s) => String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 30);
+function buildVerifyEmail(verifyLink, firstName) {
+  const link = escHtml(verifyLink);
+  const t = MAIL_TONE.crimson;
+  const name = mailName(firstName);
+  const body = [
+    mH1('فعّل حسابك'),
+    mP(`${name ? `أهلاً <strong style="color:#FFFFFF;"><span dir="auto" style="unicode-bidi:isolate;">${escHtml(name)}</span></strong>، ` : ''}شكراً لتسجيلك في متجر ${lat('Glitch Q')}. اضغط الزر أدناه لتأكيد بريدك الإلكتروني وتفعيل حسابك.`),
+    mButton(link, 'تفعيل الحساب', t),
+    mGap(26),
+    `<p dir="rtl" style="margin:0 0 14px;${MB}font-size:16px;line-height:1.6;font-weight:800;color:${MC.h};">ماذا بعد الضغط؟</p>`,
+    mSteps([
+      'تفتح صفحة تؤكد تفعيل حسابك.',
+      'ارجع إلى المتجر وسجّل الدخول بالبريد وكلمة المرور.',
+      'اطلب بطاقاتك وتابع طلباتك ونقاطك من حسابك.',
+    ], t),
+    mGap(10),
+    mSmall('إذا لم يعمل الزر، انسخ هذا الرابط والصقه في المتصفح:'),
+    mLinkBox(link, t),
+    mGap(28),
+    mHr(),
+    mGap(22),
+    `<p dir="rtl" style="margin:0 0 4px;${MB}font-size:15px;line-height:1.8;font-weight:800;color:${MC.h};">لم تنشئ حساباً؟</p>`,
+    mP('تجاهل الرسالة؛ لن يُفعَّل أي حساب ولن يحدث شيء. الرابط يعمل مرة واحدة، وصلاحيته محدودة.', 'font-size:14px;'),
+    mP('<strong style="color:#FFFFFF;">لن نطلب منك كلمة المرور أبداً</strong> — لا عبر الإيميل ولا واتساب ولا أي رسالة أخرى.', 'font-size:14px;'),
+  ].join('\n');
+  return mailShell({
+    tone: 'crimson',
+    label: 'تفعيل الحساب',
+    title: 'فعّل حسابك — Glitch Q',
+    preheader: 'خطوة أخيرة: اضغط الزر لتأكيد بريدك الإلكتروني وتفعيل حسابك في المتجر.',
+    body,
+    note: 'وصلتك هذه الرسالة لأن أحداً سجّل حساباً في متجرنا بهذا البريد الإلكتروني.',
+  });
+}
+
+function buildVerifyText(verifyLink, firstName) {
+  const name = mailName(firstName);
+  return `فعّل حسابك — Glitch Q
+
+${name ? `أهلاً ${name}،\n` : ''}شكراً لتسجيلك في متجر Glitch Q.
+افتح الرابط التالي لتأكيد بريدك الإلكتروني وتفعيل حسابك:
+
+${verifyLink}
+
+بعد التفعيل: ارجع إلى المتجر وسجّل الدخول بالبريد وكلمة المرور.
+- الرابط يعمل مرة واحدة، وصلاحيته محدودة.
+
+لم تنشئ حساباً؟
+تجاهل الرسالة؛ لن يُفعَّل أي حساب ولن يحدث شيء.
+
+لن نطلب منك كلمة المرور أبداً — لا عبر الإيميل ولا واتساب ولا أي رسالة أخرى.
+
+Glitch Q`;
+}
+
 /* ── 2) order delivered: the code ────────────────────────────────────── */
 function validityCopy(v) {
   const full = `${v.lastDay} ${v.monthName} ${v.year}`;
@@ -1832,18 +1954,21 @@ function buildCodeEmail({ product, code, orderId, validity }) {
   const vt = MAIL_TONE[vc.tone];
   const raw = String(code == null ? '' : code);
   const longest = Math.max(1, ...raw.split(/\r?\n/).map((l) => l.length));
-  const size = longest <= 19 ? 26 : longest <= 30 ? 20 : 16;
+  const desk = longest <= 19 ? 26 : longest <= 30 ? 20 : 16;                       // desktop size (media query ≥600px)
+  const phoneAvail = 236;                                                          // px for the code on a 320px phone: 320 − paddings − borders
+  let size = 11;
+  for (let fs = Math.min(desk, 26); fs >= 11; fs--) { if (longest * (0.62 * fs + (fs >= 20 ? 2 : 1)) <= phoneAvail) { size = fs; break; } }
   const ticket = `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#08080B" style="background-color:#08080B;border:1px solid ${MC.line2};border-radius:14px;border-collapse:separate;">
-      <tr><td dir="rtl" align="center" style="padding:20px 22px 16px;font-family:${MAIL_FONT};direction:rtl;text-align:center;">
+      <tr><td dir="rtl" align="center" class="tk" style="padding:20px 14px 16px;font-family:${MAIL_FONT};direction:rtl;text-align:center;">
         <div style="font-size:12px;line-height:1.6;color:${MC.dim};">المنتج</div>
         <div dir="auto" style="font-size:17px;line-height:1.7;font-weight:700;color:${MC.h};">${escHtml(product || '—')}</div>
       </td></tr>
-      <tr><td style="padding:0 22px;"><div style="height:0;line-height:0;font-size:0;border-top:1px dashed ${MC.line2};">&nbsp;</div></td></tr>
-      <tr><td dir="rtl" align="center" style="padding:18px 22px 22px;font-family:${MAIL_FONT};direction:rtl;text-align:center;">
+      <tr><td class="tk" style="padding:0 14px;"><div style="height:0;line-height:0;font-size:0;border-top:1px dashed ${MC.line2};">&nbsp;</div></td></tr>
+      <tr><td dir="rtl" align="center" class="tk" style="padding:18px 14px 22px;font-family:${MAIL_FONT};direction:rtl;text-align:center;">
         <div style="font-size:12px;line-height:1.6;color:${MC.dim};margin-bottom:6px;">الكود</div>
-        <div class="${size === 26 ? 'code-lg' : ''}" dir="ltr" style="font-family:${MAIL_MONO};font-size:${size}px;line-height:1.5;font-weight:700;letter-spacing:${size === 26 ? 2 : 1}px;color:${t.ink};text-align:center;white-space:pre-wrap;word-break:break-all;-webkit-user-select:all;user-select:all;">${escHtml(raw)}</div>
+        <div class="cd${desk}" dir="ltr" style="font-family:${MAIL_MONO};font-size:${size}px;line-height:1.5;font-weight:700;letter-spacing:${size >= 20 ? 2 : 1}px;color:${t.ink};text-align:center;white-space:pre-wrap;word-break:break-all;overflow-wrap:anywhere;-webkit-user-select:all;user-select:all;">${escHtml(raw)}</div>
       </td></tr>${orderId ? `
-      <tr><td dir="rtl" align="center" bgcolor="${MC.card}" style="background-color:${MC.card};border-top:1px solid ${MC.line};border-radius:0 0 13px 13px;padding:11px 22px;font-family:${MAIL_FONT};direction:rtl;text-align:center;font-size:12px;line-height:1.7;color:${MC.dim};">رقم الطلب &nbsp;<span dir="ltr" style="unicode-bidi:isolate;font-family:${MAIL_MONO};color:${MC.p};">${escHtml(orderId)}</span></td></tr>` : ''}
+      <tr><td dir="rtl" align="center" bgcolor="${MC.card}" style="background-color:${MC.card};border-top:1px solid ${MC.line};border-radius:0 0 13px 13px;padding:11px 14px;font-family:${MAIL_FONT};direction:rtl;text-align:center;font-size:12px;line-height:1.7;color:${MC.dim};">رقم الطلب &nbsp;<span dir="ltr" style="unicode-bidi:isolate;font-family:${MAIL_MONO};color:${MC.p};word-break:break-all;overflow-wrap:anywhere;">${escHtml(orderId)}</span></td></tr>` : ''}
     </table>`;
   // validity band: a dark calendar tile with the last day of the month + what it means
   const validityBand = `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>

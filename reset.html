@@ -107,6 +107,14 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;background:re
       <a href="https://glitchqq.github.io/glitch-q" class="btn">الذهاب إلى المتجر</a>
     </div>
 
+    <!-- ACCOUNT ACTIVATED -->
+    <div id="stateVerified" style="display:none">
+      <svg class="badge " viewBox="0 0 56 56" width="56" height="56" aria-hidden="true"><rect x="1" y="1" width="54" height="54" rx="17" fill="#28C88A" fill-opacity=".1" stroke="#28C88A" stroke-width="2"/><path d="M18 29l7 7 13-14" fill="none" stroke="#28C88A" stroke-width="3.4" stroke-linejoin="miter"/></svg>
+      <div class="state-title">تم تفعيل حسابك</div>
+      <div class="state-desc">تم تأكيد بريدك الإلكتروني. ارجع إلى المتجر وسجّل الدخول بالبريد وكلمة المرور.</div>
+      <a href="https://glitchqq.github.io/glitch-q" class="btn">الذهاب إلى المتجر وتسجيل الدخول</a>
+    </div>
+
     <!-- ERROR -->
     <div id="stateError" style="display:none">
       <svg class="badge " viewBox="0 0 56 56" width="56" height="56" aria-hidden="true"><rect x="1" y="1" width="54" height="54" rx="17" fill="#FF4D5E" fill-opacity=".1" stroke="#FF4D5E" stroke-width="2"/><path d="M28 17v13" stroke="#FF4D5E" stroke-width="3.4"/><rect x="26.2" y="35" width="3.6" height="3.6" fill="#FF4D5E"/></svg>
@@ -135,7 +143,7 @@ const mode=url.get('mode');
 const oobCode=url.get('oobCode');
 
 function show(id){
-  ['stateLoading','stateForm','stateSuccess','stateError']
+  ['stateLoading','stateForm','stateSuccess','stateVerified','stateError']
     .forEach(s=>document.getElementById(s).style.display=s===id?'block':'none');
 }
 
@@ -154,7 +162,26 @@ function showLinkError(e){
   show('stateError');
 }
 
-if(mode==='resetPassword'&&oobCode){
+function showVerifyError(e){
+  const code=(e&&e.code)||'missing-params';
+  const expiredLike=['auth/expired-action-code','auth/invalid-action-code','missing-params'].includes(code);
+  document.getElementById('errTitle').textContent=expiredLike?'رابط التفعيل غير صالح':'تعذّر تفعيل الحساب';
+  document.getElementById('errDesc').innerHTML=expiredLike
+    ?'قد يكون الرابط استُخدم من قبل أو انتهت صلاحيته.<br>إن فعّلت حسابك سابقاً فسجّل الدخول مباشرة، وإن لم تفعّله فسجّل الدخول من المتجر وسنعرض لك زر إرسال رابط جديد.'
+    :'حدث خطأ أثناء التفعيل، وليس بالضرورة أن الرابط منتهي.<br>حاول مرة أخرى بعد قليل.';
+  const c=document.getElementById('errCode');
+  c.textContent='code: '+code;c.style.display='block';
+  const first=document.querySelector('#stateError .btn');if(first)first.textContent='تسجيل الدخول من المتجر';
+  console.warn('[verify] applyActionCode failed:',code,e&&e.message);
+  show('stateError');
+}
+
+if(mode==='verifyEmail'&&oobCode){
+  document.title='تفعيل الحساب — Glitch Q';
+  auth.applyActionCode(oobCode)
+    .then(()=>show('stateVerified'))
+    .catch(showVerifyError);
+}else if(mode==='resetPassword'&&oobCode){
   auth.verifyPasswordResetCode(oobCode)
     .then(()=>show('stateForm'))
     .catch(showLinkError);

@@ -154,7 +154,7 @@ const T={
     t_name_required:'أدخل الاسم واللقب',t_pass_mismatch:'كلمة المرور غير متطابقة',
     t_pass_short:'6 أحرف على الأقل',t_email_exists:'الإيميل مسجل مسبقاً',
     t_weak_pass:'كلمة مرور ضعيفة',t_login_error:'خطأ في البريد أو كلمة المرور',
-    t_verify_first:'فعّل حسابك من إيميلك أولاً',
+    t_verify_first:'فعّل حسابك من إيميلك أولاً',t_verify_sent:'أرسلنا لك رابط التفعيل — تفقّد بريدك',t_acct_unverified:'حسابك مسجّل لكن غير مفعّل — أرسلنا لك رابط التفعيل من جديد',t_verify_fail:'تعذّر إرسال رسالة التفعيل الآن، اضغط «إعادة الإرسال» بعد قليل',t_already_verified:'حسابك مفعّل بالفعل، سجّل الدخول',
     t_reg_done:'تم التسجيل! تحقق من إيميلك',
     t_reset_sent:'تم إرسال رابط التعيين',t_reset_error:'إيميل غير موجود',
     t_no_email:'أدخل إيميلك',t_logged_out:'تم تسجيل الخروج',
@@ -294,7 +294,7 @@ const T={
     t_name_required:'Enter first and last name',t_pass_mismatch:'Passwords do not match',
     t_pass_short:'At least 6 characters',t_email_exists:'Email already registered',
     t_weak_pass:'Weak password',t_login_error:'Invalid email or password',
-    t_verify_first:'Please verify your email first',
+    t_verify_first:'Please verify your email first',t_verify_sent:'We sent you the activation link — check your inbox',t_acct_unverified:'Your account exists but is not activated — we sent the activation link again',t_verify_fail:'Could not send the activation e-mail right now, press Resend in a moment',t_already_verified:'Your account is already activated, please sign in',
     t_reg_done:'Registered! Check your email',
     t_reset_sent:'Password reset link sent',t_reset_error:'Email not found',
     t_no_email:'Enter your email',t_logged_out:'Signed out',
@@ -1211,7 +1211,10 @@ async function loadHistory(){
 /* ══════════════════════════════════════════
    AUTH
 ══════════════════════════════════════════ */
+let _regBusy=false;                  /* true while the sign-up / resend code runs: the listener below must not sign the brand-new (still unverified) account out under its feet */
+let _vCred=null;                     /* e-mail + password of the account waiting for activation (memory only), used by the Resend button */
 auth.onAuthStateChanged(async fbU=>{
+  if(_regBusy)return;
   if(fbU){
     await fbU.reload().catch(()=>{});const cur=auth.currentUser;if(!cur){resetSess();return;}
     const url=new URLSearchParams(window.location.search);
@@ -1253,7 +1256,7 @@ $('loginForm')?.addEventListener('submit',async e=>{
   const email=($('loginEmail')?.value||'').trim().slice(0,254);const pass=$('loginPass')?.value||'';
   if(!email||!pass||!isValidEmail(email))return;
   if(email===ADMIN_EMAIL){toast(t('t_login_error'),'terr');return;}
-  try{const c=await auth.signInWithEmailAndPassword(email,pass);if(!c.user.emailVerified){await auth.signOut();toast(t('t_verify_first'),'terr');return;}}
+  try{const c=await auth.signInWithEmailAndPassword(email,pass);if(!c.user.emailVerified){_vCred={email,pass};await auth.signOut();toast(t('t_verify_first'),'terr');showPane('verifyPane');return;}}
   catch(e){toast(t('t_login_error'),'terr');}
 });
 
@@ -1263,21 +1266,65 @@ $('regForm')?.addEventListener('submit',async e=>{
   const chk=$('regTermsChk');if(!chk?.checked){toast(t('t_terms_required'),'terr');return;}
   const first=san(($('regFirst')?.value||'').trim()).slice(0,50);
   const last=san(($('regLast')?.value||'').trim()).slice(0,50);
-  const email=($('regEmail')?.value||'').trim().slice(0,254);
+  const email=($('regEmail')?.value||'').trim().toLowerCase().slice(0,254);   /* Firebase stores addresses in lower case: the profile rules compare against that */
   const pass=$('regPass')?.value||'';const conf=$('regConf')?.value||'';
   if(!first||!last){toast(t('t_name_required'),'terr');return;}
   if(!isValidEmail(email)){toast(t('t_email_invalid'),'terr');return;}
   if(email===ADMIN_EMAIL){toast(t('t_login_error'),'terr');return;}
   if(pass!==conf){toast(t('t_pass_mismatch'),'terr');return;}
   if(pass.length<6){toast(t('t_pass_short'),'terr');return;}
+  if(_regBusy)return;
+  _regBusy=true;
+  let cred;
+  try{cred=await auth.createUserWithEmailAndPassword(email,pass);}
+  catch(err){
+    try{
+      if(err.code==='auth/email-already-in-use'){
+        /* a first attempt may have created the account and then shown an error: if it is the same person and still not activated, simply send the activation link again */
+        const r=await recoverUnverified(email,pass);
+        if(r==='sent'){_vCred={email,pass};toast(t('t_acct_unverified'),'tok');showPane('verifyPane');}
+        else toast(t('t_email_exists'),'terr');
+      }else toast(err.code==='auth/weak-password'?t('t_weak_pass'):t('t_error'),'terr');
+    }finally{_regBusy=false;}
+    return;
+  }
+  /* From here the account EXISTS. Nothing below may tell the customer that registration failed. */
   try{
-    const cred=await auth.createUserWithEmailAndPassword(email,pass);
-    await cred.user.updateProfile({displayName:`${first} ${last}`});
-    await cred.user.sendEmailVerification();
-    await db.collection('users').doc(cred.user.uid).set({firstName:first,lastName:last,name:`${first} ${last}`,email,points:5,notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],uid_short:cred.user.uid.slice(0,12),region:S.region||null,created:new Date()});
-    await auth.signOut();showPane('verifyPane');
-  }catch(err){let m=t('t_error');if(err.code==='auth/email-already-in-use')m=t('t_email_exists');if(err.code==='auth/weak-password')m=t('t_weak_pass');toast(m,'terr');}
+    _vCred={email,pass};
+    try{await cred.user.updateProfile({displayName:`${first} ${last}`});}catch(e){}
+    /* best effort: if this write does not land, the first activated login creates the profile document */
+    try{await db.collection('users').doc(cred.user.uid).set({firstName:first,lastName:last,name:`${first} ${last}`,email,points:5,notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],uid_short:cred.user.uid.slice(0,12),region:S.region||null,created:new Date()});}catch(e){}
+    const r=await sendVerification(cred.user);
+    if(r==='fail')toast(t('t_verify_fail'),'twarn');else if(r==='wait')toast(t('t_too_many'),'twarn');
+    try{await auth.signOut();}catch(e){}
+    showPane('verifyPane');
+  }finally{_regBusy=false;}
 });
+
+/* Activation e-mail: our own branded Arabic message first (Worker → Brevo); Firebase's plain English one only if the Worker cannot be reached.
+   Returns 'ok' | 'wait' (limit reached) | 'fail'. */
+async function sendVerification(user){
+  let tok='';try{tok=await user.getIdToken();}catch(e){}
+  if(tok){
+    try{
+      const r=await fetch(WORKER+'/account/send-verification',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken:tok})});
+      if(r.ok)return 'ok';
+      if(r.status===429)return 'wait';
+    }catch(e){}
+  }
+  try{await user.sendEmailVerification();return 'ok';}
+  catch(e){return e&&e.code==='auth/too-many-requests'?'wait':'fail';}
+}
+async function recoverUnverified(email,pass){
+  try{
+    const c=await auth.signInWithEmailAndPassword(email,pass);
+    await c.user.reload().catch(()=>{});
+    if(c.user.emailVerified){await auth.signOut();return 'verified';}
+    const r=await sendVerification(c.user);
+    await auth.signOut();
+    return r==='fail'?'fail':'sent';
+  }catch(e){return 'no';}
+}
 
 /* ══ PASSWORD RESET — standalone screen ══ */
 const RESET_TX={
@@ -1335,7 +1382,27 @@ $('resetResend')?.addEventListener('click',async()=>{
 });
 /* kept for any old caller */
 window.resetPass=window.openReset;
-window.resendVerif=async()=>{const e=($('regEmail')?.value||'').trim();const p=$('regPass')?.value||'';if(!e||!p)return;try{const c=await auth.signInWithEmailAndPassword(e,p);await c.user.sendEmailVerification();await auth.signOut();toast(t('t_reset_sent'),'tok');}catch(x){toast(t('t_error'),'terr');}};
+window.resendVerif=async()=>{
+  const btn=$('resendBtn');if(btn&&btn.disabled)return;
+  const e=(_vCred&&_vCred.email)||($('regEmail')?.value||'').trim().toLowerCase()||($('loginEmail')?.value||'').trim().toLowerCase();
+  const p=(_vCred&&_vCred.pass)||$('regPass')?.value||$('loginPass')?.value||'';
+  if(!e||!p){showPane('loginPane');return;}
+  if(!RL.ok('resendverif',4,600000)){toast(t('t_too_many'),'twarn');return;}
+  const label=btn?btn.textContent:'';if(btn)btn.disabled=true;
+  _regBusy=true;
+  try{
+    const c=await auth.signInWithEmailAndPassword(e,p);
+    await c.user.reload().catch(()=>{});
+    if(c.user.emailVerified){await auth.signOut();toast(t('t_already_verified'),'tok');showPane('loginPane');return;}
+    const r=await sendVerification(c.user);
+    await auth.signOut();
+    toast(r==='ok'?t('t_verify_sent'):r==='wait'?t('t_too_many'):t('t_verify_fail'),r==='ok'?'tok':'twarn');
+  }catch(x){toast(t('t_error'),'terr');}
+  finally{
+    _regBusy=false;
+    if(btn){let n=45;btn.textContent=label+' ('+n+')';const iv=setInterval(()=>{n--;if(n<=0){clearInterval(iv);btn.disabled=false;btn.textContent=label;}else btn.textContent=label+' ('+n+')';},1000);}
+  }
+};
 window.doLogout=async()=>{await auth.signOut();S.user=null;S.udata=null;updHeaderUI();updProfUI();};
 
 /* ══ HEADER UI ══ */
