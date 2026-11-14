@@ -3,14 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <script>
-// Redirect all Firebase auth action URLs to reset.html or index.html
+// Redirect Firebase auth action URLs (password reset, e-mail verification) to reset.html, everything else to index.html
 const p = new URLSearchParams(window.location.search);
 const mode = p.get('mode');
 const oobCode = p.get('oobCode');
-const lang = p.get('lang') || 'ar';
-if (mode === 'resetPassword' && oobCode) {
+const l = p.get('lang');
+const langQ = (l === 'en' || l === 'ar') ? '&lang=' + l : '';   // no language given → reset.html uses the visitor's saved choice
+if ((mode === 'resetPassword' || mode === 'verifyEmail') && oobCode) {
   window.location.replace(
-    'https://glitchqq.github.io/glitch-q/reset.html?mode=' + mode + '&oobCode=' + encodeURIComponent(oobCode) + '&lang=' + lang
+    'https://glitchqq.github.io/glitch-q/reset.html?mode=' + mode + '&oobCode=' + encodeURIComponent(oobCode) + langQ
   );
 } else {
   window.location.replace('https://glitchqq.github.io/glitch-q/');

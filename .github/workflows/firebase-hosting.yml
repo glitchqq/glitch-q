@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'reset.html'
+      - 'i18n-en.js'
       - 'firebase.json'
       - '.github/workflows/firebase-hosting.yml'
 

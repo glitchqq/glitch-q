@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-i18n-dir>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0A0C10">
 <meta name="robots" content="noindex">
 <title>إعادة تعيين كلمة المرور — Glitch Q</title>
@@ -20,6 +21,7 @@
 @font-face{font-family:'IBM Plex Sans Arabic';src:url(assets/fonts/IBMPlexSansArabic-Bold.woff) format('woff');font-weight:700;font-display:swap}
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#050507;--card:#0F0F14;--card2:#16161D;--line:#24242E;--line2:#35353F;--text:#F4F4F7;--dim:#9A9AA8;--brand:#F5223F;--btn:#D4062A;--btn-h:#FF1F3D;--mint:#28C88A;--red:#FF5C6C;--cyan:#35E0F2;--gold:#F4B63E}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;color-scheme:dark}
 body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans Arabic',-apple-system,'Segoe UI',Tahoma,sans-serif;min-height:100vh;min-height:100dvh;display:flex;align-items:flex-start;justify-content:center;padding:clamp(24px,9vh,80px) 16px 24px;
   background-image:radial-gradient(ellipse 80% 50% at 50% 0%,rgba(245,34,63,.20),transparent 70%),radial-gradient(ellipse 60% 40% at 50% 110%,rgba(245,34,63,.10),transparent 70%);position:relative}
 body::before{content:"";position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.022) 0 1px,transparent 1px 4px)}
@@ -30,7 +32,7 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;background:re
 
 .card{background:var(--card);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 30px 80px -30px rgba(245,34,63,.35)}
 .strip{display:flex;height:4px} .strip i{display:block} .strip i:nth-child(1){flex:88;background:linear-gradient(90deg,#FF3B57,var(--brand))} .strip i:nth-child(2){flex:6;background:var(--red)} .strip i:nth-child(3){flex:6;background:var(--cyan)}
-.body{padding:32px 26px 28px;text-align:right}
+.body{padding:32px 26px 28px;text-align:start}
 
 .badge{display:block;margin:0 0 18px}
 .spin-arc{transform-origin:28px 28px;animation:spin 1s linear infinite}
@@ -39,7 +41,7 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;background:re
 .state-desc{font-size:14px;color:var(--dim);line-height:1.9;margin-bottom:22px}
 
 .inp-wrap{margin-bottom:10px}
-.inp{width:100%;padding:14px 16px;background:#08080B;border:1px solid var(--line);border-radius:14px;color:var(--text);font-size:15px;font-family:inherit;direction:rtl;transition:border-color .15s,box-shadow .15s}
+.inp{width:100%;padding:14px 16px;background:#08080B;border:1px solid var(--line);border-radius:14px;color:var(--text);font-size:16px;font-family:inherit;direction:inherit;transition:border-color .15s,box-shadow .15s}
 .inp:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(245,34,63,.22);outline:none}
 .inp::placeholder{color:#6B6B79}
 
@@ -53,14 +55,14 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;background:re
 .btn-outline{display:block;width:100%;padding:13px 20px;background:transparent;color:var(--text);border:1px solid var(--line2);border-radius:14px;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;margin-top:10px;text-align:center;text-decoration:none;transition:border-color .15s,background .15s}
 .btn-outline:hover{border-color:var(--brand);background:var(--card2)}
 
-.msg{padding:12px 14px;border-radius:14px;font-size:13.5px;line-height:1.7;font-weight:600;margin-top:14px;display:none;text-align:right}
+.msg{padding:12px 14px;border-radius:14px;font-size:13.5px;line-height:1.7;font-weight:600;margin-top:14px;display:none;text-align:start}
 .msg.ok{background:rgba(40,200,138,.1);border:1px solid rgba(40,200,138,.3);color:#5BE0A8}
 .msg.err{background:rgba(255,92,108,.1);border:1px solid rgba(255,92,108,.35);color:#FF8A96}
 
 .foot-link{display:block;text-align:center;margin-top:20px;font-size:13px;color:var(--dim);text-decoration:none;transition:color .15s}
 .foot-link:hover{color:#fff}
 
-.spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-left:8px}
+.spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-inline-start:8px}
 @media (prefers-reduced-motion:reduce){.spin-arc,.spinner{animation-duration:2.4s}}
 </style>
 </head>
@@ -107,6 +109,14 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;background:re
       <a href="https://glitchqq.github.io/glitch-q" class="btn">الذهاب إلى المتجر</a>
     </div>
 
+    <!-- ACCOUNT ACTIVATED -->
+    <div id="stateVerified" style="display:none">
+      <svg class="badge " viewBox="0 0 56 56" width="56" height="56" aria-hidden="true"><rect x="1" y="1" width="54" height="54" rx="17" fill="#28C88A" fill-opacity=".1" stroke="#28C88A" stroke-width="2"/><path d="M18 29l7 7 13-14" fill="none" stroke="#28C88A" stroke-width="3.4" stroke-linejoin="miter"/></svg>
+      <div class="state-title">تم تفعيل حسابك</div>
+      <div class="state-desc">تم تأكيد بريدك الإلكتروني. ارجع إلى المتجر وسجّل الدخول بالبريد وكلمة المرور.</div>
+      <a href="https://glitchqq.github.io/glitch-q" class="btn">الذهاب إلى المتجر وتسجيل الدخول</a>
+    </div>
+
     <!-- ERROR -->
     <div id="stateError" style="display:none">
       <svg class="badge " viewBox="0 0 56 56" width="56" height="56" aria-hidden="true"><rect x="1" y="1" width="54" height="54" rx="17" fill="#FF4D5E" fill-opacity=".1" stroke="#FF4D5E" stroke-width="2"/><path d="M28 17v13" stroke="#FF4D5E" stroke-width="3.4"/><rect x="26.2" y="35" width="3.6" height="3.6" fill="#FF4D5E"/></svg>
@@ -123,6 +133,7 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;background:re
   <a href="https://glitchqq.github.io/glitch-q/" class="foot-link">العودة إلى المتجر</a>
 </main>
 
+<script src="i18n-en.js" defer></script>
 <script>
 firebase.initializeApp({
   apiKey:"AIzaSyDuMvn6UePhPf7hWIOkuQKOEoDEwogdIso",
@@ -135,7 +146,7 @@ const mode=url.get('mode');
 const oobCode=url.get('oobCode');
 
 function show(id){
-  ['stateLoading','stateForm','stateSuccess','stateError']
+  ['stateLoading','stateForm','stateSuccess','stateVerified','stateError']
     .forEach(s=>document.getElementById(s).style.display=s===id?'block':'none');
 }
 
@@ -154,7 +165,26 @@ function showLinkError(e){
   show('stateError');
 }
 
-if(mode==='resetPassword'&&oobCode){
+function showVerifyError(e){
+  const code=(e&&e.code)||'missing-params';
+  const expiredLike=['auth/expired-action-code','auth/invalid-action-code','missing-params'].includes(code);
+  document.getElementById('errTitle').textContent=expiredLike?'رابط التفعيل غير صالح':'تعذّر تفعيل الحساب';
+  document.getElementById('errDesc').innerHTML=expiredLike
+    ?'قد يكون الرابط استُخدم من قبل أو انتهت صلاحيته.<br>إن فعّلت حسابك سابقاً فسجّل الدخول مباشرة، وإن لم تفعّله فسجّل الدخول من المتجر وسنعرض لك زر إرسال رابط جديد.'
+    :'حدث خطأ أثناء التفعيل، وليس بالضرورة أن الرابط منتهي.<br>حاول مرة أخرى بعد قليل.';
+  const c=document.getElementById('errCode');
+  c.textContent='code: '+code;c.style.display='block';
+  const first=document.querySelector('#stateError .btn');if(first)first.textContent='تسجيل الدخول من المتجر';
+  console.warn('[verify] applyActionCode failed:',code,e&&e.message);
+  show('stateError');
+}
+
+if(mode==='verifyEmail'&&oobCode){
+  document.title='تفعيل الحساب — Glitch Q';
+  auth.applyActionCode(oobCode)
+    .then(()=>show('stateVerified'))
+    .catch(showVerifyError);
+}else if(mode==='resetPassword'&&oobCode){
   auth.verifyPasswordResetCode(oobCode)
     .then(()=>show('stateForm'))
     .catch(showLinkError);
