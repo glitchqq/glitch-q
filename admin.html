@@ -372,7 +372,7 @@ body{background:radial-gradient(900px 520px at 100% -10%,rgba(212,6,42,.16),tran
 .stat-card:hover,.sec:hover{border-top-color:var(--violet)}
 .stat-card::after,.sec::after{content:'';position:absolute;top:-2px;inset-inline-start:0;width:22px;height:2px;background:var(--violet);box-shadow:0 0 10px var(--violet);pointer-events:none}
 .sec-title::before{background:var(--violet);box-shadow:0 0 12px rgba(245,34,63,.7)}
-.topbar{background:rgba(5,5,7,.88);backdrop-filter:blur(10px);border-bottom:1px solid var(--brd);position:sticky}
+.topbar{background:rgba(5,5,7,.88);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-bottom:1px solid var(--brd);position:sticky}
 .topbar::after{content:'';position:absolute;inset-inline:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,var(--violet) 25%,var(--violet) 75%,transparent);opacity:.45;pointer-events:none}
 #sidebar{background:linear-gradient(180deg,rgba(212,6,42,.07),transparent 28%),var(--d1)}
 .sb-item.on{background:linear-gradient(270deg,rgba(245,34,63,.18),transparent)}
@@ -413,6 +413,15 @@ body{background:radial-gradient(900px 520px at 100% -10%,rgba(212,6,42,.16),tran
 .btn:disabled,.btn[disabled]{opacity:.38;cursor:not-allowed;filter:grayscale(.55);box-shadow:none;transform:none}
 .ln-check{margin:14px 0 8px;font-size:13px;line-height:2}.ln-check div{display:flex;align-items:center;gap:8px;color:var(--mid)}.ln-check .ok{color:var(--green)}.ln-check i{width:16px}
 .nl-frame{width:100%;height:620px;border:1px solid var(--brd);border-radius:12px;background:#050507}
+
+/* device compatibility (see style.css): no text inflation, dark native controls, no iOS focus-zoom, sidebar not hidden under the mobile toolbar */
+:root{color-scheme:dark}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+a,button,[role="button"],label,select,input{touch-action:manipulation}
+input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,select:-webkit-autofill{-webkit-text-fill-color:var(--text);caret-color:var(--text);transition:background-color 99999s ease-out 0s}
+@media (pointer:coarse){input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="hidden"]),select,textarea{font-size:16px!important}}
+.sidebar{height:100vh;height:100dvh}
+#adminApp,.main-area{min-height:100vh;min-height:100dvh}
 </style>
 </head>
 <body>

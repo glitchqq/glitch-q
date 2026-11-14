@@ -5,6 +5,43 @@
 ═══════════════════════════════════════════ */
 'use strict';
 
+/* ── storage that never throws ─────────────────────────────────────────────────────────────────────────────────────────────
+   Some browsers refuse localStorage altogether (Safari "Block all cookies", in-app browsers of social apps, locked-down
+   corporate profiles, quota full). Touching it there throws — and a throw while this file loads leaves a dead page.
+   These wrappers keep the same API, fall back to memory for the visit, and never throw. */
+function mkStore(kind){
+  const mem={};let live=true;
+  const raw=()=>window[kind];
+  try{raw().getItem('gq_probe');}catch(e){live=false;}
+  return{
+    getItem(k){if(live){try{const v=raw().getItem(k);if(v!==null)return v;}catch(e){live=false;}}return Object.prototype.hasOwnProperty.call(mem,k)?mem[k]:null;},
+    setItem(k,v){mem[k]=String(v);if(live){try{raw().setItem(k,String(v));}catch(e){}}},
+    removeItem(k){delete mem[k];if(live){try{raw().removeItem(k);}catch(e){}}}
+  };
+}
+const LS=mkStore('localStorage'),SS=mkStore('sessionStorage');
+/* JSON.parse that gives the fallback back instead of throwing (a corrupted saved cart must not brick the shop) */
+function jparse(v,d){try{const x=JSON.parse(v);return x==null?d:x;}catch(e){return d;}}
+/* copy to clipboard: modern API first, then the old select-and-copy trick (iOS Safari, in-app browsers, plain http); resolves true/false */
+function copyText(txt){
+  txt=String(txt==null?'':txt);
+  const legacy=()=>{
+    try{
+      const ta=document.createElement('textarea');
+      ta.value=txt;ta.setAttribute('readonly','');ta.setAttribute('aria-hidden','true');
+      ta.style.cssText='position:fixed;top:0;inset-inline-start:0;opacity:0;font-size:16px;pointer-events:none';
+      document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,txt.length);
+      const ok=document.execCommand('copy');ta.remove();return ok;
+    }catch(e){return false;}
+  };
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText&&window.isSecureContext){
+      return navigator.clipboard.writeText(txt).then(()=>true,()=>legacy());
+    }
+  }catch(e){}
+  return Promise.resolve(legacy());
+}
+
 /* ── FIREBASE ── */
 const _FC={
   apiKey:"AIzaSyDuMvn6UePhPf7hWIOkuQKOEoDEwogdIso",
@@ -498,12 +535,12 @@ function isValidUrl(u){if(!u)return true;try{const x=new URL(u);return['https:',
 /* ══ STATE ══ */
 let PRODS=[],CATS=[],DISC={active:false,value:0};
 const S={
-  lang:localStorage.getItem('gq_lang')||'ar',
-  region:localStorage.getItem('gq_reg')||null,
-  cur:localStorage.getItem('gq_cur')||'EUR',
-  sym:localStorage.getItem('gq_sym')||'€',
+  lang:LS.getItem('gq_lang')||'ar',
+  region:LS.getItem('gq_reg')||null,
+  cur:LS.getItem('gq_cur')||'EUR',
+  sym:LS.getItem('gq_sym')||'€',
   user:null,udata:null,
-  cart:JSON.parse(localStorage.getItem('gq_cart')||'[]'),
+  cart:(()=>{const c=jparse(LS.getItem('gq_cart'),[]);return Array.isArray(c)?c:[];})(),
   selProd:null,cpn:null,stars:0,
   pay:'baridimob',recv:'email',
   spinning:false,ready:false,
@@ -699,7 +736,7 @@ window.goPage=goPage;
 /* ══ LANG ══ */
 function toggleLang(){
   S.lang=S.lang==='ar'?'en':'ar';
-  localStorage.setItem('gq_lang',S.lang);
+  LS.setItem('gq_lang',S.lang);
   applyTranslations();
   renderHome();
   if(S.currentPage==='shop'){renderCatFilterBar();renderShopProds();}
@@ -725,14 +762,14 @@ document.addEventListener('click',e=>{if(!e.target.closest('#uMenuWrap'))$('uDro
 
 /* ══ CONSENT ══ */
 function initConsent(){
-  if(localStorage.getItem('gq_consent'))return;
+  if(LS.getItem('gq_consent'))return;
   $('consentBanner')?.classList.remove('hidden');
   const chkT=$('chkTerms'),chkP=$('chkPrivacy'),btn=$('consentAcceptBtn');
   function upd(){if(btn)btn.disabled=!(chkT?.checked&&chkP?.checked);}
   chkT?.addEventListener('change',upd);chkP?.addEventListener('change',upd);
 }
 window.acceptConsent=function(){
-  localStorage.setItem('gq_consent','1');
+  LS.setItem('gq_consent','1');
   $('consentBanner')?.classList.add('hidden');
   maybePromptRegion();   /* region comes right after consent, never before */
 };
@@ -758,14 +795,14 @@ function normRegCfg(x){
   }
   return o;
 }
-function readCachedRegCfg(){try{return normRegCfg(JSON.parse(localStorage.getItem('gq_regcfg')||'null'));}catch(e){return normRegCfg(null);}}
+function readCachedRegCfg(){try{return normRegCfg(JSON.parse(LS.getItem('gq_regcfg')||'null'));}catch(e){return normRegCfg(null);}}
 let REG_CFG=readCachedRegCfg();
 function setRegion(r,persist,auto){
   const m=REGIONS[r];if(!m)return;
   S.region=r;S.cur=m.c;S.sym=m.s;S.regAuto=!!auto;
   /* auto = default applied while the picker is off: kept in memory only, so it is never mistaken for the customer's own choice */
-  if(auto)localStorage.removeItem('gq_reg');else localStorage.setItem('gq_reg',r);
-  localStorage.setItem('gq_cur',m.c);localStorage.setItem('gq_sym',m.s);
+  if(auto)LS.removeItem('gq_reg');else LS.setItem('gq_reg',r);
+  LS.setItem('gq_cur',m.c);LS.setItem('gq_sym',m.s);
   if(persist&&S.user)db.collection('users').doc(S.user.uid).update({region:r,currency:m.c,symbol:m.s}).catch(()=>{});
 }
 function applyRegionConfig(cfg){
@@ -779,12 +816,12 @@ function applyRegionConfig(cfg){
     if(ur&&cfg.available[ur])setRegion(ur,false,false);                           /* use the region saved on their account, */
     else{S.region=null;S.regAuto=false;}                                          /* otherwise ask */
   }else if(S.region&&!cfg.available[S.region]){
-    S.region=null;localStorage.removeItem('gq_reg');                              /* chosen region became unavailable → ask again */
+    S.region=null;LS.removeItem('gq_reg');                              /* chosen region became unavailable → ask again */
   }
   maybePromptRegion();
 }
 function maybePromptRegion(){
-  if(!localStorage.getItem('gq_consent'))return;                                  /* consent always comes first */
+  if(!LS.getItem('gq_consent'))return;                                  /* consent always comes first */
   if(!REG_CFG.enabled){if(!S.region)setRegion(REG_CFG.defaultRegion,false,true);return;}
   if(!S.region)openM('regionModal');
 }
@@ -830,8 +867,8 @@ function fireConfetti(n=60){
 /* The last good copy of the public catalogue is kept on the device: the next visit paints instantly from it
    while the fresh copy is fetched in the background (display only — the Worker always prices orders itself). */
 const SETTINGS_CACHE_KEY='gq_settings_v1';
-function readSettingsCache(){try{const c=JSON.parse(localStorage.getItem(SETTINGS_CACHE_KEY)||'null');if(c&&Array.isArray(c.cats)&&Array.isArray(c.prods)&&c.prods.length&&Date.now()-c.ts<7*864e5)return c;}catch(e){}return null;}
-function writeSettingsCache(){try{localStorage.setItem(SETTINGS_CACHE_KEY,JSON.stringify({ts:Date.now(),cats:CATS,prods:PRODS,disc:DISC}));}catch(e){}}
+function readSettingsCache(){try{const c=JSON.parse(LS.getItem(SETTINGS_CACHE_KEY)||'null');if(c&&Array.isArray(c.cats)&&Array.isArray(c.prods)&&c.prods.length&&Date.now()-c.ts<7*864e5)return c;}catch(e){}return null;}
+function writeSettingsCache(){try{LS.setItem(SETTINGS_CACHE_KEY,JSON.stringify({ts:Date.now(),cats:CATS,prods:PRODS,disc:DISC}));}catch(e){}}
 async function loadSettings(){
   /* all documents are fetched in parallel (was one-by-one: up to ~6s on slow networks) */
   const get=n=>db.collection('settings').doc(n).get().catch(()=>null);
@@ -840,7 +877,7 @@ async function loadSettings(){
   let realCatalog=false;
   try{if(dProds&&dProds.exists&&Array.isArray(dProds.data().products)&&dProds.data().products.length){PRODS=dProds.data().products;realCatalog=true;}else PRODS=DEFAULT_PRODS;}catch(e){PRODS=DEFAULT_PRODS;}
   try{const d=dDisc;if(d&&d.exists){const x=d.data(),td=new Date().toISOString().split('T')[0];DISC=(x.active&&(!x.expiry||x.expiry>=td)&&x.value>0&&x.value<=100)?{active:true,value:x.value}:{active:false,value:0};}}catch(e){}
-  try{if(dReg){const cfg=normRegCfg(dReg.exists?dReg.data():null);try{localStorage.setItem('gq_regcfg',JSON.stringify(cfg));}catch(e){}applyRegionConfig(cfg);}}catch(e){}
+  try{if(dReg){const cfg=normRegCfg(dReg.exists?dReg.data():null);try{LS.setItem('gq_regcfg',JSON.stringify(cfg));}catch(e){}applyRegionConfig(cfg);}}catch(e){}
   try{const d=dMaint;if(d&&d.exists&&d.data().active){document.body.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#050507;color:#9AA3B5;font-family:'IBM Plex Sans Arabic',sans-serif;text-align:center"><div><h2 style="color:#F4F6FB;font-family:'Reem Kufi',sans-serif;letter-spacing:.14em;margin-bottom:12px">GLITCH Q</h2><p style="font-size:16px">${t('t_maintenance')}</p></div></div>`;return false;}}catch(e){}
   if(realCatalog)writeSettingsCache();
   return true;
@@ -920,7 +957,7 @@ function buildProdCard(prod){
         <div class="pc-type">${san(getCatName(prod.cat))}</div>
         <div class="pc-name">${san(prod.name)}</div>
         <div class="pc-sub">${san(prod.sub||'')}</div>
-        <div class="pc-dzd"><b>${price.toLocaleString()}</b> دج${disc?` <s>${orig.toLocaleString()}</s>`:''}</div>
+        <div class="pc-dzd"><b>${price.toLocaleString('en-US')}</b> دج${disc?` <s>${orig.toLocaleString('en-US')}</s>`:''}</div>
       </div>
       ${prod.stock!==false?`<button class="pc-cart" onclick="event.stopPropagation();addToCart('${jsq(prod.id)}')" aria-label="${t('prod_cart')}"><i class="fa-solid fa-cart-shopping"></i></button>`:''}
     </div>
@@ -942,7 +979,7 @@ function renderHeroFan(){
   pick.forEach((p,i)=>{
     const b=document.createElement('button');b.type='button';b.className='hf hf'+slots[i];
     b.setAttribute('aria-label',p.name||'');
-    b.innerHTML=`<span class="gface ${prodTone(p)}${prodHasImg(p)?' has-img':''}">${prodFaceHTML(p)}</span><span class="hf-cap"><b>${san(p.name)}</b><i>${calcPrice(p).toLocaleString()} دج</i></span>`;
+    b.innerHTML=`<span class="gface ${prodTone(p)}${prodHasImg(p)?' has-img':''}">${prodFaceHTML(p)}</span><span class="hf-cap"><b>${san(p.name)}</b><i>${calcPrice(p).toLocaleString('en-US')} دج</i></span>`;
     b.addEventListener('click',()=>openProdDetail(p));
     fan.appendChild(b);
   });
@@ -965,8 +1002,8 @@ function openProdDetail(prod){
         <h3 class="pd-name">${san(prod.name)}</h3>
         <div class="pd-sub">${san(prod.sub||'')}</div>
         ${desc?`<p class="pd-desc">${san(desc)}</p>`:''}
-        <div class="pd-price">${price.toLocaleString()} دج</div>
-        ${DISC.active?`<div class="pd-old">${orig.toLocaleString()} دج</div>`:''}
+        <div class="pd-price">${price.toLocaleString('en-US')} دج</div>
+        ${DISC.active?`<div class="pd-old">${orig.toLocaleString('en-US')} دج</div>`:''}
         <div class="pd-val">${t('prod_val')}: <strong>${san(valText)}</strong></div>
       </div>
     </div>
@@ -983,8 +1020,8 @@ function openCheckoutForProd(prodId){
   S.selProd=prod;S.cpn=null;S._cpnDisc=0;const price=calcPrice(prod);S._total=price;
   const valText=getValText(prod);
   const ci=$('coProdInfo');
-  if(ci)ci.innerHTML=`<div class="co-pname">${san(prod.name)} — ${san(valText)}</div><div class="co-pprice">${san(prod.sub||'')} · ${price.toLocaleString()} دج</div>`;
-  setText('coTotal',price.toLocaleString()+' دج');
+  if(ci)ci.innerHTML=`<div class="co-pname">${san(prod.name)} — ${san(valText)}</div><div class="co-pprice">${san(prod.sub||'')} · ${price.toLocaleString('en-US')} دج</div>`;
+  setText('coTotal',price.toLocaleString('en-US')+' دج');
   const cr=$('cpnRes');if(cr)cr.textContent='';const ci2=$('cpnInp');if(ci2)ci2.value='';if(S._offerCode&&ci2)ci2.value=S._offerCode;
   openM('checkoutModal');
 }
@@ -1033,7 +1070,7 @@ function addToCart(prodId){
   const ex=S.cart.find(c=>c.id===prodId);
   if(ex)ex.qty=(ex.qty||1)+1;else S.cart.push({id:prodId,name:prod.name,sub:prod.sub,price:calcPrice(prod),qty:1,img:prod.img||null});
   if(S.cart.length>20)S.cart=S.cart.slice(0,20);
-  localStorage.setItem('gq_cart',JSON.stringify(S.cart));updateCartBadge();
+  LS.setItem('gq_cart',JSON.stringify(S.cart));updateCartBadge();
   bumpCart();if(navigator.vibrate)navigator.vibrate([8,20]);
 }
 /* cart feedback without a banner: the cart button pulses and the badge pops */
@@ -1057,19 +1094,19 @@ function renderCart(){
   S.cart.forEach((c,i)=>{
     tot+=c.price*(c.qty||1);const el=document.createElement('div');el.className='ci';
     const ico=c.img==='ps'?'<i class="fa-brands fa-playstation"></i>':c.img==='plus'?'👑':'🎮';
-    el.innerHTML=`<div class="ci-img">${ico}</div><div class="ci-info"><div class="ci-name">${san(c.name||'')}</div><div class="ci-price">${(c.price*(c.qty||1)).toLocaleString()} دج${c.qty>1?` (x${c.qty})`:''}</div></div><button class="ci-rm" onclick="removeFromCart(${i})">✕</button>`;
+    el.innerHTML=`<div class="ci-img">${ico}</div><div class="ci-info"><div class="ci-name">${san(c.name||'')}</div><div class="ci-price">${(c.price*(c.qty||1)).toLocaleString('en-US')} دج${c.qty>1?` (x${c.qty})`:''}</div></div><button class="ci-rm" onclick="removeFromCart(${i})">✕</button>`;
     items.appendChild(el);
   });
-  setText('cartTotV',tot.toLocaleString()+' دج');
+  setText('cartTotV',tot.toLocaleString('en-US')+' دج');
 }
-window.removeFromCart=i=>{if(i<0||i>=S.cart.length)return;S.cart.splice(i,1);localStorage.setItem('gq_cart',JSON.stringify(S.cart));updateCartBadge();renderCart();};
+window.removeFromCart=i=>{if(i<0||i>=S.cart.length)return;S.cart.splice(i,1);LS.setItem('gq_cart',JSON.stringify(S.cart));updateCartBadge();renderCart();};
 
 function goCheckout(){
   if(!S.cart.length)return;closeM('cartModal');
   const tot=S.cart.reduce((s,c)=>s+(c.price*(c.qty||1)),0);S._total=tot;S.selProd=null;S.cpn=null;S._cpnDisc=0;
   const ci=$('coProdInfo');
-  if(ci)ci.innerHTML=`<div class="co-pname">${S.cart.map(c=>`${san(c.name||'')} x${c.qty||1}`).join(' + ')}</div><div class="co-pprice">${tot.toLocaleString()} دج</div>`;
-  setText('coTotal',tot.toLocaleString()+' دج');
+  if(ci)ci.innerHTML=`<div class="co-pname">${S.cart.map(c=>`${san(c.name||'')} x${c.qty||1}`).join(' + ')}</div><div class="co-pprice">${tot.toLocaleString('en-US')} دج</div>`;
+  setText('coTotal',tot.toLocaleString('en-US')+' دج');
   const cr=$('cpnRes');if(cr)cr.textContent='';const ci2=$('cpnInp');if(ci2)ci2.value='';if(S._offerCode&&ci2)ci2.value=S._offerCode;
   openM('checkoutModal');
 }
@@ -1090,13 +1127,13 @@ window.applyCpn=async()=>{
     S._total=Math.max(0,base-dc);S._cpnDisc=dc;
     const discTxt=S.lang==='en'?`Discount ${S.cpn.value}${S.cpn.type==='percent'?'%':' DZD'}`:`خصم ${S.cpn.value}${S.cpn.type==='percent'?'%':' دج'}`;
     res.innerHTML=`<span style="color:var(--green)">✅ ${discTxt}</span>`;
-    setText('coTotal',S._total.toLocaleString()+' دج');
+    setText('coTotal',S._total.toLocaleString('en-US')+' دج');
   }else{
-    S.cpn=null;S._cpnDisc=0;setText('coTotal',(S._total||0).toLocaleString()+' دج');
+    S.cpn=null;S._cpnDisc=0;setText('coTotal',(S._total||0).toLocaleString('en-US')+' دج');
     res.innerHTML=`<span style="color:var(--red)">${r.status===429?t('t_too_many'):t('t_coupon_invalid')}</span>`;
   }
 };
-window.applyOfferCode=()=>{if(S._offer)S._offerCode=S._offer.code;try{navigator.clipboard.writeText(S._offerCode||'');}catch(e){}if(S.cart.length){goCheckout();}else{goPage('shop');toast(t('t_choose_prod'),'twarn');}};
+window.applyOfferCode=()=>{if(S._offer)S._offerCode=S._offer.code;copyText(S._offerCode||'');if(S.cart.length){goCheckout();}else{goPage('shop');toast(t('t_choose_prod'),'twarn');}};
 
 /* ══════════════════════════════════════════
    PAYMENT
@@ -1106,7 +1143,7 @@ window.setPay=m=>{if(!['baridimob','hand'].includes(m))return;S.pay=m;$('tabBari
   const hand=m==='hand';$('recvTabs').classList.toggle('hidden',hand);
   $('emailF').classList.toggle('hidden',hand||S.recv!=='email');$('phoneF').classList.toggle('hidden',hand||S.recv!=='phone');};
 window.setRecv=m=>{if(!['email','phone'].includes(m))return;S.recv=m;$('recvEM').classList.toggle('on',m==='email');$('recvPH').classList.toggle('on',m==='phone');$('emailF').classList.toggle('hidden',m!=='email');$('phoneF').classList.toggle('hidden',m!=='phone');};
-window.copyRIP=()=>navigator.clipboard.writeText('00799999004390466974').then(()=>toast(t('t_rip_copied'),'tok')).catch(()=>{});
+window.copyRIP=()=>copyText('00799999004390466974').then(ok=>{if(ok)toast(t('t_rip_copied'),'tok');});
 window.onFile=ev=>{const f=ev.target.files[0];if(!f)return;$('upH').classList.add('hidden');$('upD').classList.remove('hidden');setText('upDN',f.name.slice(0,30));};
 window.clearUp=()=>{if($('recFile'))$('recFile').value='';$('upD')?.classList.add('hidden');$('upH')?.classList.remove('hidden');};
 window.onRptFile=ev=>{const f=ev.target.files[0];if(!f)return;$('rptUpH')?.classList.add('hidden');$('rptUpD')?.classList.remove('hidden');setText('rptUpDN',f.name.slice(0,30));};
@@ -1172,7 +1209,7 @@ function showOrderDone(oid,total,prodName){
   setText('odTitle',en?'Order received!':'تم استلام طلبك!');
   setText('odSub',en?'Thank you for trusting Glitch Q. Your order is now being processed.':'شكراً لثقتك بـ Glitch Q. طلبك الآن قيد المعالجة.');
   setText('odIdLbl',en?'Order number':'رقم الطلب');setText('odId',oid);
-  setText('odProd',prodName||'');setText('odTot',(total||0).toLocaleString()+' دج');
+  setText('odProd',prodName||'');setText('odTot',(total||0).toLocaleString('en-US')+' دج');
   setText('od1t',en?'Order received':'تم استلام الطلب');setText('od1s',en?'We have your order and payment details':'وصلنا طلبك وبيانات الدفع');
   setText('od2t',en?'Being prepared':'قيد التجهيز');setText('od2s',en?'We are reviewing the payment and preparing your code':'نراجع الدفع ونجهّز الكود الخاص بك');
   setText('od3t',en?'Code delivered':'تسليم الكود');setText('od3s',en?'Usually within 5-60 minutes via your chosen method':'غالباً خلال 5-60 دقيقة عبر وسيلة الاستلام التي اخترتها');
@@ -1182,7 +1219,7 @@ function showOrderDone(oid,total,prodName){
 }
 window.copyOrderId=()=>{
   const b=$('odCopy'),en=S.lang==='en';if(!S._lastOrder)return;
-  navigator.clipboard.writeText(S._lastOrder).then(()=>{if(b){b.textContent=en?'Copied ✓':'تم النسخ ✓';setTimeout(()=>{b.textContent=en?'Copy':'نسخ';},1600);}}).catch(()=>{});
+  copyText(S._lastOrder).then(ok=>{if(ok&&b){b.textContent=en?'Copied ✓':'تم النسخ ✓';setTimeout(()=>{b.textContent=en?'Copy':'نسخ';},1600);}});
 };
 window.trackFromDone=()=>{closeM('orderDoneModal');const i=$('trkInput');if(i&&S._lastOrder)i.value=S._lastOrder;openM('trackModal');if(S._lastOrder)window.trackOrder?.();};
 window.rateFromDone=()=>{closeM('orderDoneModal');openM('ratingModal');};
@@ -1190,8 +1227,8 @@ window.rateFromDone=()=>{closeM('orderDoneModal');openM('ratingModal');};
 async function onOrderSuccess(oid,total,prodName){
   fireConfetti();
   if(navigator.vibrate)navigator.vibrate([20,50,20,50,100]);
-  try{await navigator.clipboard.writeText(oid);}catch(e){}
-  S.cart=[];localStorage.setItem('gq_cart',JSON.stringify(S.cart));updateCartBadge();
+  copyText(oid);                                                                   /* best effort — never holds the order screen back */
+  S.cart=[];LS.setItem('gq_cart',JSON.stringify(S.cart));updateCartBadge();
   closeM('checkoutModal');S.selProd=null;S._total=0;S.cpn=null;S._cpnDisc=0;clearUp();
   showOrderDone(oid,total,prodName);
   loadHistory();
@@ -1232,7 +1269,7 @@ async function endSess(fbU){
     if(banned.exists){await auth.signOut();toast(t('t_banned'),'terr');resetSess();return;}
     if(snap.exists){
       S.udata=snap.data();
-      if(!S.region&&S.udata.region&&REG_CFG.enabled&&REG_CFG.available[S.udata.region]){S.region=S.udata.region;S.regAuto=false;S.cur=S.udata.currency||'EUR';S.sym=S.udata.symbol||'€';localStorage.setItem('gq_reg',S.region);localStorage.setItem('gq_cur',S.cur);localStorage.setItem('gq_sym',S.sym);}
+      if(!S.region&&S.udata.region&&REG_CFG.enabled&&REG_CFG.available[S.udata.region]){S.region=S.udata.region;S.regAuto=false;S.cur=S.udata.currency||'EUR';S.sym=S.udata.symbol||'€';LS.setItem('gq_reg',S.region);LS.setItem('gq_cur',S.cur);LS.setItem('gq_sym',S.sym);}
     }else{
       S.udata={points:5,notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],uid_short:fbU.uid.slice(0,12),email:fbU.email||'',name:fbU.displayName||'',created:new Date()};
       await db.collection('users').doc(fbU.uid).set(S.udata);
@@ -1248,7 +1285,7 @@ async function endSess(fbU){
 }
 
 function resetSess(){S.user=null;S.udata=null;S.history=null;if(S.ready){updHeaderUI();updProfUI();}}
-async function bumpVisitor(){const k='vst_'+new Date().toDateString();if(sessionStorage.getItem(k))return;sessionStorage.setItem(k,'1');wkCall('/stats/visit',{},{auth:false});}
+async function bumpVisitor(){const k='vst_'+new Date().toDateString();if(SS.getItem(k))return;SS.setItem(k,'1');wkCall('/stats/visit',{},{auth:false});}
 
 $('loginForm')?.addEventListener('submit',async e=>{
   e.preventDefault();
@@ -1434,7 +1471,7 @@ function updProfUI(){
   if(!S.user||!S.udata)return;
   setText('profName',san(S.user.displayName||S.udata.name||''));
   try{window.acctApplyProfile&&window.acctApplyProfile();}catch(e){}
-  setText('profPts',(S.udata.points||0).toLocaleString());
+  setText('profPts',(S.udata.points||0).toLocaleString('en-US'));
   const rb=$('profRegBadge');if(rb)rb.textContent=S.region?`${S.region.toUpperCase()} (${S.sym})`:t('choose_region');
   const hl=$('profHistList');
   if(hl){hl.innerHTML='';(S.history||S.udata.history||[]).slice(0,5).forEach(h=>{const d=document.createElement('div');d.className='hi';d.innerHTML=`<span>${san(h)}</span><i class="fa-solid fa-clock" style="color:var(--violet);font-size:11px"></i>`;hl.appendChild(d);});}
@@ -1443,7 +1480,7 @@ function updProfUI(){
 /* ══ REWARDS PAGE ══ */
 function renderRewardsPage(){
   if(!S.udata)return;
-  const pts=S.udata.points||0;setText('rwPts',pts.toLocaleString());
+  const pts=S.udata.points||0;setText('rwPts',pts.toLocaleString('en-US'));
   const{lvl,progress}=getLevel(pts);
   const lb=$('rwLvlBadge');if(lb){lb.textContent=`${lvl.icon} ${S.lang==='en'?lvl.nameEn:lvl.name}`;lb.className='lvl-badge '+lvl.cls;}
   const pf=$('rwPtsBar');if(pf)pf.style.width=progress+'%';
@@ -1478,7 +1515,7 @@ async function paintLeaderboard(id,crown){
   const list=$(id);if(!list)return;
   const top=await fetchLeaderboard();if(!top)return;
   list.innerHTML='';const medals=['lb-r1','lb-r2','lb-r3'];
-  top.forEach((u,i)=>{const el=document.createElement('div');el.className='lb-it';el.innerHTML=`<div class="lb-rank ${medals[i]||''}">${i+1}</div><div class="lb-name">${san(u.name||'')}</div><div class="lb-pts">${(u.points||0).toLocaleString()} ${t('t_pts')}</div>${crown&&i===0?'<span>👑</span>':''}`;list.appendChild(el);});
+  top.forEach((u,i)=>{const el=document.createElement('div');el.className='lb-it';el.innerHTML=`<div class="lb-rank ${medals[i]||''}">${i+1}</div><div class="lb-name">${san(u.name||'')}</div><div class="lb-pts">${(u.points||0).toLocaleString('en-US')} ${t('t_pts')}</div>${crown&&i===0?'<span>👑</span>':''}`;list.appendChild(el);});
 }
 async function loadLbRw(){return paintLeaderboard('lbListRw',true);}
 async function renderLeaderboard(){return paintLeaderboard('lbList',false);}
@@ -1513,11 +1550,12 @@ function renderMissions(containerId){
 
 /* Delivered codes are valid until the last day of the delivery month (Algeria time). `until` = "YYYY-MM-DD" saved with the notification. */
 const DZ_MONTHS_AR=['جانفي','فيفري','مارس','أفريل','ماي','جوان','جويلية','أوت','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+const DZ_MONTHS_EN=['January','February','March','April','May','June','July','August','September','October','November','December'];
 function codeUntilHTML(iso){
   const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso||''));if(!m)return '';
   const dz=new Date(Date.now()+3600000),today=dz.getUTCFullYear()+'-'+String(dz.getUTCMonth()+1).padStart(2,'0')+'-'+String(dz.getUTCDate()).padStart(2,'0');
-  const txt=`${+m[3]} ${DZ_MONTHS_AR[+m[2]-1]||''} ${m[1]}`;
-  return String(iso)<today?`<div class="ni-until exp">⛔ انتهت صلاحية الكود (${san(txt)})</div>`:`<div class="ni-until">⏳ صالح حتى ${san(txt)}</div>`;
+  const en=S.lang==='en',txt=`${+m[3]} ${(en?DZ_MONTHS_EN:DZ_MONTHS_AR)[+m[2]-1]||''} ${m[1]}`;
+  return String(iso)<today?`<div class="ni-until exp">⛔ ${en?'Code expired':'انتهت صلاحية الكود'} (${san(txt)})</div>`:`<div class="ni-until">⏳ ${en?'Valid until':'صالح حتى'} ${san(txt)}</div>`;
 }
 function loadNotifs(){
   if(!S.user||!S.udata)return;const notifs=S.udata.notifications||[];
@@ -1607,13 +1645,13 @@ function drawWheel(canvas,rotation){
 
 
 function initSpinTimer(){
-  const update=()=>{const ls=localStorage.getItem('gq_lastSpin');if(ls){const rem=parseInt(ls)+86400000-Date.now();if(rem>0){const h=Math.floor(rem/3600000),m=Math.floor((rem%3600000)/60000);setText('spinTimer',`${t('t_spin_next')} ${h}${S.lang==='en'?'h':'س'} ${m}${S.lang==='en'?'m':'د'}`);const btn=$('spinBtn');if(btn){btn.disabled=true;btn.style.opacity='.5';}return;}}setText('spinTimer','');const btn=$('spinBtn');if(btn){btn.disabled=false;btn.style.opacity='1';btn.textContent=t('spin_btn');}};
+  const update=()=>{const ls=LS.getItem('gq_lastSpin');if(ls){const rem=parseInt(ls)+86400000-Date.now();if(rem>0){const h=Math.floor(rem/3600000),m=Math.floor((rem%3600000)/60000);setText('spinTimer',`${t('t_spin_next')} ${h}${S.lang==='en'?'h':'س'} ${m}${S.lang==='en'?'m':'د'}`);const btn=$('spinBtn');if(btn){btn.disabled=true;btn.style.opacity='.5';}return;}}setText('spinTimer','');const btn=$('spinBtn');if(btn){btn.disabled=false;btn.style.opacity='1';btn.textContent=t('spin_btn');}};
   update();setInterval(update,60000);
 }
-function initSpinTimerRw(){const ls=localStorage.getItem('gq_lastSpin');if(ls){const rem=parseInt(ls)+86400000-Date.now();if(rem>0){const h=Math.floor(rem/3600000),m=Math.floor((rem%3600000)/60000);setText('spinTimerRw',`${t('t_spin_next')} ${h}${S.lang==='en'?'h':'س'} ${m}${S.lang==='en'?'m':'د'}`);return;}}setText('spinTimerRw','');}
+function initSpinTimerRw(){const ls=LS.getItem('gq_lastSpin');if(ls){const rem=parseInt(ls)+86400000-Date.now();if(rem>0){const h=Math.floor(rem/3600000),m=Math.floor((rem%3600000)/60000);setText('spinTimerRw',`${t('t_spin_next')} ${h}${S.lang==='en'?'h':'س'} ${m}${S.lang==='en'?'m':'د'}`);return;}}setText('spinTimerRw','');}
 
 window.doSpin=async function(){
-  if(S.spinning)return;const ls=localStorage.getItem('gq_lastSpin');
+  if(S.spinning)return;const ls=LS.getItem('gq_lastSpin');
   if(ls&&Date.now()-parseInt(ls)<86400000){toast(t('t_spin_daily'),'twarn');return;}
   if(!S.user){toast(t('t_login_first'),'terr');openM('authModal');return;}
   S.spinning=true;const btn=$('spinBtn');if(btn){btn.disabled=true;btn.style.opacity='.5';}
@@ -1621,7 +1659,7 @@ window.doSpin=async function(){
   const r=await wkCall('/account/spin',{});
   if(!(r.data&&r.data.ok)){
     S.spinning=false;if(btn){btn.disabled=false;btn.style.opacity='1';}
-    if(r.data&&r.data.reason==='wait'){localStorage.setItem('gq_lastSpin',String(Date.now()-(86400000-(r.data.remainingMs||86400000))));initSpinTimer();toast(t('t_spin_daily'),'twarn');}
+    if(r.data&&r.data.reason==='wait'){LS.setItem('gq_lastSpin',String(Date.now()-(86400000-(r.data.remainingMs||86400000))));initSpinTimer();toast(t('t_spin_daily'),'twarn');}
     else toast(t('t_error'),'terr');
     return;
   }
@@ -1635,7 +1673,7 @@ window.doSpin=async function(){
 };
 
 async function onSpinDone(prize,srv){
-  S.spinning=false;localStorage.setItem('gq_lastSpin',Date.now().toString());
+  S.spinning=false;LS.setItem('gq_lastSpin',Date.now().toString());
   /* the server decides the prize: if its table ever differs from this wheel (old Worker, new site), show what it really paid */
   if(srv&&Number.isFinite(srv.pts)&&srv.pts!==prize.pts){prize={pts:srv.pts,label:srv.pts>0?(srv.pts+' نقاط'):'حاول غداً',labelEn:srv.pts>0?(srv.pts+' Points'):'Try Tomorrow'};}
   const label=S.lang==='en'?(prize.labelEn||prize.label):prize.label;
@@ -1680,19 +1718,19 @@ function renderMilestones(){
   const en=S.lang==='en';container.innerHTML='';
   if(!RW){container.innerHTML=`<p style="font-size:12px;color:var(--mid)">${t('rw_loading')}</p>`;return;}
   const sum=document.createElement('div');sum.className='ms-sum';
-  sum.innerHTML=`<div><b>${RW.points.toLocaleString()}</b><span>${t('rw_bal')}</span></div><div class="ok"><b>${RW.redeemablePts.toLocaleString()}</b><span>${t('rw_avail')}</span></div><div class="lk"><b>${RW.lockedPts.toLocaleString()}</b><span>${t('rw_lock')}</span></div>`;
+  sum.innerHTML=`<div><b>${RW.points.toLocaleString('en-US')}</b><span>${t('rw_bal')}</span></div><div class="ok"><b>${RW.redeemablePts.toLocaleString('en-US')}</b><span>${t('rw_avail')}</span></div><div class="lk"><b>${RW.lockedPts.toLocaleString('en-US')}</b><span>${t('rw_lock')}</span></div>`;
   container.appendChild(sum);
   RW.rewards.forEach(rw=>{
     const can=RW.redeemablePts>=rw.pts,haveEnough=RW.points>=rw.pts;
     const el=document.createElement('div');el.className='milestone-it'+(can?'':' locked');
     const name=en?(rw.nameEn||rw.name):rw.name;
     const miss=Math.max(0,rw.pts-RW.redeemablePts);
-    const reqTxt=can?`${t('rw_cost')} ${rw.pts.toLocaleString()} ${t('t_pts')}`:`${t('rw_need')} ${miss.toLocaleString()} ${t('rw_more')}${haveEnough?' · '+t('t_rw_locked'):''}`;
+    const reqTxt=can?`${t('rw_cost')} ${rw.pts.toLocaleString('en-US')} ${t('t_pts')}`:`${t('rw_need')} ${miss.toLocaleString('en-US')} ${t('rw_more')}${haveEnough?' · '+t('t_rw_locked'):''}`;
     el.innerHTML=`
       <div class="ms-ico">🎁</div>
       <div class="ms-info">
         <div class="ms-name">${san(name)}</div>
-        <div class="ms-desc">${rw.pts.toLocaleString()} ${t('t_pts')}</div>
+        <div class="ms-desc">${rw.pts.toLocaleString('en-US')} ${t('t_pts')}</div>
         <div class="ms-req">${san(reqTxt)}</div>
         <div class="mi-prog-bar" style="margin-top:6px"><div class="mi-prog-fill" style="width:${Math.min(100,Math.floor(RW.redeemablePts/rw.pts*100))}%"></div></div>
       </div>
@@ -1728,24 +1766,24 @@ function initReferral(){
   const refUrl=`${location.origin}${location.pathname}?ref=${refId}`;
   const el=$('refLinkTxt');if(el)el.textContent=refUrl;
   setText('refCount',S.udata?.referrals||0);
-  setText('refPts',(S.udata?.refPoints||0).toLocaleString());
-  const rd=$('refDesc');if(rd)rd.innerHTML=`${t('ref_desc')}${RW?`<br><strong style="color:var(--violet)">${t('ref_cap').replace('{n}',RW.refMaxPts.toLocaleString())}</strong>`:''}<br><small style="color:var(--dim)">${t('ref_warning')}</small>`;
+  setText('refPts',(S.udata?.refPoints||0).toLocaleString('en-US'));
+  const rd=$('refDesc');if(rd)rd.innerHTML=`${t('ref_desc')}${RW?`<br><strong style="color:var(--violet)">${t('ref_cap').replace('{n}',RW.refMaxPts.toLocaleString('en-US'))}</strong>`:''}<br><small style="color:var(--dim)">${t('ref_warning')}</small>`;
 }
 
 window.copyRefLink=function(){
   if(!S.user)return;
   const refUrl=`${location.origin}${location.pathname}?ref=${S.user.uid.slice(0,12)}`;
-  navigator.clipboard.writeText(refUrl).then(()=>toast(t('t_ref_copied'),'tok')).catch(()=>{});
+  copyText(refUrl).then(ok=>{if(ok)toast(t('t_ref_copied'),'tok');});
 };
 
 async function processReferral(){
   const url=new URLSearchParams(window.location.search);const ref=url.get('ref');
   if(!ref||!S.user||typeof ref!=='string'||ref.length>12)return;
   if(ref===S.user.uid.slice(0,12))return;
-  const k=`gq_ref_${S.user.uid}`;if(localStorage.getItem(k))return;
+  const k=`gq_ref_${S.user.uid}`;if(LS.getItem(k))return;
   const r=await wkCall('/account/referral',{ref});
-  if(r.data&&r.data.ok){localStorage.setItem(k,'1');toast(t('t_ref_done'),'tok');}
-  else if(r.data&&(r.data.reason==='already'))localStorage.setItem(k,'1');
+  if(r.data&&r.data.ok){LS.setItem(k,'1');toast(t('t_ref_done'),'tok');}
+  else if(r.data&&(r.data.reason==='already'))LS.setItem(k,'1');
 }
 
 async function getFingerprint(){
@@ -1777,7 +1815,7 @@ function renderOffer(){
   const endMs=o.expiry?Date.parse(o.expiry+'T23:59:59+01:00'):0;
   if(endMs&&Date.now()>endMs){card.classList.add('hidden');return;}
   card.classList.remove('hidden');
-  setText('offerPct',o.type==='percent'?o.value+'%':Number(o.value).toLocaleString()+(en?' DZD':' دج'));
+  setText('offerPct',o.type==='percent'?o.value+'%':Number(o.value).toLocaleString('en-US')+(en?' DZD':' دج'));
   setText('offerCode',o.code);
   const d=$('offerDesc');
   if(d){d.innerHTML=String(t('offer_desc')).split('\n').join('<br>');
@@ -2026,7 +2064,7 @@ window.addEventListener('DOMContentLoaded',async()=>{
   /* Clock */
   setInterval(()=>{
     const now=new Date();
-    const timeStr=now.toLocaleTimeString(S.lang==='ar'?'ar':'en');
+    const timeStr=now.toLocaleTimeString(S.lang==='ar'?'ar-u-nu-latn':'en-US');
     const timeEl=document.getElementById('topbarTime');
     if(timeEl)timeEl.textContent=timeStr;
   },1000);

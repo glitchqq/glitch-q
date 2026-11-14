@@ -38,7 +38,7 @@ html{overflow-x:hidden}
 html.lenis,html.lenis body{height:auto}
 .lenis.lenis-smooth{scroll-behavior:auto!important}
 .lenis.lenis-stopped{overflow:hidden}
-body{background:var(--bg);color:var(--text);font-family:var(--f);direction:rtl;text-align:right;min-height:100vh;overflow-x:clip}
+body{background:var(--bg);color:var(--text);font-family:var(--f);direction:rtl;text-align:right;min-height:100vh;min-height:100dvh;overflow-x:clip}
 button,input,textarea,select{font-family:inherit;border:none;outline:none;background:none;color:inherit}
 a{color:inherit;text-decoration:none;cursor:pointer}
 .hidden{display:none!important}
@@ -307,7 +307,7 @@ a{color:inherit;text-decoration:none;cursor:pointer}
 .nav-live{color:var(--green);font-size:18px;line-height:1;margin-inline-start:4px}
 
 /* ═══ PAGES ═══ */
-#pageWrap{min-height:100vh}
+#pageWrap{min-height:100vh;min-height:100dvh}
 .page{display:none;animation:pgIn .25s ease}
 .page.on{display:block}
 @keyframes pgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -357,7 +357,7 @@ html[dir="ltr"] .hs-vig{background:linear-gradient(to right,rgba(5,5,7,.78),rgba
 .btn-hero-p{background:var(--btn);color:#fff;padding:16px 34px;border:0;box-shadow:0 12px 38px -10px rgba(225,6,44,.9),inset 0 0 0 1px rgba(255,255,255,.14)}
 .btn-hero-p:hover{background:var(--btn-h);box-shadow:0 16px 50px -8px rgba(255,31,61,.95),inset 0 0 0 1px rgba(255,255,255,.3);transform:skewX(-14deg) translateY(-2px)}
 .btn-hero-p i{font-size:12px}
-.btn-hero-o{background:rgba(5,5,7,.5);color:#fff;border:1px solid rgba(255,255,255,.3);padding:15px 28px;backdrop-filter:blur(4px)}
+.btn-hero-o{background:rgba(5,5,7,.5);color:#fff;border:1px solid rgba(255,255,255,.3);padding:15px 28px;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
 .btn-hero-o:hover{border-color:var(--violet);background:rgba(225,6,44,.12)}
 .hero-desc{font-size:12.5px;color:#8E8E9C;display:flex;align-items:center;gap:10px}
 .hero-desc::before{content:'';width:22px;height:1px;background:var(--violet)}
@@ -566,11 +566,11 @@ html[dir="ltr"] .hs-cue{left:auto;right:max(30px,calc((100vw - 1240px)/2 + 24px)
 .nl-txt{flex:1;min-width:200px}
 .nl-txt b{font-family:var(--fh);font-size:19px;font-weight:400;display:block;margin-bottom:3px}
 .nl-txt p{font-size:12.5px;color:var(--mid)}
-.nl-inp-wrap{display:flex;gap:8px;flex:1;min-width:260px}
-.nl-inp-wrap input{flex:1;height:44px;padding:0 14px;background:var(--bg2);border:1px solid var(--brd);border-radius:2px;color:var(--text);font-size:13px;font-family:var(--f);direction:rtl}
+.nl-inp-wrap{display:flex;gap:8px;flex:1;min-width:min(260px,100%)}
+.nl-inp-wrap input{flex:1;min-width:0;width:100%;height:44px;padding:0 14px;background:var(--bg2);border:1px solid var(--brd);border-radius:2px;color:var(--text);font-size:13px;font-family:var(--f);direction:rtl}
 .nl-inp-wrap input::placeholder{color:var(--dim)}
 .nl-inp-wrap input:focus{border-color:var(--violet);outline:none;box-shadow:0 0 0 3px rgba(245,34,63,.18)}
-.nl-inp-wrap .btn-v{padding:0 22px}
+.nl-inp-wrap .btn-v{padding:0 22px;flex-shrink:0}
 
 /* ═══ REWARDS PAGE ═══ */
 .rewards-wrap{max-width:700px;margin:0 auto;padding:24px 20px;display:flex;flex-direction:column;gap:16px}
@@ -1042,7 +1042,7 @@ html[dir="ltr"] .hs-steps b{letter-spacing:.2em}
   .hs-hud .c{width:20px;height:20px}
   .mq{margin:-12px -14px 16px;padding:9px 0}.mq-t span{font-size:14px}
   .how-n{font-size:46px}
-  .f-mega{font-size:clamp(56px,22vw,120px)}
+  .f-mega{font-size:clamp(40px,18vw,120px)}          /* the whole word GLITCH Q must fit: at 22vw its "Q" was cut off on phones */
   .cur{display:none}
 }
 @media(max-width:560px){
@@ -1157,7 +1157,7 @@ html[dir="ltr"] .cat-c:hover::after{transform:translateX(5px)}
 .how-it p{font-size:14.5px;max-width:34ch}
 
 /* HUD PANELS + NEWSLETTER + FOOTER keep their shapes, gain depth from the world behind */
-.b3-card,.nl-wrap{backdrop-filter:none}
+.b3-card,.nl-wrap{-webkit-backdrop-filter:none;backdrop-filter:none}
 .nl-wrap{background:linear-gradient(100deg,rgba(245,34,63,.14),rgba(5,5,7,.7) 60%),rgba(15,15,20,.8)}
 
 /* mobile: no viewport frame, thinner rail */
@@ -1240,3 +1240,56 @@ html[dir="rtl"] .hero-h1{line-height:1.22}
 .streak-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
 .sday{width:auto;min-height:50px;height:auto;padding:6px 0}
 @media(max-width:600px){.pd-top{justify-content:center}.pd-face{width:150px}.pd-info{flex-basis:100%;min-width:0}}
+
+/* ═══ DEVICE COMPATIBILITY (iPhone / iPad / Android / Mac / Windows) ═══════════════════════════════════════════════════════
+   Kept in one block at the end so each line says why it exists. */
+:root{color-scheme:dark}                                      /* native bits (scrollbars, select pop-ups, date pickers, autofill) follow the dark theme on Windows/macOS/Android */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}      /* iPhone/Android landscape must not inflate the text on their own */
+a,button,[role="button"],label,select,summary,input{touch-action:manipulation}   /* no 300ms tap delay / double-tap zoom on controls */
+/* iOS paints its own inner shadow and rounded corners on form controls unless told not to (selects keep their native arrow) */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="hidden"]),textarea,button{-webkit-appearance:none;appearance:none}
+/* browser autofill would paint a pale background under our light text — keep the theme (the long transition delays the UA colour forever) */
+input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus,textarea:-webkit-autofill,select:-webkit-autofill{
+  -webkit-text-fill-color:var(--text);caret-color:var(--text);transition:background-color 99999s ease-out 0s}
+@media (pointer:coarse){
+  /* iOS Safari zooms the whole page when a field smaller than 16px gets focus (and Android Chrome does on some builds) */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="hidden"]),select,textarea{font-size:16px!important}
+}
+@media (hover:none){
+  /* a tap leaves :hover stuck on touch screens — that must not dim the whole product rail or leave a card tilted */
+  .prods-scroll:has(.pc:hover) .pc:not(:hover),.prods-grid:has(.pc:hover) .pc:not(:hover){filter:none}
+  .pc:hover{transform:none;z-index:auto}
+}
+
+/* HEADER never overflows the screen. The control sizes at the very end of the "re-skin" above (40px buttons) used to win over the
+   small-phone sizes, and between 769 and ~1000px the desktop bar (4 tabs + 5 controls) is wider than the screen. */
+@media(max-width:400px){
+  .hdr-inner{gap:6px;padding:0 10px}
+  .hdr-acts{gap:5px}
+  .act-btn,.lang-btn,.u-btn{height:36px;min-width:36px}
+  .lang-btn{padding:0 7px}
+  .btn-out-sm{padding:0 10px;height:36px}
+  .u-btn{padding:0 8px 0 4px;gap:6px}
+  .u-av{width:26px;height:26px}
+}
+@media(max-width:360px){
+  .lk-hdr{width:84px}
+  .lang-btn i{display:none}
+  #uNameH{display:none}
+}
+@media(max-width:300px){
+  .lk-hdr{width:70px}
+  .hdr-inner{padding:0 6px;gap:4px}
+  .hdr-acts{gap:3px}
+  .act-btn,.lang-btn,.u-btn{min-width:32px}
+  .btn-out-sm{padding:0 7px;font-size:12px}
+}
+@media(min-width:769px) and (max-width:1000px){
+  #header{gap:10px;padding-inline:14px}
+  .nav-ul a{font-size:14px;padding:0 9px}
+  .hdr-acts{gap:6px}
+  .lang-btn{padding:0 8px}
+  .btn-out-sm,.btn-pri-sm{padding:0 11px;font-size:12px}
+  .lk-hdr{width:104px}
+}
+.b3-grid>*{min-width:0}                              /* a card must be allowed to shrink to a 280px (folded phone) screen instead of pushing past it */

@@ -569,6 +569,7 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
   ck('mail verify: works without a name too', /فعّل حسابك/.test(T.buildVerifyEmail(vlink, '')) && !/أهلاً/.test(T.buildVerifyEmail(vlink, '')));
   for (const [n, h] of Object.entries(all)) {
     ck(`mail ${n}: phone-safe card — fluid 100% width capped at 600px (a fixed width="600" table pushed the whole letter off-screen on Android)`, !/<table[^>]*width="600"/.test(h.replace(/<!--\[if mso\]>[\s\S]*?<!\[endif\]-->/g, '')) && /max-width:600px/.test(h) && /<!--\[if mso\]>/.test(h));
+    ck(`mail ${n}: iPhone/Apple Mail must not turn codes and digits into blue phone/date links (format-detection + x-apple-data-detectors)`, /<meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no">/.test(h) && /a\[x-apple-data-detectors\]\{color:inherit!important/.test(h));
   }
   { /* the code must fit a 320px phone at the size we choose, without relying on word wrapping (62% of the font size per mono glyph + letter-spacing, 236px available) */
     for (const c of ['ZZZZ-1', 'KMPJXkmoiQmPOBWU', 'XXXX-YYYY-ZZZZ-WWWW', 'ABCD-EFGH-IJKL-MNOP-QRST']) {

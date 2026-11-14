@@ -1765,11 +1765,13 @@ function mailShell({ tone, label, title, preheader, body, note, extraFoot = '' }
 <meta name="color-scheme" content="dark">
 <meta name="supported-color-schemes" content="dark">
 <meta name="x-apple-disable-message-reformatting">
+<meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no">
 <title>${escHtml(title)}</title>
 <style>
   :root{color-scheme:dark;supported-color-schemes:dark}
   body{margin:0;padding:0;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}
   a{text-decoration:none}
+  a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important;font-size:inherit!important;font-family:inherit!important;font-weight:inherit!important;line-height:inherit!important}
   @media only screen and (min-width:600px){
     .wrap{padding:28px 12px!important}
     .px{padding-left:32px!important;padding-right:32px!important}
