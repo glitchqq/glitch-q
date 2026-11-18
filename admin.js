@@ -217,6 +217,7 @@ function renderOrders(){
             <span><i class="fa-regular fa-user"></i>${esc(o.userId==='guest'?'زائر':o.userId?.slice(0,8)||'—')}</span>
             <span><i class="fa-regular fa-calendar"></i>${esc(o.date||'')}</span>
             ${o.receiveContact?`<span><i class="fa-regular fa-envelope"></i>${san(o.receiveContact)}</span>`:''}
+            ${o.senderName?`<span><i class="fa-solid fa-signature"></i>${san(o.senderName)}</span>`:''}
             ${o.coupon?`<span><i class="fa-solid fa-ticket"></i>${san(o.coupon)}</span>`:''}
           </div>
         </div>
@@ -225,6 +226,7 @@ function renderOrders(){
       <div class="adm-card-actions">
         ${o.status==='pending'?`<button onclick="setOrderStatus('${jsq(o.id)}','processing')" class="btn btn-o btn-sm"><i class="fa-solid fa-gear"></i> معالجة</button><button onclick="openConfirmModal('${jsq(o.id)}','${jsq(o.product||'')}','${jsq(o.receiveContact||'')}')" class="btn btn-g btn-sm"><i class="fa-solid fa-check"></i> إرسال</button><button onclick="setOrderStatus('${jsq(o.id)}','rejected')" class="btn btn-r btn-sm"><i class="fa-solid fa-xmark"></i> رفض</button>`:''}
         ${o.status==='processing'?`<button onclick="openConfirmModal('${jsq(o.id)}','${jsq(o.product||'')}','${jsq(o.receiveContact||'')}')" class="btn btn-g btn-sm"><i class="fa-solid fa-paper-plane"></i> إرسال الكود</button><button onclick="setOrderStatus('${jsq(o.id)}','rejected')" class="btn btn-r btn-sm"><i class="fa-solid fa-xmark"></i> رفض</button>`:''}
+        ${o.hasReceipt?`<button onclick="viewReceipt('${jsq(o.id)}')" class="btn btn-c btn-sm"><i class="fa-solid fa-receipt"></i> الوصل</button>`:o.paymentMethod==='baridimob'?`<span class="badge badge-info" title="هذا الطلب سبق تفعيل حفظ الوصولات، أو أن الصورة كبيرة جداً: صورته في تيليجرام">الوصل في تيليجرام</span>`:''}
         <button onclick="copyText('${jsq(o.id)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> ID</button>
         <button onclick="deleteOrder('${jsq(o.id)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i></button>
       </div>
@@ -235,7 +237,26 @@ function renderOrders(){
 
 function filterOrders(f,btn){currentOrderFilter=f;document.querySelectorAll('#tab-orders .filter-btn').forEach(b=>b.classList.remove('on'));btn.classList.add('on');renderOrders();}
 async function setOrderStatus(id,status){if(status==='done'){aToast('استخدم زر إرسال الكود لإتمام الطلب','err');return;}try{await db.collection('orders').doc(id).update({status});allOrders=allOrders.map(o=>o.id===id?{...o,status}:o);renderOrders();aToast(`تم تغيير الحالة: ${status}`,'ok');await loadDashboard();}catch(e){aToast('خطأ في التحديث','err');}}
-async function deleteOrder(id){if(!confirm('حذف هذا الطلب نهائياً؟'))return;try{await db.collection('orders').doc(id).delete();allOrders=allOrders.filter(o=>o.id!==id);renderOrders();aToast('تم الحذف','info');}catch(e){aToast('خطأ','err');}}
+async function viewReceipt(id){
+  actOpen('<i class="fa-solid fa-receipt" style="color:var(--cyan)"></i> وصل الدفع',loading());
+  try{
+    const d=await db.collection('order_receipts').doc(id).get();
+    if(!d.exists){document.getElementById('actBody').innerHTML=empty('لا يوجد وصل محفوظ لهذا الطلب (راجع تيليجرام)');return;}
+    const x=d.data();const mime=/^image\/(png|jpeg|gif|webp)$/.test(String(x.mime))?x.mime:'image/png';
+    const bytes=x.data&&typeof x.data.toUint8Array==='function'?x.data.toUint8Array():null;
+    if(!bytes||!bytes.length){document.getElementById('actBody').innerHTML=errState('الصورة تالفة أو فارغة');return;}
+    if(actUrl){try{URL.revokeObjectURL(actUrl);}catch(e){}}
+    actUrl=URL.createObjectURL(new Blob([bytes],{type:mime}));
+    const o=allOrders.find(z=>z.id===id)||{};
+    document.getElementById('actBody').innerHTML=`<p style="font-size:12px;color:var(--mid);margin-bottom:10px">${san(o.product||'')} · ${esc((o.totalDZD||0).toLocaleString())} دج${o.senderName?' · المرسل: '+san(o.senderName):''}</p><a href="${actUrl}" target="_blank" rel="noopener"><img src="${actUrl}" alt="وصل الدفع" style="width:100%;max-height:65vh;object-fit:contain;border-radius:8px;background:#000"></a><div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><a class="btn btn-o btn-sm" href="${actUrl}" download="receipt-${esc(id.slice(0,10))}.${mime.split('/')[1]==='jpeg'?'jpg':mime.split('/')[1]}"><i class="fa-solid fa-download"></i> حفظ الصورة</a><button onclick="deleteReceipt('${jsq(id)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف الوصل</button></div>`;
+  }catch(e){document.getElementById('actBody').innerHTML=errState('تعذّر تحميل الوصل: '+errCode(e));}
+}
+async function deleteReceipt(id){
+  if(!confirm('حذف صورة الوصل من لوحة التحكم؟ (نسخة تيليجرام تبقى)'))return;
+  try{const b=db.batch();b.delete(db.collection('order_receipts').doc(id));b.update(db.collection('orders').doc(id),{hasReceipt:false});await b.commit();allOrders=allOrders.map(o=>o.id===id?{...o,hasReceipt:false}:o);actClose();renderOrders();aToast('تم حذف الوصل','info');}
+  catch(e){aToast('تعذّر الحذف: '+errCode(e),'err');}
+}
+async function deleteOrder(id){if(!confirm('حذف هذا الطلب نهائياً؟'))return;try{const b=db.batch();b.delete(db.collection('orders').doc(id));b.delete(db.collection('order_receipts').doc(id));await b.commit();allOrders=allOrders.filter(o=>o.id!==id);renderOrders();aToast('تم الحذف','info');}catch(e){aToast('خطأ','err');}}
 
 function openConfirmModal(orderId,product,contact){
   currentOrderForDelivery={orderId,product,contact};
@@ -406,7 +427,7 @@ function renderProds(){
   if(!filtered.length){el.innerHTML=empty('لا توجد منتجات');return;}
   filtered.forEach(p=>{
     const realIdx=allProds.indexOf(p);const card=document.createElement('div');card.className='adm-card';
-    const valText=p.cur==='month'?`${p.val} شهر`:p.cur==='copy'?'نسخة':`${p.val}${p.sym||''}`;
+    const valText=p.cur==='month'?`${p.val} شهر`:p.cur==='copy'?'نسخة':p.cur==='item'?(p.valText||'—'):`${p.val}${p.sym||''}`;
     const bgCls=p.img==='ps'?'prod-thumb-ps':p.img==='plus'?'prod-thumb-plus':'prod-thumb-game';
     const ico=p.img==='ps'?'<i class="fa-brands fa-playstation"></i>':p.img==='plus'?'<i class="fa-solid fa-crown"></i>':'<i class="fa-solid fa-gamepad"></i>';
     card.innerHTML=`<div class="adm-card-top"><div class="prod-thumb ${bgCls}">${p.imgUrl?`<img src="${esc(safeUrl(p.imgUrl))}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">`:ico}</div><div class="adm-card-info"><div class="adm-card-title">${san(p.name||'')} — ${esc(valText)}</div><div class="adm-card-sub">${san(p.sub||'')} · ${esc((p.priceDZD||0).toLocaleString())} دج</div><div class="adm-card-meta"><span>${esc(p.cat)}</span>${p.badge?`<span class="badge badge-info">${san(p.badge)}</span>`:''}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${esc(p.stock!==false?'checked':'')} onchange="toggleStock(${esc(realIdx)},this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="editProd(${esc(realIdx)})" class="btn btn-o btn-sm"><i class="fa-solid fa-pen"></i> تعديل</button><button onclick="deleteProd(${esc(realIdx)})" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
@@ -423,15 +444,30 @@ const PF_TIERS=['Essential','Extra','Premium'];
 const PF_DURS=[[1,'شهر واحد'],[3,'3 أشهر'],[12,'12 شهراً']];
 const PF_PLATS=['PS5','PS4','PS4 & PS5'];
 const PF_VALUES=[5,10,15,20,25,50,75,100];
-const PF_NAME={card:'PS Store Card',sub:'PS Plus',game:''};
+const PF_NAME={card:'PS Store Card',sub:'PS Plus',game:'',other:''};
 let pf={kind:null,editing:null,idTouched:false,nameTouched:false,keepBadge:''};
 const $pf=id=>document.getElementById(id);
 function pfOpts(sel,list,first){sel.innerHTML=(first!==undefined?`<option value="">${esc(first)}</option>`:'')+list.map(x=>Array.isArray(x)?`<option value="${esc(x[0])}">${esc(x[1])}</option>`:`<option value="${esc(x)}">${esc(x)}</option>`).join('');}
 function pfFillCats(){
   const sel=$pf('npCat');if(!sel)return;const cur=sel.value;
   const list=allCats.length?allCats:[{id:'psstore',name:'بطاقات PlayStation'},{id:'psplus',name:'اشتراكات PS Plus'},{id:'games',name:'ألعاب رقمية'}];
-  sel.innerHTML=list.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
-  if(cur&&list.some(c=>c.id===cur))sel.value=cur;
+  sel.innerHTML=list.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')+'<option value="__new">➕ قسم جديد…</option>';
+  if(cur&&(cur==='__new'||list.some(c=>c.id===cur)))sel.value=cur;
+  pfCat();
+}
+/* picking "➕ قسم جديد" shows its two name boxes; the section is created together with the product */
+function pfCat(){const nb=$pf('pfNewCat');if(nb)nb.classList.toggle('hidden',$pf('npCat').value!=='__new');}
+async function pfCreateCat(){
+  const name=$pf('npNewCatName').value.trim();
+  if(!name){aToast('اكتب اسم القسم الجديد','err');return null;}
+  const nameEn=$pf('npNewCatNameEn').value.trim()||name,icon=($pf('npNewCatIcon').value.trim()||'🎁').slice(0,8);
+  const{cats}=await readCats();
+  const base=slugId(nameEn.replace(/[^\x00-\x7F]/g,' '))||('cat-'+Date.now().toString(36));
+  let id=base,n=2;while(cats.some(c=>c.id===id))id=base+'-'+(n++);
+  cats.push({id,name,nameEn,icon,bg:'linear-gradient(135deg,#203a43,#2c5364)',enabled:true,order:Math.max(0,...cats.map(c=>Number(c.order)||0))+1});
+  await db.collection('settings').doc('categories').set({categories:cats});
+  allCats=cats.slice().sort((a,b)=>(a.order||0)-(b.order||0));
+  return id;
 }
 function pfInitStatic(){
   if($pf('npTier').dataset.init)return;$pf('npTier').dataset.init='1';
@@ -444,14 +480,15 @@ function pfKind(k,keepValues){
   document.querySelectorAll('#pfKinds .pf-kind').forEach(b=>b.classList.toggle('on',b.dataset.k===k));
   $pf('pfBody').classList.remove('hidden');
   document.querySelectorAll('#pfBody .pf-only').forEach(e=>e.classList.toggle('hidden',!e.classList.contains('pf-'+k)));
+  $pf('pfRegionWrap').classList.toggle('hidden',k==='other');
   $pf('pfRegionLbl').textContent=k==='game'?'المنطقة (اختياري)':'المنطقة';
   pfOpts($pf('npRegion'),PF_REGIONS.map(r=>[r,r]).concat([['__other','أخرى (اكتب)…']]),k==='game'?'— بدون —':'— اختر المنطقة —');
-  $pf('pfNameLbl').textContent=k==='game'?'اسم اللعبة':k==='sub'?'اسم الاشتراك':'اسم البطاقة';
-  $pf('npName').placeholder=k==='game'?'EA SPORTS FC 26':k==='sub'?'PS Plus Essential':'PS Store Card';
+  $pf('pfNameLbl').textContent=k==='game'?'اسم اللعبة':k==='sub'?'اسم الاشتراك':k==='other'?'اسم المنتج':'اسم البطاقة';
+  $pf('npName').placeholder=k==='game'?'EA SPORTS FC 26':k==='sub'?'PS Plus Essential':k==='other'?'مثال: بطاقة Netflix 15$':'PS Store Card';
   $pf('pfImgLbl').textContent=k==='game'?'رابط غلاف اللعبة (مهم)':'رابط صورة مخصصة (اختياري)';
   $pf('pfPriceHint').textContent='';
   if(!keepValues){
-    const want={card:'psstore',sub:'psplus',game:'games'}[k];if([...$pf('npCat').options].some(o=>o.value===want))$pf('npCat').value=want;
+    const want={card:'psstore',sub:'psplus',game:'games'}[k];if(want&&[...$pf('npCat').options].some(o=>o.value===want))$pf('npCat').value=want;pfCat();
     pf.nameTouched=false;pf.idTouched=false;pf.keepBadge='';$pf('npName').value=PF_NAME[k];
     $pf('npCur').value='EUR';pfCur();
   }
@@ -466,7 +503,7 @@ function pfAuto(){
   if(k==='sub'&&!pf.nameTouched)$pf('npName').value='PS Plus '+$pf('npTier').value;
   if(!pf.idTouched&&!pf.editing){
     const reg=slugId(pfRegionText().replace(/[^\x00-\x7F]/g,' '));
-    let base=k==='card'?['ps',$pf('npVal').value,$pf('npCur').value.toLowerCase(),reg]:k==='sub'?['plus',$pf('npTier').value.toLowerCase(),$pf('npDur').value+'m',reg]:['game',slugId($pf('npName').value),$pf('npPlat').value.toLowerCase().replace(/[^a-z0-9]/g,''),reg];
+    let base=k==='card'?['ps',$pf('npVal').value,$pf('npCur').value.toLowerCase(),reg]:k==='sub'?['plus',$pf('npTier').value.toLowerCase(),$pf('npDur').value+'m',reg]:k==='other'?['item',slugId($pf('npName').value.replace(/[^\x00-\x7F]/g,' '))||(pf.rid=pf.rid||Math.random().toString(36).slice(2,7))]:['game',slugId($pf('npName').value),$pf('npPlat').value.toLowerCase().replace(/[^a-z0-9]/g,''),reg];
     let id=slugId(base.filter(Boolean).join('-'))||('p'+Date.now().toString(36));
     let n=2,u=id;while(allProds.some(p=>p.id===u))u=id+'-'+(n++);
     $pf('npId').value=u;
@@ -478,7 +515,7 @@ function pfAuto(){
 }
 function editProd(idx){
   const p=allProds[idx];if(!p)return;
-  const k=p.kind||(p.cur==='month'?'sub':p.cur==='copy'?'game':'card');
+  const k=p.kind||(p.cur==='item'?'other':p.cur==='month'?'sub':p.cur==='copy'?'game':'card');
   pfKind(k,true);pf.editing=p.id;pf.idTouched=true;pf.nameTouched=true;pf.keepBadge=p.badge||'';
   pfFillCats();$pf('npCat').value=p.cat||$pf('npCat').value;
   $pf('npName').value=p.name||'';$pf('npId').value=p.id||'';$pf('npId').readOnly=true;
@@ -486,6 +523,7 @@ function editProd(idx){
   const setRegion=t=>{t=String(t||'');if(!t){$pf('npRegion').value='';}else if(PF_REGIONS.includes(t)){$pf('npRegion').value=t;}else{$pf('npRegion').value='__other';$pf('npRegionOther').value=t;}$pf('npRegionOther').classList.toggle('hidden',$pf('npRegion').value!=='__other');};
   if(k==='card'){setRegion(p.sub);$pf('npCur').value=PF_SYM[p.cur]?p.cur:'EUR';$pf('npSym').value=PF_SYM[$pf('npCur').value];$pf('npVal').value=p.val||'';}
   else if(k==='sub'){setRegion(p.sub);if(PF_TIERS.includes(p.badge))$pf('npTier').value=p.badge;if(PF_DURS.some(d=>d[0]===p.val))$pf('npDur').value=String(p.val);}
+  else if(k==='other'){$pf('npOtherVal').value=p.valText||'';$pf('npOtherSub').value=p.sub||'';$pf('npOtherBadge').value=p.badge||'';}
   else{const parts=String(p.sub||'').split(' • ');if(PF_PLATS.includes(parts[0])){$pf('npPlat').value=parts[0];setRegion(parts.slice(1).join(' • '));}else{$pf('npPlat').value='';setRegion(p.sub);}}
   $pf('pfTitle').textContent='تعديل المنتج: '+(p.name||p.id);$pf('pfSaveBtn').innerHTML='<i class="fa-solid fa-floppy-disk"></i> حفظ التعديل';
   pfAuto();$pf('pfKinds').scrollIntoView({behavior:'smooth',block:'center'});aToast('تم تحميل المنتج للتعديل','ℹ️');
@@ -495,7 +533,7 @@ async function addProd(){
   const name=$pf('npName').value.trim();let id=$pf('npId').value.trim();
   if(!name){aToast('أدخل الاسم','err');return;}
   if(!/^[A-Za-z0-9][A-Za-z0-9_-]{0,59}$/.test(id)){aToast('المعرّف: حروف إنجليزية وأرقام و - فقط','err');return;}
-  const region=pfRegionText(),priceDZD=parseFloat($pf('npDZD').value)||0;
+  const region=k==='other'?'':pfRegionText(),priceDZD=parseFloat($pf('npDZD').value)||0;
   const imgUrl=$pf('npImgUrl').value.trim();if(imgUrl&&!safeUrl(imgUrl)){aToast('رابط الصورة يجب أن يبدأ بـ https://','err');return;}
   let rec;
   if(k==='card'){
@@ -506,11 +544,18 @@ async function addProd(){
     if(!region){aToast('اختر المنطقة','err');return;}
     if(priceDZD<=0){aToast('أدخل سعر الاشتراك بالدينار','err');return;}
     rec={sub:region,val:parseInt($pf('npDur').value)||1,cur:'month',sym:'',img:'plus',badge:$pf('npTier').value};
+  }else if(k==='other'){
+    if(priceDZD<=0){aToast('أدخل سعر المنتج بالدينار','err');return;}
+    rec={sub:$pf('npOtherSub').value.trim().slice(0,80),val:1,cur:'item',sym:'',img:'other',badge:$pf('npOtherBadge').value.trim().slice(0,20),valText:$pf('npOtherVal').value.trim().slice(0,30)};
   }else{
     if(priceDZD<=0){aToast('أدخل سعر اللعبة بالدينار','err');return;}
     rec={sub:[$pf('npPlat').value,region].filter(Boolean).join(' • '),val:1,cur:'copy',sym:'',img:'',badge:pf.keepBadge};
   }
-  const prod={id,cat:$pf('npCat').value,name,...rec,priceDZD,imgUrl:imgUrl||null,desc:$pf('npDesc').value.trim(),descEn:$pf('npDescEn').value.trim(),stock:$pf('npStock').checked,kind:k};
+  let cat=$pf('npCat').value;
+  try{
+    if(cat==='__new'){cat=await pfCreateCat();if(!cat)return;}
+  }catch(e){aToast('تعذّر إنشاء القسم: '+errCode(e),'err');return;}
+  const prod={id,cat,name,...rec,priceDZD,imgUrl:imgUrl||null,desc:$pf('npDesc').value.trim(),descEn:$pf('npDescEn').value.trim(),stock:$pf('npStock').checked,kind:k};
   try{
     const d=await db.collection('settings').doc('products').get();let prods=d.exists?d.data().products||[]:[];
     const idx=prods.findIndex(p=>p.id===id);
@@ -524,7 +569,7 @@ async function toggleStock(idx,val){try{allProds[idx].stock=val;await db.collect
 async function deleteProd(idx){if(!confirm('حذف هذا المنتج؟'))return;try{allProds.splice(idx,1);await db.collection('settings').doc('products').set({products:allProds});renderProds();aToast('تم الحذف','info');}catch(e){aToast('خطأ','err');}}
 function clearProdForm(){
   pf={kind:null,editing:null,idTouched:false,nameTouched:false,keepBadge:''};
-  ['npId','npName','npVal','npDZD','npImgUrl','npDesc','npDescEn','npRegionOther'].forEach(i=>{const e=$pf(i);if(e)e.value='';});
+  ['npId','npName','npVal','npDZD','npImgUrl','npDesc','npDescEn','npRegionOther','npOtherVal','npOtherSub','npOtherBadge','npNewCatName','npNewCatNameEn','npNewCatIcon'].forEach(i=>{const e=$pf(i);if(e)e.value='';});
   $pf('npId').readOnly=false;$pf('npStock').checked=true;$pf('npRegion').value='';$pf('npRegionOther').classList.add('hidden');
   document.querySelectorAll('#pfKinds .pf-kind').forEach(b=>b.classList.remove('on'));$pf('pfBody').classList.add('hidden');
   $pf('pfTitle').textContent='إضافة منتج جديد';$pf('pfSaveBtn').innerHTML='<i class="fa-solid fa-floppy-disk"></i> حفظ المنتج';
@@ -567,31 +612,89 @@ async function saveDiscount(){
 }
 
 /* ══ USERS ══ */
+const USERS_LIMIT=300,USERS_SHOWN=100;
+let bannedMap={};
+async function loadBannedMap(){try{const s=await db.collection('banned_users').get();const m={};s.forEach(d=>{m[d.id]=d.data();});bannedMap=m;}catch(e){}}
+function isBannedNow(b){if(!b)return false;const u=Number(b.until)||0;return !u||u>Date.now();}
+/* how long a suspension still runs, in words */
+function banLeft(b){
+  const u=Number(b&&b.until)||0;if(!u)return 'دائم';
+  const ms=u-Date.now();if(ms<=0)return 'انتهى';
+  const h=Math.ceil(ms/3600000);return h<24?`يتبقى ${h} ساعة`:`يتبقى ${Math.ceil(h/24)} يوم`;
+}
+/* ban lengths (milliseconds; 0 = until the owner lifts it) */
+const BAN_DURS=[['1h','ساعة واحدة',3600000],['24h','يوم واحد (24 ساعة)',86400000],['3d','3 أيام',3*86400000],['7d','أسبوع (7 أيام)',7*86400000],['30d','شهر (30 يوماً)',30*86400000],['perm','دائم — حتى ترفعه بنفسك',0]];
+function banDurOptions(sel){return BAN_DURS.map(d=>`<option value="${esc(d[0])}"${d[0]===sel?' selected':''}>${esc(d[1])}</option>`).join('');}
+function banUntil(key){const d=BAN_DURS.find(x=>x[0]===key);return d&&d[2]?Date.now()+d[2]:0;}
+/* The inbox an address really reaches — identical to the Worker's canonEmail() (a test keeps the two equal) */
+const PLUS_DOMAINS=['outlook.com','hotmail.com','live.com','msn.com','icloud.com','me.com','proton.me','protonmail.com','pm.me','fastmail.com'];
+function canonEmail(email){
+  const e=String(email||'').trim().toLowerCase();const at=e.lastIndexOf('@');if(at<1)return e;
+  let local=e.slice(0,at),dom=e.slice(at+1);
+  if(dom==='googlemail.com')dom='gmail.com';
+  if(dom==='gmail.com'){const l=local.split('+')[0].replace(/\./g,'');if(l)local=l;}
+  else if(PLUS_DOMAINS.includes(dom)){const l=local.split('+')[0];if(l)local=l;}
+  return local+'@'+dom;
+}
+function tsMs(v){try{if(v&&typeof v.toMillis==='function')return v.toMillis();}catch(e){}return Number(v)||0;}
+function errCode(e){return String((e&&(e.code||e.message))||'').slice(0,80);}
+
 async function loadUsers(){
   const el=document.getElementById('usersList');el.innerHTML=loading();
-  try{const snap=await db.collection('users').orderBy('points','desc').limit(50).get();allUsers=snap.docs.map(d=>({uid:d.id,...d.data()}));renderUsers();}
-  catch(e){el.innerHTML=errState('خطأ');}
+  try{
+    const[snap]=await Promise.all([db.collection('users').orderBy('points','desc').limit(USERS_LIMIT).get(),loadBannedMap()]);
+    allUsers=snap.docs.map(d=>({uid:d.id,...d.data()}));renderUsers();
+  }catch(e){el.innerHTML=errState('خطأ في تحميل المستخدمين: '+errCode(e));}
 }
 function renderUsers(){
   const el=document.getElementById('usersList');el.innerHTML='';
-  const q=(document.getElementById('userSearch')?.value||'').toLowerCase();
-  const filtered=allUsers.filter(u=>!q||(u.name||'').toLowerCase().includes(q)||(u.email||'').toLowerCase().includes(q));
+  const q=(document.getElementById('userSearch')?.value||'').trim().toLowerCase();
+  const filtered=allUsers.filter(u=>!q||(u.name||'').toLowerCase().includes(q)||(u.email||'').toLowerCase().includes(q)||String(u.uid).toLowerCase().includes(q));
   if(!filtered.length){el.innerHTML=empty('لا توجد نتائج');return;}
-  filtered.forEach(u=>{
+  const groups={};allUsers.forEach(u=>{const k=canonEmail(u.email);if(k)groups[k]=(groups[k]||0)+1;});
+  filtered.slice(0,USERS_SHOWN).forEach(u=>{
+    const owner=u.email===ADMIN_EMAIL,b=bannedMap[u.uid],banned=isBannedNow(b),dup=(groups[canonEmail(u.email)]||0)>1;
     const card=document.createElement('div');card.className='adm-card';
-    card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="color:var(--cyan)"><i class="fa-solid fa-user"></i></div><div class="adm-card-info"><div class="adm-card-title">${san(u.name||u.email||'مستخدم')}</div><div class="adm-card-sub">${san(u.email||'')} · ${esc((u.points||0).toLocaleString())} نقطة</div><div class="adm-card-meta"><span>${esc(u.orders||0)} طلب</span>${u.region?`<span class="badge badge-info">${esc(u.region.toUpperCase())}</span>`:''}<span><i class="fa-solid fa-coins"></i>${esc((u.totalSpend||0).toLocaleString())} دج</span>${(u.referrals||0)>0?`<span><i class="fa-solid fa-user-group"></i>${esc(u.referrals)}</span>`:''}</div></div><span style="font-size:13px;color:var(--gold);font-weight:900">${esc((u.points||0).toLocaleString())}</span></div><div class="adm-card-actions"><button onclick="openUserModal('${jsq(u.uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-eye"></i> تفاصيل</button><button onclick="addPointsToUser('${jsq(u.uid)}','${jsq(u.name||'مستخدم')}')" class="btn btn-c btn-sm"><i class="fa-solid fa-plus"></i> نقاط</button><button onclick="sendNotifToUser('${jsq(u.uid)}')" class="btn btn-p btn-sm"><i class="fa-solid fa-bell"></i> إشعار</button><button onclick="copyText('${jsq(u.uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> UID</button></div>`;
+    card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="color:${banned?'var(--red)':'var(--cyan)'}"><i class="fa-solid ${banned?'fa-user-slash':'fa-user'}"></i></div><div class="adm-card-info"><div class="adm-card-title">${san(u.name||u.email||'مستخدم')}${banned?` <span class="badge badge-rej">محظور · ${esc(banLeft(b))}</span>`:''}${dup?' <span class="badge badge-warn">إيميل مكرر</span>':''}</div><div class="adm-card-sub">${san(u.email||'')} · ${esc((u.points||0).toLocaleString())} نقطة</div><div class="adm-card-meta"><span>${esc(u.orders||0)} طلب</span>${u.region?`<span class="badge badge-info">${esc(String(u.region).toUpperCase())}</span>`:''}<span><i class="fa-solid fa-coins"></i>${esc((u.totalSpend||0).toLocaleString())} دج</span>${(u.referrals||0)>0?`<span><i class="fa-solid fa-user-group"></i>${esc(u.referrals)}</span>`:''}</div></div><span style="font-size:13px;color:var(--gold);font-weight:900">${esc((u.points||0).toLocaleString())}</span></div><div class="adm-card-actions"><button onclick="openUserModal('${jsq(u.uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-eye"></i> تفاصيل</button><button onclick="addPointsToUser('${jsq(u.uid)}','${jsq(u.name||'مستخدم')}')" class="btn btn-c btn-sm"><i class="fa-solid fa-plus"></i> نقاط</button><button onclick="sendNotifToUser('${jsq(u.uid)}','${jsq(u.name||u.email||'')}')" class="btn btn-p btn-sm"><i class="fa-solid fa-bell"></i> إشعار</button>${owner?'':banned?`<button onclick="unbanUser('${jsq(u.uid)}',true)" class="btn btn-g btn-sm"><i class="fa-solid fa-unlock"></i> فك الحظر</button>`:`<button onclick="openBanDialog('${jsq(u.uid)}','${jsq(u.name||u.email||'')}')" class="btn btn-r btn-sm"><i class="fa-solid fa-ban"></i> حظر</button>`}${owner?'':`<button onclick="openDeleteUser('${jsq(u.uid)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button>`}<button onclick="copyText('${jsq(u.uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> UID</button></div>`;
     el.appendChild(card);
   });
+  if(filtered.length>USERS_SHOWN){const n=document.createElement('p');n.style.cssText='font-size:12px;color:var(--dim);text-align:center;padding:10px';n.textContent=`عُرض أول ${USERS_SHOWN} من ${filtered.length} — اكتب في البحث للوصول لأي حساب`;el.appendChild(n);}
 }
+
+/* ── small modal shared by: ban, notify, delete, receipt ── */
+let actUrl=null;
+function actOpen(titleHtml,html){document.getElementById('actTitle').innerHTML=titleHtml;document.getElementById('actBody').innerHTML=html;document.getElementById('actModal').classList.remove('hidden');}
+function actClose(){document.getElementById('actModal').classList.add('hidden');document.getElementById('actBody').innerHTML='';if(actUrl){try{URL.revokeObjectURL(actUrl);}catch(e){}actUrl=null;}}
+/* a call to the Worker as the owner: {status, ok, data} */
+async function adminWk(path,payload){
+  try{
+    const tok=await auth.currentUser.getIdToken();
+    const r=await fetch(WORKER+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({idToken:tok},payload))});
+    const j=await r.json().catch(()=>({}));
+    return{status:r.status,ok:r.ok&&j.ok!==false,data:j};
+  }catch(e){return{status:0,ok:false,data:{}};}
+}
+function wkWhy(r){return r.status===0?'تعذّر الاتصال بالخادم':r.status===404?'الـ Worker القديم لا يعرف هذه الميزة — الصق النسخة الجديدة (worker/worker.js) في Cloudflare':r.status===403?'ليست لديك صلاحية (سجّل الدخول بحساب Google للمالك)':r.status===429?'طلبات كثيرة، انتظر قليلاً':String((r.data&&r.data.error)||('خطأ '+r.status)).slice(0,120);}
 
 async function openUserModal(uid){
   document.getElementById('userModal').classList.remove('hidden');
-  document.getElementById('userModalContent').innerHTML=loading();
+  const box=document.getElementById('userModalContent');box.innerHTML=loading();
   try{
-    const[uDoc,oSnap]=await Promise.all([db.collection('users').doc(uid).get(),db.collection('orders').where('userId','==',uid).orderBy('ts','desc').limit(5).get()]);
-    const u=uDoc.data()||{};const orders=oSnap.docs.map(d=>({id:d.id,...d.data()}));
-    document.getElementById('userModalContent').innerHTML=`<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px"><div style="width:48px;height:48px;border-radius:50%;background:#1A2030;color:var(--cyan);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0"><i class="fa-solid fa-user"></i></div><div><div style="font-size:15px;font-weight:800">${san(u.name||'مستخدم')}</div><div style="font-size:11px;color:var(--mid)">${san(u.email||'')} · UID: ${esc(uid.slice(0,12))}...</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;font-size:12px"><div style="background:rgba(124,156,255,.05);border:1px solid var(--brd);border-radius:8px;padding:10px"><span style="color:var(--mid);display:block;font-size:10px">النقاط</span><strong style="color:var(--gold)">${esc((u.points||0).toLocaleString())}</strong></div><div style="background:rgba(124,156,255,.05);border:1px solid var(--brd);border-radius:8px;padding:10px"><span style="color:var(--mid);display:block;font-size:10px">الطلبات</span><strong style="color:var(--cyan)">${esc(u.orders||0)}</strong></div><div style="background:rgba(124,156,255,.05);border:1px solid var(--brd);border-radius:8px;padding:10px"><span style="color:var(--mid);display:block;font-size:10px">إجمالي الصرف</span><strong style="color:var(--green)">${esc((u.totalSpend||0).toLocaleString())} دج</strong></div><div style="background:rgba(124,156,255,.05);border:1px solid var(--brd);border-radius:8px;padding:10px"><span style="color:var(--mid);display:block;font-size:10px">الإحالات</span><strong style="color:var(--violet)">${esc(u.referrals||0)}</strong></div></div><div style="font-size:10px;font-weight:700;color:var(--mid);letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px">آخر الطلبات</div>${orders.length?orders.map(o=>`<div style="background:rgba(124,156,255,.04);border-radius:8px;padding:8px 10px;margin-bottom:5px;font-size:11px"><span style="font-weight:700">${san(o.product||'')}</span> · ${esc((o.totalDZD||0).toLocaleString())} دج · <span class="badge badge-${esc(o.status==='done'?'done':o.status==='pending'?'pend':'rej')}">${esc(o.status)}</span></div>`).join(''):'<p style="color:var(--dim);font-size:11px">لا توجد طلبات</p>'}<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button onclick="addPointsToUser('${jsq(uid)}','${jsq(u.name||'مستخدم')}')" class="btn btn-c btn-sm"><i class="fa-solid fa-plus"></i> إضافة نقاط</button><button onclick="sendNotifToUser('${jsq(uid)}')" class="btn btn-p btn-sm"><i class="fa-solid fa-bell"></i> إرسال إشعار</button><button onclick="copyText('${jsq(uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> نسخ UID</button></div>`;
-  }catch(e){document.getElementById('userModalContent').innerHTML=errState('خطأ');}
+    /* the orders are read with ONE condition and sorted here: asking Firestore to filter AND sort needs a composite index that was never created */
+    const[uDoc,bDoc]=await Promise.all([db.collection('users').doc(uid).get(),db.collection('banned_users').doc(uid).get()]);
+    let orders=[],ordersErr='';
+    try{orders=(await db.collection('orders').where('userId','==',uid).limit(200).get()).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>tsMs(b.ts)-tsMs(a.ts)).slice(0,5);}
+    catch(e){ordersErr=errCode(e);}
+    if(!uDoc.exists){box.innerHTML=errState('هذا الحساب غير موجود في قاعدة البيانات')+`<div style="text-align:center;margin-top:10px"><span dir="ltr" style="font-size:11px;color:var(--mid)">${esc(uid)}</span></div>`;return;}
+    const u=uDoc.data()||{},b=bDoc.exists?bDoc.data():null,banned=isBannedNow(b),owner=u.email===ADMIN_EMAIL;
+    const cell=(k,v,c)=>`<div style="background:rgba(124,156,255,.05);border:1px solid var(--brd);border-radius:8px;padding:10px"><span style="color:var(--mid);display:block;font-size:10px">${k}</span><strong style="color:${c}">${v}</strong></div>`;
+    box.innerHTML=`<div style="display:flex;gap:12px;align-items:center;margin-bottom:16px"><div style="width:48px;height:48px;border-radius:50%;background:#1A2030;color:${banned?'var(--red)':'var(--cyan)'};display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0"><i class="fa-solid ${banned?'fa-user-slash':'fa-user'}"></i></div><div style="min-width:0"><div style="font-size:15px;font-weight:800">${san(u.name||'مستخدم')}</div><div style="font-size:11px;color:var(--mid);word-break:break-all">${san(u.email||'')}</div><div style="font-size:10px;color:var(--dim)" dir="ltr">UID: ${esc(uid.slice(0,12))}…</div></div></div>`
+      +(banned?`<div class="adm-card" style="border-color:var(--red);margin-bottom:12px"><i class="fa-solid fa-ban" style="color:var(--red)"></i> محظور — ${esc(banLeft(b))} · السبب: ${san((b&&b.reason)||'—')}</div>`:'')
+      +`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;font-size:12px">${cell('النقاط',esc((u.points||0).toLocaleString()),'var(--gold)')}${cell('الطلبات',esc(u.orders||0),'var(--cyan)')}${cell('إجمالي الصرف',esc((u.totalSpend||0).toLocaleString())+' دج','var(--green)')}${cell('الإحالات',esc(u.referrals||0),'var(--violet)')}</div>`
+      +`<div style="font-size:10px;font-weight:700;color:var(--mid);letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px">آخر الطلبات</div>`
+      +(ordersErr?`<p style="color:var(--red);font-size:11px">تعذّر تحميل الطلبات (${esc(ordersErr)})</p>`:orders.length?orders.map(o=>`<div style="background:rgba(124,156,255,.04);border-radius:8px;padding:8px 10px;margin-bottom:5px;font-size:11px"><span style="font-weight:700">${san(o.product||'')}</span> · ${esc((o.totalDZD||0).toLocaleString())} دج · <span class="badge badge-${esc(o.status==='done'?'done':o.status==='pending'?'pend':'rej')}">${esc(o.status)}</span></div>`).join(''):'<p style="color:var(--dim);font-size:11px">لا توجد طلبات</p>')
+      +`<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button onclick="addPointsToUser('${jsq(uid)}','${jsq(u.name||'مستخدم')}')" class="btn btn-c btn-sm"><i class="fa-solid fa-plus"></i> إضافة نقاط</button><button onclick="sendNotifToUser('${jsq(uid)}','${jsq(u.name||u.email||'')}')" class="btn btn-p btn-sm"><i class="fa-solid fa-bell"></i> إرسال إشعار</button>${owner?'':banned?`<button onclick="unbanUser('${jsq(uid)}',true)" class="btn btn-g btn-sm"><i class="fa-solid fa-unlock"></i> فك الحظر</button>`:`<button onclick="openBanDialog('${jsq(uid)}','${jsq(u.name||u.email||'')}')" class="btn btn-r btn-sm"><i class="fa-solid fa-ban"></i> حظر</button>`}${owner?'':`<button onclick="openDeleteUser('${jsq(uid)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف الحساب</button>`}<button onclick="copyText('${jsq(uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> نسخ UID</button></div>`;
+  }catch(e){box.innerHTML=errState('تعذّر تحميل التفاصيل: '+errCode(e));}
 }
 function closeUserModal(){document.getElementById('userModal').classList.add('hidden');}
 
@@ -603,10 +706,122 @@ async function addPointsToUser(uid,name){
   if(pts>0&&confirm(`جعل هذه النقاط قابلة للاستبدال فوراً؟\nموافق: تدفع أنت قيمتها (≈ ${(pts*((ECON&&ECON.ptDZD)||10)).toLocaleString('en-US')} دج بسعر البيع) عند استبدالها.\nإلغاء: تبقى مقفلة حتى يشتري العميل.`)){await ensureEcon();upd.rewardPool=FV.increment(pts*ECON.ptDZD);}
   try{await db.collection('users').doc(uid).update(upd);aToast(`تم ${pts>0?'إضافة':'حذف'} ${Math.abs(pts)} نقطة`,'ok');loadUsers();}catch(e){aToast('خطأ','err');}
 }
-async function sendNotifToUser(uid){
-  const title=prompt('عنوان الإشعار:');if(!title)return;const code=prompt('نص الإشعار (اختياري):');
-  const notif={title,code:code||'',date:new Date().toLocaleDateString('ar'),read:false};
-  try{await db.collection('users').doc(uid).update({notifications:firebase.firestore.FieldValue.arrayUnion(notif)});aToast('تم إرسال الإشعار','ok');}catch(e){aToast('خطأ','err');}
+
+/* ── notifications: in the site (the bell) AND by e-mail ── */
+const NOTIF_CHUNK=15;
+async function notifyUsers(uids,{title,body,mail,onProgress}){
+  const FV=firebase.firestore.FieldValue;
+  const notif={title,code:body,date:new Date().toLocaleDateString('ar'),read:false};
+  const r={inSite:0,siteFail:0,siteErr:'',sent:0,failed:0,noEmail:0,limited:0,left:null,mailErr:''};
+  for(let i=0;i<uids.length;i+=400){
+    const part=uids.slice(i,i+400),b=db.batch();
+    part.forEach(u=>b.update(db.collection('users').doc(u),{notifications:FV.arrayUnion(notif)}));
+    try{await b.commit();r.inSite+=part.length;}catch(e){r.siteFail+=part.length;r.siteErr=errCode(e);}
+  }
+  if(mail){
+    for(let i=0;i<uids.length;i+=NOTIF_CHUNK){
+      if(onProgress)onProgress(Math.min(i+NOTIF_CHUNK,uids.length),uids.length);
+      const x=await adminWk('/admin/notify-email',{uids:uids.slice(i,i+NOTIF_CHUNK),title,text:body});
+      if(!x.ok){r.mailErr=wkWhy(x);r.failed+=uids.length-i;break;}
+      const d=x.data;r.sent+=d.sent||0;r.failed+=d.failed||0;r.noEmail+=d.noEmail||0;r.limited+=d.limited||0;r.left=d.left;
+      if(d.limited>0){r.limited+=Math.max(0,uids.length-(i+NOTIF_CHUNK));break;}   /* today's mail allowance is used up: stop instead of asking again */
+    }
+  }
+  return r;
+}
+function notifySummary(r,mail){
+  let t=`داخل الموقع: ${r.inSite}`+(r.siteFail?` (فشل ${r.siteFail}${r.siteErr?' — '+r.siteErr:''})`:'');
+  if(mail)t+=` · إيميل: ${r.sent}`+(r.noEmail?` · بلا إيميل ${r.noEmail}`:'')+(r.failed?` · فشل ${r.failed}`:'')+(r.limited?` · لم يُرسل ${r.limited} (بلغت حدّ إيميلات اليوم)`:'')+(r.mailErr?` — ${r.mailErr}`:'');
+  return t;
+}
+let notifTargets=[];
+function sendNotifToUser(uid,label){openNotif([uid],label||'مستخدم',{});}
+function openNotif(uids,label,pre){
+  notifTargets=uids;pre=pre||{};
+  actOpen('<i class="fa-solid fa-bell" style="color:var(--violet)"></i> إرسال إشعار',
+    `<p style="font-size:12px;color:var(--mid);margin-bottom:12px">إلى: <strong style="color:var(--text)">${san(label||'')}</strong></p>
+    <label class="form-label">عنوان الإشعار</label><input type="text" id="ntTitle" class="adm-inp" maxlength="120" value="${esc(pre.title||'')}" placeholder="مثال: عرض خاص لك">
+    <label class="form-label">نص الإشعار</label><textarea id="ntBody" class="adm-ta" maxlength="800" placeholder="التفاصيل...">${esc(pre.body||'')}</textarea>
+    <label class="ln-chk" style="display:flex;gap:8px;align-items:center;margin:10px 0;font-size:13px"><input type="checkbox" id="ntMail" checked> أرسله أيضاً إلى إيميل العميل (بقالب المتجر)</label>
+    <p class="pf-hint" style="margin-bottom:12px">يصل دائماً داخل الموقع (أيقونة الجرس). الإيميل نسخة إضافية؛ حدّ الإيميلات اليومية للإشعارات 150 وهو مشترك بين كل الإشعارات.</p>
+    <button id="ntBtn" onclick="doNotif()" class="btn btn-p" style="width:100%;justify-content:center"><i class="fa-solid fa-paper-plane"></i> إرسال</button>`);
+}
+async function doNotif(){
+  const title=document.getElementById('ntTitle').value.trim(),body=document.getElementById('ntBody').value.trim(),mail=document.getElementById('ntMail').checked;
+  if(!title){aToast('أدخل عنوان الإشعار','err');return;}
+  const btn=document.getElementById('ntBtn');btn.disabled=true;
+  const r=await notifyUsers(notifTargets,{title,body,mail,onProgress:(a,n)=>{btn.innerHTML=`جاري الإرسال ${a}/${n}…`;}});
+  actClose();
+  aToast(notifySummary(r,mail),(r.siteFail||r.failed||r.mailErr||r.limited)?'warn':'ok',7000);
+}
+
+/* ── suspension ── */
+function openBanDialog(uid,label){
+  actOpen('<i class="fa-solid fa-ban" style="color:var(--red)"></i> حظر مستخدم',
+    `<p style="font-size:12px;color:var(--mid);margin-bottom:12px"><strong style="color:var(--text)">${san(label||'')}</strong> · <span dir="ltr">${esc(String(uid).slice(0,12))}…</span></p>
+    <label class="form-label">مدة الحظر</label><select id="bdDur" class="adm-sel">${banDurOptions('7d')}</select>
+    <label class="form-label">السبب (للسجل فقط — لا يراه العميل)</label><input type="text" id="bdReason" class="adm-inp" maxlength="200" placeholder="مثال: تلاعب بالنقاط">
+    <p class="pf-hint" style="margin-bottom:12px">أثناء الحظر لا يستطيع الدخول ولا الطلب. عند انتهاء المدة يعود حسابه تلقائياً، وتستطيع فك الحظر قبلها بزر «فك الحظر».</p>
+    <button onclick="applyBan('${jsq(uid)}')" class="btn btn-r" style="width:100%;justify-content:center"><i class="fa-solid fa-ban"></i> تأكيد الحظر</button>`);
+}
+async function applyBan(uid){
+  const key=document.getElementById('bdDur').value,reason=(document.getElementById('bdReason').value.trim()||'تلاعب').slice(0,200);
+  if(await writeBan(uid,reason,key)){actClose();closeUserModal();refreshBanViews();}
+}
+async function writeBan(uid,reason,key){
+  if(auth.currentUser&&uid===auth.currentUser.uid){aToast('لا يمكنك حظر حسابك أنت','err');return false;}
+  if(allUsers.some(u=>u.uid===uid&&u.email===ADMIN_EMAIL)){aToast('لا يمكن حظر حساب المالك','err');return false;}
+  try{await db.collection('banned_users').doc(uid).set({reason,date:new Date().toLocaleDateString('ar'),until:banUntil(key),by:'admin'});aToast(`تم الحظر — ${(BAN_DURS.find(d=>d[0]===key)||[])[1]||''}`,'ok');return true;}
+  catch(e){aToast('تعذّر الحظر: '+errCode(e),'err');return false;}
+}
+function refreshBanViews(){loadBannedMap().then(()=>{renderUsers();if(!document.getElementById('tab-abuse')?.classList.contains('hidden')&&document.getElementById('bannedList'))loadBanned();});}
+
+/* ── delete an account (sign-in + profile; the orders stay) ── */
+async function openDeleteUser(uid){
+  let u=allUsers.find(x=>x.uid===uid);
+  if(!u){try{const d=await db.collection('users').doc(uid).get();u=d.exists?{uid,...d.data()}:{uid};}catch(e){u={uid};}}
+  const needle=u.email||uid;
+  actOpen('<i class="fa-solid fa-trash" style="color:var(--red)"></i> حذف حساب',
+    `<div id="duBox"><p style="font-size:13px;line-height:1.9;margin-bottom:10px">سيُحذف حساب <strong style="color:var(--text)" dir="ltr">${esc(needle)}</strong> <b>نهائياً</b>: تسجيل الدخول (Firebase) والنقاط والإشعارات وبيانات الملف.<br>الطلبات السابقة تبقى للمحاسبة. يستطيع الشخص التسجيل من جديد بنفس الإيميل.</p>
+    <label class="form-label">للتأكيد اكتب: ${esc(needle)}</label><input type="text" id="duConfirm" class="adm-inp" dir="ltr" autocomplete="off" placeholder="${esc(needle)}">
+    <button onclick="deleteUserNow('${jsq(uid)}','${jsq(needle)}',false)" class="btn btn-r" style="width:100%;justify-content:center"><i class="fa-solid fa-trash"></i> احذف الحساب نهائياً</button></div>`);
+}
+async function deleteUserNow(uid,needle,dataOnly){
+  const typed=(document.getElementById('duConfirm')?.value||'').trim();
+  if(typed.toLowerCase()!==String(needle).toLowerCase()){aToast('نص التأكيد لا يطابق','err');return;}
+  const box=document.getElementById('duBox');if(box)box.style.opacity='.5';
+  const r=await adminWk('/admin/delete-user',{uid,confirm:typed,dataOnly:!!dataOnly});
+  if(box)box.style.opacity='1';
+  if(r.ok){
+    actClose();closeUserModal();allUsers=allUsers.filter(u=>u.uid!==uid);delete bannedMap[uid];renderUsers();
+    if(document.getElementById('dupBox')?.children.length)findDuplicates();
+    aToast(r.data.authDeleted?'تم حذف الحساب وتسجيل دخوله':'تم حذف بيانات الحساب وحظر دخوله (تسجيل الدخول لم يُحذف)','ok',6000);return;
+  }
+  if(r.status===502&&r.data&&r.data.error==='auth_delete_failed'){
+    const why=esc(String(r.data.detail||'').slice(0,60));
+    document.getElementById('duBox').insertAdjacentHTML('beforeend',`<div class="adm-card" style="border-color:var(--gold);margin-top:14px;font-size:12.5px;line-height:1.9"><b>لم يُحذف شيء.</b> Google رفض حذف تسجيل الدخول (<span dir="ltr">${why}</span>) — غالباً حساب الخدمة في Worker ينقصه صلاحية «Firebase Authentication Admin».<br>1) احذفه يدوياً: Firebase Console ← Authentication ← Users ← ⋮ ← Delete، ثم أعد المحاولة هنا.<br>2) أو اضغط الزر التالي: تُحذف بياناته ويُمنع دخوله بحظر دائم (يبقى سجل الدخول).<button onclick="deleteUserNow('${jsq(uid)}','${jsq(needle)}',true)" class="btn btn-o btn-sm" style="margin-top:8px"><i class="fa-solid fa-user-slash"></i> احذف البيانات وامنع الدخول</button></div>`);
+    return;
+  }
+  aToast('تعذّر الحذف: '+wkWhy(r),'err',7000);
+}
+
+/* ── find accounts that share one inbox (a.b@gmail.com = ab@gmail.com = ab+x@gmail.com) ── */
+async function findDuplicates(){
+  const box=document.getElementById('dupBox');if(!box)return;box.innerHTML=loading();
+  try{
+    const snap=await db.collection('users').limit(1000).get();
+    const groups={};snap.docs.forEach(d=>{const u={uid:d.id,...d.data()};const k=canonEmail(u.email);if(k)(groups[k]=groups[k]||[]).push(u);});
+    const dups=Object.entries(groups).filter(([,a])=>a.length>1);
+    if(!dups.length){box.innerHTML=`<div class="adm-card" style="border-color:var(--green)"><i class="fa-solid fa-circle-check" style="color:var(--green)"></i> لا توجد حسابات مكررة بين ${esc(snap.size.toLocaleString('en-US'))} حساب.</div>`;return;}
+    box.innerHTML='';
+    dups.forEach(([k,arr])=>{
+      arr.sort((a,b)=>(Number(b.orders)||0)-(Number(a.orders)||0)||(Number(b.points)||0)-(Number(a.points)||0));
+      const card=document.createElement('div');card.className='adm-card';
+      card.innerHTML=`<div class="adm-card-title" dir="ltr" style="margin-bottom:8px"><i class="fa-solid fa-clone" style="color:var(--gold)"></i> ${esc(k)} <span class="badge badge-warn">${esc(arr.length)} حسابات</span></div>`
+        +arr.map((u,i)=>`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--brd);font-size:12px"><div style="flex:1;min-width:150px"><b>${san(u.name||'—')}</b>${i===0?' <span class="badge badge-done">الأنشط — يُنصح بإبقائه</span>':''}<div style="color:var(--mid)" dir="ltr">${san(u.email||'')}</div><div style="color:var(--dim)">${esc(u.orders||0)} طلب · ${esc((u.points||0).toLocaleString())} نقطة</div></div><button onclick="openUserModal('${jsq(u.uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-eye"></i></button>${u.email===ADMIN_EMAIL?'':`<button onclick="openDeleteUser('${jsq(u.uid)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button>`}</div>`).join('');
+      box.appendChild(card);
+    });
+  }catch(e){box.innerHTML=errState('تعذّر الفحص: '+errCode(e));}
 }
 
 /* ══ REVIEWS ══ */
@@ -654,33 +869,53 @@ function filterReports(f,btn){currentReportFilter=f;document.querySelectorAll('#
 async function resolveReport(id){try{await db.collection('reports').doc(id).update({status:'resolved'});aToast('تم وضع علامة محلول','ok');loadReports();}catch(e){aToast('خطأ','err');}}
 async function deleteReport(id){if(!confirm('حذف؟'))return;try{await db.collection('reports').doc(id).delete();aToast('تم الحذف','info');loadReports();}catch(e){aToast('خطأ','err');}}
 async function replyReport(id,userId){
-  const msg=prompt('رسالة الرد للعميل:');if(!msg)return;
-  if(userId&&userId!=='guest'){const notif={title:'رد على بلاغك',code:msg,date:new Date().toLocaleDateString('ar'),read:false};try{await db.collection('users').doc(userId).update({notifications:firebase.firestore.FieldValue.arrayUnion(notif)});aToast('تم إرسال الرد','ok');}catch(e){aToast('خطأ','err');}}
+  if(!userId||userId==='guest'){aToast('صاحب البلاغ زائر بلا حساب — لا يمكن مراسلته من هنا','warn');return;}
+  openNotif([userId],'صاحب البلاغ',{title:'رد على بلاغك'});
 }
 
 /* ══ ABUSE ══ */
 async function loadAbuse(){
   const el=document.getElementById('abuseList');el.innerHTML=loading();
+  /* the banned list and the ban form do not depend on there being abuse flags (the old code returned early when there were none, so manual bans never showed up and could not be lifted) */
+  const bd=document.getElementById('banDur');if(bd&&!bd.options.length)bd.innerHTML=banDurOptions('perm');
+  loadBanned();
   try{
     const snap=await db.collection('abuse_flags').orderBy('date','desc').limit(30).get();
     el.innerHTML='';
     if(snap.empty){el.innerHTML=empty('لا توجد حالات مشبوهة');return;}
-    snap.forEach(d=>{const a=d.data();const div=document.createElement('div');div.className='abuse-item';div.innerHTML=`<div class="abuse-header"><i class="fa-solid fa-triangle-exclamation" style="color:var(--red)"></i><span style="font-size:13px;font-weight:700">حسابات متعددة من نفس الجهاز</span><span class="abuse-high">عالي</span></div><div style="font-size:11px;color:var(--mid);margin-bottom:10px"><span><i class="fa-solid fa-key"></i> ${esc(a.userId?.slice(0,16))}…</span> · <span><i class="fa-solid fa-fingerprint"></i> ${san(a.fingerprint||'')}</span> · <span><i class="fa-regular fa-calendar"></i> ${esc(a.date?.split('T')[0]||'')}</span></div><div style="font-size:11px;color:var(--dim);margin-bottom:10px">مشبوهة: ${esc((a.suspectedAlts||[]).slice(0,3).join(', '))}</div><div style="display:flex;gap:6px;flex-wrap:wrap"><button onclick="banUser('${jsq(a.userId)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-ban"></i> حظر</button><button onclick="dismissAbuse('${jsq(d.id)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-check"></i> تجاهل</button></div>`;el.appendChild(div);});
-  }catch(e){el.innerHTML=errState('خطأ');}
-  loadBanned();
+    snap.forEach(d=>{const a=d.data();const div=document.createElement('div');div.className='abuse-item';div.innerHTML=`<div class="abuse-header"><i class="fa-solid fa-triangle-exclamation" style="color:var(--red)"></i><span style="font-size:13px;font-weight:700">حسابات متعددة من نفس الجهاز</span><span class="abuse-high">عالي</span></div><div style="font-size:11px;color:var(--mid);margin-bottom:10px"><span><i class="fa-solid fa-key"></i> ${esc(a.userId?.slice(0,16))}…</span> · <span><i class="fa-solid fa-fingerprint"></i> ${san(a.fingerprint||'')}</span> · <span><i class="fa-regular fa-calendar"></i> ${esc(a.date?.split('T')[0]||'')}</span></div><div style="font-size:11px;color:var(--dim);margin-bottom:10px">مشبوهة: ${esc((a.suspectedAlts||[]).slice(0,3).join(', '))}</div><div style="display:flex;gap:6px;flex-wrap:wrap"><button onclick="openBanDialog('${jsq(a.userId)}','حساب مشبوه')" class="btn btn-r btn-sm"><i class="fa-solid fa-ban"></i> حظر</button><button onclick="dismissAbuse('${jsq(d.id)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-check"></i> تجاهل</button></div>`;el.appendChild(div);});
+  }catch(e){el.innerHTML=errState('خطأ: '+errCode(e));}
 }
 
 async function loadBanned(){
-  const el=document.getElementById('bannedList');el.innerHTML='';
-  try{const snap=await db.collection('banned_users').get();if(snap.empty){el.innerHTML='<p style="font-size:12px;color:var(--dim);padding:8px">لا يوجد محظورون</p>';return;}snap.forEach(d=>{const b=d.data();const div=document.createElement('div');div.className='adm-card';div.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:rgba(255,77,94,.1);color:var(--red)"><i class="fa-solid fa-ban"></i></div><div class="adm-card-info"><div class="adm-card-title">${esc(d.id.slice(0,20))}...</div><div class="adm-card-sub">السبب: ${san(b.reason||'—')} · ${esc(b.date||'')}</div></div></div><div class="adm-card-actions"><button onclick="unbanUser('${jsq(d.id)}')" class="btn btn-g btn-sm"><i class="fa-solid fa-unlock"></i> رفع الحظر</button></div>`;el.appendChild(div);});}catch(e){}
+  const el=document.getElementById('bannedList');el.innerHTML=loading();
+  try{
+    const snap=await db.collection('banned_users').get();
+    if(snap.empty){el.innerHTML='<p style="font-size:12px;color:var(--dim);padding:8px">لا يوجد محظورون</p>';return;}
+    const rows=await Promise.all(snap.docs.map(async d=>{let u=allUsers.find(x=>x.uid===d.id);if(!u){try{const x=await db.collection('users').doc(d.id).get();u=x.exists?x.data():null;}catch(e){}}return{id:d.id,b:d.data(),u:u||null};}));
+    el.innerHTML='';
+    rows.sort((x,y)=>(isBannedNow(y.b)?1:0)-(isBannedNow(x.b)?1:0));
+    rows.forEach(({id,b,u})=>{
+      const on=isBannedNow(b),div=document.createElement('div');div.className='adm-card';
+      div.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:rgba(255,77,94,.1);color:${on?'var(--red)':'var(--dim)'}"><i class="fa-solid fa-ban"></i></div><div class="adm-card-info"><div class="adm-card-title">${san((u&&(u.name||u.email))||id.slice(0,20)+'…')} <span class="badge ${on?'badge-rej':'badge-info'}">${esc(banLeft(b))}</span></div><div class="adm-card-sub">${u&&u.email?san(u.email)+' · ':''}السبب: ${san(b.reason||'—')} · ${esc(b.date||'')}</div></div></div><div class="adm-card-actions"><button onclick="unbanUser('${jsq(id)}')" class="btn btn-g btn-sm"><i class="fa-solid fa-unlock"></i> ${on?'فك الحظر':'إزالة من القائمة'}</button><button onclick="copyText('${jsq(id)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> UID</button></div>`;
+      el.appendChild(div);
+    });
+  }catch(e){el.innerHTML=errState('تعذّر تحميل المحظورين: '+errCode(e));}
 }
 
+/* ban from the UID box (abuse tab). A ban from a user card or the abuse list goes through openBanDialog(). */
 async function banUser(uid,reason){
-  const u=uid||document.getElementById('banUid').value.trim();const r=reason||document.getElementById('banReason').value.trim()||'تلاعب';
-  if(!u){aToast('أدخل UID','err');return;}if(!confirm(`حظر ${u.slice(0,16)}...؟`))return;
-  try{await db.collection('banned_users').doc(u).set({reason:r,date:new Date().toLocaleDateString('ar')});aToast('تم الحظر','err');document.getElementById('banUid').value='';document.getElementById('banReason').value='';loadAbuse();}catch(e){aToast('خطأ','err');}
+  const u=(uid||document.getElementById('banUid').value).trim();const r=(reason||document.getElementById('banReason').value.trim()||'تلاعب').slice(0,200);
+  const key=document.getElementById('banDur')?.value||'perm';
+  if(!u){aToast('أدخل UID','err');return;}
+  if(!confirm(`حظر ${u.slice(0,16)}… — ${(BAN_DURS.find(d=>d[0]===key)||[])[1]||''}؟`))return;
+  if(await writeBan(u,r,key)){document.getElementById('banUid').value='';document.getElementById('banReason').value='';loadAbuse();loadBannedMap().then(renderUsers);}
 }
-async function unbanUser(uid){if(!confirm(`رفع حظر ${uid.slice(0,16)}...؟`))return;try{await db.collection('banned_users').doc(uid).delete();aToast('تم رفع الحظر','ok');loadBanned();}catch(e){aToast('خطأ','err');}}
+async function unbanUser(uid,fromUsers){
+  const who=(allUsers.find(u=>u.uid===uid)||{}).email||uid.slice(0,16)+'…';
+  if(!confirm(`فك الحظر عن ${who}؟ سيستطيع الدخول والطلب فوراً.`))return;
+  try{await db.collection('banned_users').doc(uid).delete();aToast('تم فك الحظر','ok');closeUserModal();refreshBanViews();}catch(e){aToast('تعذّر فك الحظر: '+errCode(e),'err');}
+}
 async function dismissAbuse(id){try{await db.collection('abuse_flags').doc(id).delete();aToast('تم التجاهل','ok');loadAbuse();}catch(e){aToast('خطأ','err');}}
 
 /* ══ FAQ ══ */
@@ -721,14 +956,22 @@ async function sendCodeManual(){
 /* ══ BROADCAST ══ */
 async function sendBroadcast(){
   const title=document.getElementById('bcTitle').value.trim();const body=document.getElementById('bcBody').value.trim();const target=document.getElementById('bcTarget').value;
+  const mail=!!document.getElementById('bcMail')?.checked;
   if(!title||!body){aToast('أدخل العنوان والنص','err');return;}
   const targetName=target==='all'?'جميع المستخدمين':target==='active'?'النشطين':'غير النشطين';
-  if(!confirm(`إرسال إشعار لـ "${targetName}"؟`))return;
+  const btn=document.getElementById('bcBtn'),st=document.getElementById('bcStatus');
   try{
     let snap;if(target==='active')snap=await db.collection('users').where('orders','>',0).get();else if(target==='inactive')snap=await db.collection('users').where('orders','==',0).get();else snap=await db.collection('users').get();
-    const notif={title,code:body,date:new Date().toLocaleDateString('ar'),read:false};const batch=db.batch();snap.docs.forEach(d=>batch.update(d.ref,{notifications:firebase.firestore.FieldValue.arrayUnion(notif)}));await batch.commit();
-    aToast(`تم الإرسال لـ ${snap.size} مستخدم!`,'info');document.getElementById('bcTitle').value='';document.getElementById('bcBody').value='';
-  }catch(e){aToast('خطأ: '+e.message,'err');}
+    const uids=snap.docs.map(d=>d.id);
+    if(!uids.length){aToast('لا يوجد مستخدمون في هذه الفئة','warn');return;}
+    if(!confirm(`إرسال إشعار لـ "${targetName}" (${uids.length} مستخدم) داخل الموقع${mail?`، وإلى إيميلاتهم أيضاً (حدّ الإيميلات اليومية 150 — الزائد لا يُرسل بالإيميل)`:''}؟`))return;
+    if(btn)btn.disabled=true;
+    const r=await notifyUsers(uids,{title,body,mail,onProgress:(a,n)=>{if(st)st.textContent=`جاري إرسال الإيميلات ${a}/${n}…`;}});
+    if(st)st.textContent=notifySummary(r,mail);
+    aToast(notifySummary(r,mail),(r.siteFail||r.failed||r.mailErr||r.limited)?'warn':'ok',8000);
+    if(!r.siteFail){document.getElementById('bcTitle').value='';document.getElementById('bcBody').value='';}
+  }catch(e){aToast('خطأ: '+errCode(e),'err');}
+  finally{if(btn)btn.disabled=false;}
 }
 
 /* ══ REGIONS (settings/regions — read by the storefront) ══ */

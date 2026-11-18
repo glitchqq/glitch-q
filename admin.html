@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' https: data:; connect-src https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://glitchq-proxy.kadirom7k777.workers.dev wss://*.firebaseio.com; frame-src https://*.firebaseapp.com https://accounts.google.com https://apis.google.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' https: data: blob:; connect-src https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://glitchq-proxy.kadirom7k777.workers.dev wss://*.firebaseio.com; frame-src https://*.firebaseapp.com https://accounts.google.com https://apis.google.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <style id="antiClick">html{display:none!important}</style>
 <script>if(window.top===window.self){document.getElementById('antiClick').remove();}else{try{window.top.location=window.self.location;}catch(e){}}</script>
@@ -324,7 +324,7 @@ kbd{font-family:var(--f);font-size:10.5px;font-weight:600;color:var(--dim);borde
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 
 /* guided product / category forms */
-.pf-kinds{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.pf-kinds{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
 .pf-kind{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;background:var(--bg);border:1px solid var(--brd);border-radius:2px;color:var(--text);cursor:pointer;transition:border-color .15s,background .15s}
 .pf-kind span{font-size:24px;line-height:1;color:var(--cyan)}.pf-kind b{font-size:13px}.pf-kind small{font-size:11px;color:var(--dim)}
 .pf-kind:hover{border-color:var(--brdh)}
@@ -344,7 +344,7 @@ kbd{font-family:var(--f);font-size:10.5px;font-weight:600;color:var(--dim);borde
 .swatches{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 10px}
 .swatches button{width:44px;height:30px;border-radius:2px;border:2px solid transparent;cursor:pointer}
 .swatches button:hover{border-color:var(--cyan)}
-@media(max-width:560px){.pf-kinds{gap:6px}.pf-kind{padding:10px 4px}}
+@media(max-width:560px){.pf-kinds{gap:6px;grid-template-columns:repeat(2,1fr)}.pf-kind{padding:10px 4px}}
 
 /* ══ PHASE 3 additions ══ */
 .sec-title.sub{font-size:15px;margin-bottom:12px}
@@ -614,15 +614,26 @@ input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,se
             <button type="button" class="pf-kind" data-k="card" onclick="pfKind('card')"><span><i class="fa-solid fa-credit-card"></i></span><b>بطاقة</b><small>PlayStation Store</small></button>
             <button type="button" class="pf-kind" data-k="sub" onclick="pfKind('sub')"><span><i class="fa-solid fa-crown"></i></span><b>اشتراك</b><small>PlayStation Plus</small></button>
             <button type="button" class="pf-kind" data-k="game" onclick="pfKind('game')"><span><i class="fa-solid fa-gamepad"></i></span><b>لعبة رقمية</b><small>نسخة</small></button>
+            <button type="button" class="pf-kind" data-k="other" onclick="pfKind('other')"><span><i class="fa-solid fa-box-open"></i></span><b>منتج آخر</b><small>أي نوع تحدده بنفسك</small></button>
           </div>
           <div id="pfBody" class="hidden">
             <label class="form-label">2) بيانات المنتج</label>
             <div class="form-row">
-              <div style="flex:1"><label class="form-label">القسم في المتجر</label><select id="npCat" class="adm-sel"></select></div>
+              <div style="flex:1"><label class="form-label">القسم في المتجر</label><select id="npCat" class="adm-sel" onchange="pfCat()"></select></div>
               <div style="flex:1" id="pfRegionWrap"><label class="form-label" id="pfRegionLbl">المنطقة</label>
                 <select id="npRegion" class="adm-sel" onchange="pfRegion()"></select>
                 <input type="text" id="npRegionOther" class="adm-inp hidden" placeholder="مثال: Poland 🇵🇱" style="margin-top:8px" oninput="pfAuto()">
               </div>
+            </div>
+            <div id="pfNewCat" class="form-row hidden">
+              <div style="flex:2"><label class="form-label">اسم القسم الجديد (عربي)</label><input type="text" id="npNewCatName" class="adm-inp" placeholder="مثال: بطاقات Netflix" maxlength="40"></div>
+              <div style="flex:2"><label class="form-label">اسمه بالإنجليزية (اختياري)</label><input type="text" id="npNewCatNameEn" class="adm-inp" placeholder="Netflix Cards" maxlength="40" dir="ltr"></div>
+              <div style="flex:1"><label class="form-label">أيقونة (إيموجي)</label><input type="text" id="npNewCatIcon" class="adm-inp" placeholder="🎁" maxlength="8"></div>
+            </div>
+            <div class="form-row pf-only pf-other">
+              <div style="flex:1"><label class="form-label">النص الظاهر على البطاقة (اختياري)</label><input type="text" id="npOtherVal" class="adm-inp" placeholder="مثال: 15$ أو شهر واحد" maxlength="30"></div>
+              <div style="flex:1"><label class="form-label">سطر تحت الاسم (اختياري)</label><input type="text" id="npOtherSub" class="adm-inp" placeholder="مثال: Global • فوري" maxlength="80"></div>
+              <div style="flex:1"><label class="form-label">شارة (اختياري)</label><input type="text" id="npOtherBadge" class="adm-inp" placeholder="مثال: جديد" maxlength="20"></div>
             </div>
             <div class="form-row pf-only pf-sub">
               <div style="flex:1"><label class="form-label">الباقة (الشارة)</label><select id="npTier" class="adm-sel" onchange="pfAuto()"></select></div>
@@ -776,6 +787,12 @@ input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,se
           </div>
           <div id="usersList" class="card-list"></div>
         </div>
+        <div class="sec">
+          <div class="sec-title"><i class="fa-solid fa-clone"></i> الحسابات المكررة</div>
+          <p class="pf-hint" style="margin-bottom:12px">يجمع الحسابات التي تصل إلى نفس صندوق البريد (مثلاً <span dir="ltr">a.b@gmail.com</span> و <span dir="ltr">ab@gmail.com</span> و <span dir="ltr">ab+1@gmail.com</span>) حتى لو اختلف الاسم. الحسابات الجديدة المكررة تُمنع تلقائياً بعد تحديث الـ Worker؛ هذا الفحص للحسابات القديمة.</p>
+          <button onclick="findDuplicates()" class="btn btn-o"><i class="fa-solid fa-magnifying-glass"></i> افحص الحسابات المكررة</button>
+          <div id="dupBox" class="card-list" style="margin-top:12px"></div>
+        </div>
       </div>
 
       <!-- REVIEWS -->
@@ -860,6 +877,7 @@ input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,se
             <div class="form-row">
               <input type="text" id="banUid" class="adm-inp" placeholder="Firebase UID" style="margin:0;flex:3">
               <input type="text" id="banReason" class="adm-inp" placeholder="سبب الحظر" style="margin:0;flex:2">
+              <select id="banDur" class="adm-sel" style="margin:0;flex:2" aria-label="مدة الحظر"></select>
               <button onclick="banUser()" class="btn btn-r"><i class="fa-solid fa-ban"></i> حظر</button>
             </div>
           </div>
@@ -913,7 +931,10 @@ input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,se
             <option value="active">النشطون (طلب+)</option>
             <option value="inactive">غير النشطين</option>
           </select>
-          <button onclick="sendBroadcast()" class="btn btn-p"><i class="fa-solid fa-bullhorn"></i> إرسال للجميع</button>
+          <label class="ln-chk" style="display:flex;gap:8px;align-items:center;margin:12px 0;font-size:13px"><input type="checkbox" id="bcMail" checked> أرسله أيضاً إلى إيميل كل مستخدم (بقالب المتجر)</label>
+          <p class="pf-hint" style="margin-bottom:12px">حدّ الإيميلات اليومية للإشعارات 150 (يحفظ حصة Brevo المجانية لأكواد الطلبات وتفعيل الحسابات). الزائد عن الحدّ يصل داخل الموقع فقط ويُخبرك الشريط بذلك.</p>
+          <button id="bcBtn" onclick="sendBroadcast()" class="btn btn-p"><i class="fa-solid fa-bullhorn"></i> إرسال للجميع</button>
+          <div id="bcStatus" class="pf-hint" style="margin-top:10px"></div>
         </div>
       </div>
 
@@ -1031,6 +1052,15 @@ input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,se
     <button class="adm-modal-x" onclick="closeUserModal()">✕</button>
     <div class="adm-modal-title"><i class="fa-solid fa-user"></i> تفاصيل المستخدم</div>
     <div id="userModalContent"></div>
+  </div>
+</div>
+
+<!-- ACTION MODAL (ban · notify · delete account · payment receipt) -->
+<div id="actModal" class="adm-modal-ov hidden" onclick="if(event.target===this)actClose()">
+  <div class="adm-modal">
+    <button class="adm-modal-x" onclick="actClose()" aria-label="إغلاق">✕</button>
+    <div class="adm-modal-title" id="actTitle"></div>
+    <div id="actBody"></div>
   </div>
 </div>
 

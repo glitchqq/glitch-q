@@ -24,9 +24,9 @@ async function mk(over = {}, signKey = kp.privateKey, kid = 'k1') {
 }
 
 /* ───────── fake Firestore (REST shapes) ───────── */
-const D = v => { if (!v) return null; if ('stringValue' in v) return v.stringValue; if ('integerValue' in v) return Number(v.integerValue); if ('doubleValue' in v) return v.doubleValue; if ('booleanValue' in v) return v.booleanValue; if ('timestampValue' in v) return v.timestampValue; if ('nullValue' in v) return null; if ('arrayValue' in v) return (v.arrayValue.values || []).map(D); if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, D(x)])); };
+const D = v => { if (!v) return null; if ('bytesValue' in v) return Buffer.from(v.bytesValue, 'base64'); if ('stringValue' in v) return v.stringValue; if ('integerValue' in v) return Number(v.integerValue); if ('doubleValue' in v) return v.doubleValue; if ('booleanValue' in v) return v.booleanValue; if ('timestampValue' in v) return v.timestampValue; if ('nullValue' in v) return null; if ('arrayValue' in v) return (v.arrayValue.values || []).map(D); if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, D(x)])); };
 const E = v => v === null ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? (Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v }) : typeof v === 'string' ? { stringValue: v } : Array.isArray(v) ? { arrayValue: { values: v.map(E) } } : { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, E(x)])) } };
-const fs = { docs: new Map(), ver: 1, commits: 0, failTelegram: false, tg: [], brevo: [], gets: 0 };
+const fs = { docs: new Map(), ver: 1, commits: 0, failTelegram: false, tg: [], brevo: [], gets: 0, authDel: [], failAuthDel: '' };
 const put = (path, obj) => fs.docs.set(path, { fields: Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, E(v)])), ver: fs.ver++ });
 const get = path => { const d = fs.docs.get(path); return d ? Object.fromEntries(Object.entries(d.fields).map(([k, v]) => [k, D(v)])) : undefined; };
 const docJson = (path, d) => ({ name: `projects/glitch-q/databases/(default)/documents/${path}`, fields: d.fields, updateTime: '2026-01-01T00:00:00.' + String(d.ver).padStart(6, '0') + 'Z' });
@@ -67,6 +67,7 @@ globalThis.fetch = async (url, init = {}) => {
   if (url.includes('service_accounts/v1/jwk')) return J({ keys: [jwk] }, 200, { 'cache-control': 'public, max-age=3600' });
   if (url.includes('oauth2.googleapis.com/token')) return J({ access_token: 'tok' });
   if (url.includes('sendOobCode')) { const rt = JSON.parse(init.body).requestType; if (fs.failOob) return J({ error: { message: 'no' } }, 400); return J({ oobLink: 'https://glitch-q.firebaseapp.com/__/auth/action?mode=' + (rt === 'VERIFY_EMAIL' ? 'verifyEmail' : 'resetPassword') + '&oobCode=abc' }); }
+  if (url.includes('accounts:delete')) { if (fs.failAuthDel) return J({ error: { message: fs.failAuthDel } }, fs.failAuthDel === 'USER_NOT_FOUND' ? 400 : 403); fs.authDel.push(JSON.parse(init.body).localId); return J({}); }
   if (url.includes('accounts:update')) return J({});
   if (url.includes('api.brevo.com')) { if (fs.failBrevo) return J({ message: 'no' }, 400); fs.brevo.push(JSON.parse(init.body)); return J({ messageId: 'm' }, 201); }
   if (url.includes('api.telegram.org')) {
@@ -493,7 +494,7 @@ seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'OFFX', type: 'fixe
 seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'FULL', type: 'fixed', value: 300, active: true, featured: true, maxUses: 2, usedCount: 2 }] });
 [s, j] = await call('/offer', null, { method: 'GET' }); ck('offer: featured but fully used → ok:false', j.ok === false, JSON.stringify(j));
 { const ip = '9.9.9.9'; let last = 0; for (let i = 0; i < 70; i++) [last] = await call('/offer', null, { method: 'GET', ip }); ck('offer: per-IP rate limit', last === 429, last); }
-[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v10', j.v === 10, JSON.stringify(j));
+[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v11', j.v === 11, JSON.stringify(j));
 
 /* ───────── reset-password limiter, maintenance/ticker ───────── */
 seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { text: 'hello' });
@@ -780,6 +781,166 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
     const r2 = await call('/account/send-verification', {}, { origin: 'https://evil.example' });
     ck('send-verification: foreign Origin → 403', r2[0] === 403, r2[0]);
   }
+}
+
+/* ───────── round 7: temporary suspensions, receipt copy, one account per inbox, delete a customer, notification e-mail ───────── */
+{
+  const adminTok = () => mk({ sub: 'adm', email: 'kadirom7k777@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' } });
+  const keys = () => [...fs.docs.keys()].filter(k => k.startsWith('email_keys/'));
+  const dayK = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Algiers', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+
+  /* — temporary suspension — */
+  seed();
+  put('banned_users/tb1', { reason: 'x', until: Date.now() + 3600000 });   // running
+  put('banned_users/tb2', { reason: 'x', until: Date.now() - 1000 });      // ended
+  put('banned_users/tb3', { reason: 'x', until: 0 });                      // permanent
+  put('banned_users/tb4', { reason: 'x' });                                // permanent (older record without a duration)
+  for (const u of ['tb1', 'tb2', 'tb3', 'tb4']) put('users/' + u, { points: 5, lastLogin: '', streak: 0 });
+  const st = [];
+  for (const u of ['tb1', 'tb2', 'tb3', 'tb4']) st.push((await call('/account/streak', { idToken: await tok(u) }))[0]);
+  ck('suspension: running → 403, ended → works again, permanent (until 0 / no until) → 403', st[0] === 403 && st[1] === 200 && st[2] === 403 && st[3] === 403, st.join(','));
+  [s] = await order(base, { token: await mk({ sub: 'tb1' }) }); ck('suspension: a customer under a running temporary ban cannot order', s === 403, s);
+  [s] = await order(base, { token: await mk({ sub: 'tb2' }) }); ck('suspension: after the ban ended the customer can order again', s === 200, s);
+
+  /* — the receipt copy kept for the owner's panel — */
+  seed(); fs.tg = [];
+  [s, j] = await order(bm, { token: await U(), photo: png(40000) });
+  let rc = get('order_receipts/' + j.orderId), od = get('orders/' + j.orderId);
+  ck('receipt: a small receipt is kept for the panel (order_receipts/<orderId>) and the order is flagged', s === 200 && od.hasReceipt === true && rc && rc.mime === 'image/png' && rc.size === 40012 && Buffer.isBuffer(rc.data) && rc.data.length === 40012 && rc.orderId === j.orderId, JSON.stringify([s, od, rc && { ...rc, data: '…' }]));
+  ck('receipt: Telegram still gets the photo', fs.tg.length === 1 && fs.tg[0].photo);
+  ck('receipt: the stored bytes are the uploaded image (PNG signature intact)', rc.data[0] === 0x89 && rc.data[1] === 0x50 && rc.data[2] === 0x4E && rc.data[3] === 0x47);
+  fs.tg = [];
+  [s, j] = await order(bm, { token: await U(), photo: png(900 * 1024) });
+  ck('receipt: a photo too big for one document (900 KB) → order still succeeds, goes to Telegram, no copy, no flag', s === 200 && fs.tg.length === 1 && !get('order_receipts/' + j.orderId) && get('orders/' + j.orderId).hasReceipt === undefined, JSON.stringify([s, get('orders/' + j.orderId)]));
+  [s, j] = await order(base, { token: await U() });
+  ck('receipt: hand delivery has no receipt document', s === 200 && !get('order_receipts/' + j.orderId) && get('orders/' + j.orderId).hasReceipt === undefined);
+  fs.failTelegram = true; const before = [...fs.docs.keys()].filter(k => k.startsWith('order_receipts/')).length;
+  [s] = await order(bm, { token: await U(), photo: png(30000) }); fs.failTelegram = false;
+  ck('receipt: Telegram down → order refused AND its receipt copy removed (no orphan)', s === 502 && [...fs.docs.keys()].filter(k => k.startsWith('order_receipts/')).length === before, s);
+
+  /* — one account per inbox — */
+  seed(); fs.authDel = [];
+  const reg = async (sub, email, o = {}, mode = 'register') => call('/account/claim-email', { idToken: await mk({ sub, email, email_verified: false, ...o }), mode });
+  const mkUser = (u, email, x = {}) => put('users/' + u, { points: 5, orders: 0, totalSpend: 0, email, ...x });
+  mkUser('ca', 'john.smith@gmail.com');
+  [s, j] = await reg('ca', 'john.smith@gmail.com'); ck('inbox: first sign-up claims the address', s === 200 && j.ok === true && keys().length === 1, JSON.stringify([s, j]));
+  [s, j] = await reg('ca', 'john.smith@gmail.com'); ck('inbox: the same account claiming again is fine (idempotent)', s === 200 && keys().length === 1, s);
+  mkUser('cb', 'johnsmith+shop@gmail.com');
+  [s, j] = await reg('cb', 'johnsmith+shop@gmail.com');
+  ck('inbox: same Gmail inbox written differently (dots removed, +tag) → 409 email_taken', s === 409 && j.code === 'email_taken', JSON.stringify([s, j]));
+  ck('inbox: the duplicate account is removed (sign-in deleted + profile deleted), the first one is untouched', fs.authDel.includes('cb') && !get('users/cb') && !!get('users/ca') && !fs.authDel.includes('ca'), JSON.stringify([fs.authDel, !!get('users/cb')]));
+  mkUser('cc', 'JohnSmith@googlemail.com'); [s, j] = await reg('cc', 'JohnSmith@googlemail.com'); ck('inbox: googlemail.com and capital letters count as the same Gmail inbox → 409', s === 409, s);
+  mkUser('cd', 'john.smith@outlook.com'); [s] = await reg('cd', 'john.smith@outlook.com'); ck('inbox: the same name at another provider is a different inbox → allowed', s === 200, s);
+  mkUser('ce', 'john.smith+x@outlook.com'); [s] = await reg('ce', 'john.smith+x@outlook.com'); ck('inbox: Outlook +tag is the same inbox as the plain address → 409', s === 409, s);
+  mkUser('cf', 'a.b@yahoo.com'); [s] = await reg('cf', 'a.b@yahoo.com'); mkUser('cg', 'ab@yahoo.com'); const [s2] = await reg('cg', 'ab@yahoo.com');
+  ck('inbox: dots are only ignored for Gmail (a.b@yahoo.com and ab@yahoo.com are different people) → both allowed', s === 200 && s2 === 200, [s, s2]);
+  put('users/old1', { email: 'old@x.com', points: 40, orders: 2, totalSpend: 9000 }); mkUser('cn', 'old@x.com');
+  [s, j] = await reg('cn', 'old@x.com'); ck('inbox: an older account that is not in the registry yet still blocks the exact same address', s === 409 && !get('users/cn') && !!get('users/old1'), JSON.stringify([s, j]));
+  const n0 = fs.authDel.length;
+  mkUser('cv', 'verified.dup@gmail.com'); put('users/first', { email: 'verifieddup@gmail.com', points: 5, orders: 0, totalSpend: 0 }); await reg('first', 'verifieddup@gmail.com');
+  [s] = await reg('cv', 'verified.dup@gmail.com', { email_verified: true });
+  ck('inbox: a VERIFIED account is never removed automatically, even when it collides (409, nothing deleted)', s === 409 && !!get('users/cv') && fs.authDel.length === n0, [s, fs.authDel.length - n0]);
+  mkUser('cw', 'verified.dup2@gmail.com', { orders: 3, totalSpend: 5000 }); await reg('cw', 'verified.dup2@gmail.com', { email_verified: true });
+  mkUser('cx', 'verifieddup2@gmail.com', { orders: 1, totalSpend: 100 });
+  [s] = await reg('cx', 'verifieddup2@gmail.com'); ck('inbox: an account that already has orders is never removed automatically', s === 409 && !!get('users/cx'), s);
+  mkUser('cb2', 'johnsmith+zzz@gmail.com');
+  [s, j] = await reg('cb2', 'johnsmith+zzz@gmail.com', { email_verified: true }, 'login');
+  ck('inbox: at LOGIN an existing duplicate is not blocked or deleted — it is only reported (duplicate:true)', s === 200 && j.duplicate === true && !!get('users/cb2'), JSON.stringify([s, j]));
+  put('email_keys/' + keys()[0].split('/')[1], { uid: 'ghost', email: 'gone@x.com', ts: 1 });
+  mkUser('cy', 'john.smith@gmail.com'); [s, j] = await reg('cy', 'john.smith@gmail.com');
+  ck('inbox: a registry entry whose account no longer exists is taken over', s === 200 && j.ok === true, JSON.stringify([s, j]));
+  fs.failAuthDel = 'PERMISSION_DENIED'; mkUser('cz', 'johnsmith+q@gmail.com'); [s, j] = await reg('cz', 'johnsmith+q@gmail.com'); fs.failAuthDel = '';
+  ck('inbox: if the sign-in cannot be deleted the sign-up is still refused (409) and the profile is kept for the owner to clean', s === 409 && !!get('users/cz'), s);
+  [s] = await call('/account/claim-email', {}); ck('inbox: no token → 401', s === 401, s);
+  [s] = await call('/account/claim-email', { idToken: await mk({ sub: 'zz9', email: 'not-an-email' }) }); ck('inbox: token without a usable e-mail → ok/skipped, nothing written', s === 200, s);
+
+  /* — delete a customer — */
+  seed(); fs.authDel = []; fs.tg = [];
+  mkUser('du1', 'du@x.com', { points: 80 }); put('banned_users/du1', { reason: 'x' }); put('orders/o_du', { userId: 'du1', product: 'P', status: 'done' });
+  await reg('du1', 'du@x.com');
+  const dk = keys().length;
+  const del = async (o, t) => call('/admin/delete-user', { idToken: t === undefined ? await adminTok() : t, ...o });
+  [s] = await del({ uid: 'du1', confirm: 'du@x.com' }, ''); ck('delete user: no token → 401', s === 401, s);
+  [s] = await del({ uid: 'du1', confirm: 'du@x.com' }, await tok('u1')); ck('delete user: ordinary customer → 403', s === 403, s);
+  [s] = await del({ uid: 'du1', confirm: 'du@x.com' }, await mk({ sub: 'adm', email: 'kadirom7k777@gmail.com', email_verified: true, firebase: { sign_in_provider: 'password' } })); ck('delete user: password-login admin → 403', s === 403, s);
+  [s] = await del({ uid: 'du1', confirm: 'wrong@x.com' }); ck('delete user: confirmation text must match the e-mail → 400, nothing touched', s === 400 && !!get('users/du1') && fs.authDel.length === 0, s);
+  [s] = await del({ uid: '../users/du1', confirm: 'x' }); ck('delete user: path-like uid → 400', s === 400, s);
+  [s] = await del({ uid: 'adm', confirm: 'adm' }); ck('delete user: the owner cannot delete himself → 403', s === 403, s);
+  put('users/own', { email: 'kadirom7k777@gmail.com', points: 1 }); [s] = await del({ uid: 'own', confirm: 'kadirom7k777@gmail.com' }); ck('delete user: a profile carrying the owner e-mail is protected → 403', s === 403 && !!get('users/own'), s);
+  fs.failAuthDel = 'PERMISSION_DENIED';
+  [s, j] = await del({ uid: 'du1', confirm: 'du@x.com' });
+  ck('delete user: sign-in deletion refused by Google → 502 auth_delete_failed and NOTHING is removed', s === 502 && j.error === 'auth_delete_failed' && !!get('users/du1') && !!get('banned_users/du1'), JSON.stringify([s, j]));
+  fs.failAuthDel = '';
+  [s, j] = await del({ uid: 'du1', confirm: 'DU@x.com ' });
+  ck('delete user: success → sign-in deleted, profile and registry entry removed, old ban removed', s === 200 && j.authDeleted === true && fs.authDel.includes('du1') && !get('users/du1') && !get('banned_users/du1') && keys().length === dk - 1, JSON.stringify([s, j, keys().length, dk]));
+  ck('delete user: the customer\'s orders are kept (accounting)', !!get('orders/o_du'));
+  ck('delete user: an audit entry is written (admin_log) and the owner is told on Telegram', [...fs.docs.keys()].some(k => k.startsWith('admin_log/')) && fs.tg.some(x => x.text.includes('Account deleted') && x.text.includes('du1')), JSON.stringify(fs.tg.map(x => x.text)));
+  mkUser('du2', 'du2@x.com'); fs.failAuthDel = 'PERMISSION_DENIED';
+  [s, j] = await del({ uid: 'du2', confirm: 'du2@x.com', dataOnly: true }); fs.failAuthDel = '';
+  ck('delete user: data-only fallback removes the profile and blocks the sign-in with a permanent suspension', s === 200 && j.authDeleted === false && !get('users/du2') && get('banned_users/du2') && get('banned_users/du2').until === 0, JSON.stringify([s, j, get('banned_users/du2')]));
+  mkUser('du3', 'du3@x.com'); fs.failAuthDel = 'USER_NOT_FOUND';
+  [s, j] = await del({ uid: 'du3', confirm: 'du3@x.com' }); fs.failAuthDel = '';
+  ck('delete user: a sign-in that is already gone counts as deleted', s === 200 && !get('users/du3'), JSON.stringify([s, j]));
+  [s, j] = await del({ uid: 'nodoc1', confirm: 'nodoc1' }); ck('delete user: an orphan sign-in with no profile can be removed by typing its uid', s === 200 && fs.authDel.includes('nodoc1'), JSON.stringify([s, j]));
+
+  /* — notification e-mail — */
+  seed(); fs.brevo = [];
+  put('users/n1', { email: 'n1@x.com', firstName: 'Sara', points: 5 }); put('users/n2', { email: 'n2@x.com', firstName: '', points: 5 }); put('users/n3', { points: 5 });
+  const nm = async (o, t) => call('/admin/notify-email', { idToken: t === undefined ? await adminTok() : t, ...o });
+  [s] = await nm({ uids: ['n1'], title: 'Hi', text: 'x' }, ''); ck('notify e-mail: no token → 401', s === 401, s);
+  [s] = await nm({ uids: ['n1'], title: 'Hi', text: 'x' }, await tok('u1')); ck('notify e-mail: ordinary customer → 403', s === 403 && fs.brevo.length === 0, s);
+  [s] = await nm({ uids: ['n1'], text: 'x' }); ck('notify e-mail: no title → 400', s === 400, s);
+  [s] = await nm({ uids: [], title: 'T' }); ck('notify e-mail: no recipients → 400', s === 400, s);
+  [s, j] = await nm({ uids: ['n1', 'n2', 'n3', 'missing'], title: 'عرض <b>خاص</b>', text: 'السطر الأول\nالسطر الثاني <img src=x onerror=alert(1)>', to: 'attacker@evil.com', email: 'attacker@evil.com' });
+  ck('notify e-mail: sent to the stored profile addresses only; profiles without an address are counted, not mailed', s === 200 && j.sent === 2 && j.noEmail === 2 && fs.brevo.map(b => b.to[0].email).sort().join() === 'n1@x.com,n2@x.com', JSON.stringify([s, j, fs.brevo.map(b => b.to)]));
+  ck('notify e-mail: an address typed in the request is ignored', !JSON.stringify(fs.brevo).includes('attacker@evil.com'));
+  ck('notify e-mail: the subject is "<title> | Glitch Q" (plain text, one line)', fs.brevo.every(b => b.subject === 'عرض <b>خاص</b> | Glitch Q'), fs.brevo[0].subject);
+  ck('notify e-mail: no raw tags from the owner\'s text reach the HTML', !/<img src=x/.test(fs.brevo[0].htmlContent) && !/<b>خاص/.test(fs.brevo[0].htmlContent) && fs.brevo[0].htmlContent.includes('&lt;img'), '');
+  ck('notify e-mail: branded template (GLITCH Q header, both lines, store link) and a plain-text part', fs.brevo[0].htmlContent.includes('GLITCH Q') && fs.brevo[0].htmlContent.includes('السطر الثاني') && fs.brevo[0].htmlContent.includes('glitchqq.github.io/glitch-q') && fs.brevo[0].textContent.includes('السطر الأول') && fs.brevo.find(b => b.to[0].email === 'n1@x.com').htmlContent.includes('Sara'), '');
+  const ids = Array.from({ length: 30 }, (_, i) => { put('users/m' + i, { email: 'm' + i + '@x.com', points: 5 }); return 'm' + i; });
+  fs.brevo = []; [s, j] = await nm({ uids: ids, title: 'T', text: 'x' });
+  ck('notify e-mail: one request handles at most 15 recipients (keeps within the Worker\'s per-request limits)', s === 200 && j.sent === 15 && fs.brevo.length === 15, JSON.stringify([s, j]));
+  seed(); fs.brevo = []; for (let i = 0; i < 5; i++) put('users/q' + i, { email: 'q' + i + '@x.com', points: 5 });
+  put('rate_limits/notifmail_' + dayK, { n: 148, until: Date.now() + 3600000 });
+  [s, j] = await nm({ uids: ['q0', 'q1', 'q2', 'q3', 'q4'], title: 'T', text: 'x' });
+  ck('notify e-mail: the daily ceiling (150) is shared by every request — only the remaining 2 are sent, the rest reported as limited', s === 200 && j.sent === 2 && j.limited === 3 && j.left === 0 && fs.brevo.length === 2, JSON.stringify([s, j]));
+  [s, j] = await nm({ uids: ['q2'], title: 'T', text: 'x' });
+  ck('notify e-mail: once the ceiling is used nothing more is sent that day', s === 200 && j.sent === 0 && j.limited === 1 && fs.brevo.length === 2, JSON.stringify([s, j]));
+  seed(); fs.brevo = []; put('users/f1', { email: 'f1@x.com', points: 5 }); fs.failBrevo = true;
+  [s, j] = await nm({ uids: ['f1'], title: 'T', text: 'x' }); fs.failBrevo = false;
+  ck('notify e-mail: the mail provider refusing is reported as failed (the in-site notification is separate)', s === 200 && j.failed === 1 && j.sent === 0, JSON.stringify([s, j]));
+  [s] = await call('/admin/notify-email', null, { method: 'GET' }); ck('notify e-mail: GET → 405', s === 405, s);
+  [s] = await call('/admin/delete-user', null, { method: 'GET' }); ck('delete user: GET → 405', s === 405, s);
+
+  /* — a product type of the owner's own (cur:'item'): priced from priceDZD, labelled from its own text — */
+  seed();
+  put('settings/products', { products: [
+    { id: 'item-nf', cat: 'psn', name: 'Netflix', val: 1, cur: 'item', valText: '15$', sub: 'Global', priceDZD: 3500 },
+    { id: 'item-bare', cat: 'psn', name: 'Hoodie', val: 1, cur: 'item', sub: '', priceDZD: 5000 },
+    { id: 'item-free', cat: 'psn', name: 'NoPrice', val: 1, cur: 'item', sub: '' },
+    { id: 'p1', cat: 'psn', name: 'PSN', val: 10, cur: 'EUR', sym: '€', sub: 'USA' },
+  ] });
+  [s, j] = await order({ ...base, items: [{ id: 'item-nf', qty: 1 }] }, { token: await U() });
+  ck('custom product: ordered at its own DZD price, label "<name> <card text> (<sub>)"', s === 200 && j.total === 3500 && get('orders/' + j.orderId).product === 'Netflix 15$ (Global)', JSON.stringify([s, j, get('orders/' + j.orderId)]));
+  [s, j] = await order({ ...base, items: [{ id: 'item-bare', qty: 1 }] }, { token: await U() });
+  ck('custom product: no card text and no sub → label is just the name (no stray "()")', s === 200 && j.total === 5000 && get('orders/' + j.orderId).product === 'Hoodie', JSON.stringify([s, get('orders/' + j.orderId)]));
+  [s] = await order({ ...base, items: [{ id: 'item-free', qty: 1 }] }, { token: await U() });
+  ck('custom product: without a price it cannot be bought (never free)', s === 400, s);
+  [s, j] = await order({ ...base, items: [{ id: 'p1', qty: 1 }] }, { token: await U() });
+  ck('custom product: existing card labels are unchanged ("PSN 10€ (USA)")', s === 200 && get('orders/' + j.orderId).product === 'PSN 10€ (USA)', JSON.stringify(get('orders/' + j.orderId)));
+}
+
+/* ───────── the panel's duplicate finder must use the very same "which inbox is this" rule as the Worker ───────── */
+{
+  const wsrc = readFileSync(new URL('./worker.js', import.meta.url), 'utf8');
+  const asrc = readFileSync(new URL('../admin.js', import.meta.url), 'utf8');
+  const cut = (src, from, to) => { const a = src.indexOf(from), b = src.indexOf(to, a); if (a < 0 || b < 0) throw new Error('marker missing: ' + from); return src.slice(a, b); };
+  const wCanon = vm.runInNewContext(cut(wsrc, 'const PLUS_DOMAINS', 'const emailKeyId') + ';canonEmail');
+  const aCanon = vm.runInNewContext(cut(asrc, 'const PLUS_DOMAINS', 'function tsMs') + ';canonEmail');
+  const samples = ['John.Smith@Gmail.com', 'johnsmith+shop@gmail.com', 'j.o.h.n.smith@googlemail.com', '+x@gmail.com', 'a.b@yahoo.com', 'ab@yahoo.com', 'x+tag@outlook.com', 'x+tag@hotmail.com', 'X@ICLOUD.COM', 'a+b+c@proton.me', 'plain@example.org', 'weird+@gmail.com', '  spaced@gmail.com ', 'no-at-sign', '', 'a@b'];
+  const diff = samples.filter(x => wCanon(x) !== aCanon(x));
+  ck('canonEmail is identical in worker.js and admin.js (' + samples.length + ' samples)', diff.length === 0, JSON.stringify(diff.map(x => [x, wCanon(x), aCanon(x)])));
+  ck('canonEmail: the Gmail forms of one inbox collapse to one value, other providers keep their dots', wCanon('John.Smith@Gmail.com') === 'johnsmith@gmail.com' && wCanon('johnsmith+shop@googlemail.com') === 'johnsmith@gmail.com' && wCanon('a.b@yahoo.com') === 'a.b@yahoo.com' && wCanon('x+tag@outlook.com') === 'x@outlook.com', [wCanon('John.Smith@Gmail.com'), wCanon('a.b@yahoo.com')].join());
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

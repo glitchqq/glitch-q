@@ -370,7 +370,7 @@ async function launchRun(){
   if(!confirm(`سيتم الآن: حذف ${lnData.orders.length} طلب وتصفير ${lnData.users.length} حساب. هذا نهائي. هل نسخت الملف الاحتياطي؟`))return;
   lnRunning=true;launchGate();
   const prog=document.getElementById('lnProg');
-  const total=lnData.orders.length+lnData.econ.length+lnData.claims.length+lnData.users.length+(clearStats?1:0);
+  const total=lnData.orders.length*2+lnData.econ.length+lnData.claims.length+lnData.users.length+(clearStats?1:0);
   let done=0;
   const draw=(msg,err)=>{prog.innerHTML=`<div class="ln-bar"><i style="width:${total?Math.round(done/total*100):100}%"></i></div><div class="pf-hint"${err?' style="color:var(--red)"':''}>${esc(msg)} (${done.toLocaleString('en-US')} / ${total.toLocaleString('en-US')})</div>`;};
   const chunked=async(label,rows,mk)=>{
@@ -383,6 +383,7 @@ async function launchRun(){
   try{
     draw('بدء التنفيذ…');
     step='حذف الطلبات';          await chunked(step,lnData.orders,(b,r)=>b.delete(db.collection('orders').doc(r.id)));
+    step='حذف صور الوصولات';     await chunked(step,lnData.orders,(b,r)=>b.delete(db.collection('order_receipts').doc(r.id)));
     step='حذف سجلّ الأرباح';     await chunked(step,lnData.econ,(b,r)=>b.delete(db.collection('order_econ').doc(r.id)));
     step='حذف طلبات المكافآت';   await chunked(step,lnData.claims,(b,r)=>b.delete(db.collection('reward_claims').doc(r.id)));
     const f=launchUserFields(keepPts,clearNotifs);
@@ -393,12 +394,12 @@ async function launchRun(){
     await db.collection('settings').doc('launchLog').set({at:new Date().toISOString(),by:who,orders:lnData.orders.length,order_econ:lnData.econ.length,reward_claims:lnData.claims.length,users:lnData.users.length,pointsAfter:keepPts,clearedNotifications:clearNotifs});
     /* verify against the database, not against what we meant to write */
     const left=async c=>(await db.collection(c).get()).docs.length;
-    const [o,e,c,us]=await Promise.all([left('orders'),left('order_econ'),left('reward_claims'),db.collection('users').get()]);
+    const [o,e,c,us,rcpt]=await Promise.all([left('orders'),left('order_econ'),left('reward_claims'),db.collection('users').get(),left('order_receipts')]);
     const dirty=us.docs.filter(d=>{const u=d.data();return (Number(u.points)||0)!==keepPts||(Number(u.rewardPool)||0)!==0||(Number(u.orders)||0)!==0;}).length;
-    const good=o===0&&e===0&&c===0&&dirty===0;
+    const good=o===0&&e===0&&c===0&&dirty===0&&rcpt===0;
     prog.innerHTML=`<div class="adm-card" style="border-color:${good?'var(--green)':'var(--red)'}"><i class="fa-solid ${good?'fa-circle-check':'fa-triangle-exclamation'}" style="color:${good?'var(--green)':'var(--red)'}"></i> ${good
       ?`<b>تم الإطلاق الجديد.</b> الطلبات المتبقية: 0 · سجل الأرباح: 0 · طلبات المكافآت: 0 · حسابات فيها نقاط غير ${keepPts}: 0 (من ${us.docs.length.toLocaleString('en-US')} حساب).`
-      :`<b>اكتمل التنفيذ لكن التحقق وجد بقايا:</b> طلبات ${o} · أرباح ${e} · مكافآت ${c} · حسابات غير مصفّرة ${dirty}. أعد الفحص ثم نفّذ مرة أخرى (آمن).`}</div>`;
+      :`<b>اكتمل التنفيذ لكن التحقق وجد بقايا:</b> طلبات ${o} · وصولات ${rcpt} · أرباح ${e} · مكافآت ${c} · حسابات غير مصفّرة ${dirty}. أعد الفحص ثم نفّذ مرة أخرى (آمن).`}</div>`;
     aToast(good?'تم الإطلاق الجديد':'بقيت عناصر — أعد التنفيذ',good?'ok':'warn');
     lnData=null;lnBacked=false;document.getElementById('lnScan').innerHTML='';document.getElementById('lnSaved').checked=false;document.getElementById('lnSavedRow').style.display='none';
     document.getElementById('lnPhrase').value='';

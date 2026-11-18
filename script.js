@@ -218,7 +218,7 @@ const T={
     t_star_select:'اختر النجوم',t_rating_done:'شكراً!',
     t_choose_prod:'اختر منتجاً أولاً',
     t_maintenance:'الموقع في وضع الصيانة. نعود قريباً',
-    t_error:'حدث خطأ',t_banned:'تم تعليق حسابك.',
+    t_error:'حدث خطأ',t_banned:'تم تعليق حسابك.',t_email_dup:'هذا البريد (أو صيغة أخرى منه) مسجّل بالفعل. سجّل الدخول بحسابك الأول أو استعد كلمة المرور.',
     t_processing:'جاري المعالجة...',
   },
   en:{
@@ -358,7 +358,7 @@ const T={
     t_star_select:'Select stars',t_rating_done:'Thank you!',
     t_choose_prod:'Choose a product first',
     t_maintenance:'Site is under maintenance. Back soon',
-    t_error:'An error occurred',t_banned:'Your account has been suspended.',
+    t_error:'An error occurred',t_banned:'Your account has been suspended.',t_email_dup:'This email address (or another form of it) is already registered. Sign in to your first account or reset your password.',
     t_processing:'Processing...',
   }
 };
@@ -888,7 +888,7 @@ function calcPrice(prod){
   return DISC.active&&DISC.value>0?Math.floor(orig*(1-DISC.value/100)):orig;
 }
 function getCatName(catId){const cat=CATS.find(c=>c.id===catId);if(!cat)return catId||'';return S.lang==='en'?(cat.nameEn||cat.name||catId):(cat.name||catId);}
-function getValText(prod){if(prod.cur==='month')return`${prod.val} ${t('month')}`;if(prod.cur==='copy')return t('copy');return`${prod.val}${prod.sym||''}`;}
+function getValText(prod){if(prod.cur==='item')return String(prod.valText||'');if(prod.cur==='month')return`${prod.val} ${t('month')}`;if(prod.cur==='copy')return t('copy');return`${prod.val}${prod.sym||''}`;}
 
 /* ══════════════════════════════════════════
    HOME
@@ -932,11 +932,11 @@ function renderHomeCats(){
 /* The face of a card: a gift-card layout (value, category, brand glyph, one glitch band) so products read
    as the thing they are even when the admin has not uploaded a picture. */
 function prodTone(prod){return prod.img==='ps'?'t-ps':prod.img==='plus'?'t-plus':'t-game';}
-function prodGlyph(prod){return prod.img==='ps'?'<i class="fa-brands fa-playstation"></i>':prod.img==='plus'?'<span class="gf-plus">+</span>':'<i class="fa-solid fa-gamepad"></i>';}
+function prodGlyph(prod){return prod.img==='other'?'<i class="fa-solid fa-gift"></i>':prod.img==='ps'?'<i class="fa-brands fa-playstation"></i>':prod.img==='plus'?'<span class="gf-plus">+</span>':'<i class="fa-solid fa-gamepad"></i>';}
 function prodHasImg(prod){return !!(prod.imgUrl&&isValidUrl(prod.imgUrl));}
 function prodFaceHTML(prod){
   if(prodHasImg(prod))return `<img src="${san(prod.imgUrl)}" alt="${san(prod.name)}" loading="lazy">`;
-  const v=String(getValText(prod)),m=v.match(/^\s*([\d.,]+)\s*(.*)$/);
+  const v=String(getValText(prod)||(S.lang==='en'&&prod.nameEn?prod.nameEn:prod.name)||'').slice(0,22),m=v.match(/^\s*([\d.,]+)\s*(.*)$/);
   const val=m?`<span class="n">${san(m[1])}</span>${m[2]?`<span class="u">${san(m[2])}</span>`:''}`:`<span class="n txt">${san(v)}</span>`;
   return `<span class="gf-top">${san(getCatName(prod.cat))}</span><b class="gf-val">${val}</b><span class="gf-ico">${prodGlyph(prod)}</span><span class="gf-band"></span>`;
 }
@@ -1004,7 +1004,7 @@ function openProdDetail(prod){
         ${desc?`<p class="pd-desc">${san(desc)}</p>`:''}
         <div class="pd-price">${price.toLocaleString('en-US')} دج</div>
         ${DISC.active?`<div class="pd-old">${orig.toLocaleString('en-US')} دج</div>`:''}
-        <div class="pd-val">${t('prod_val')}: <strong>${san(valText)}</strong></div>
+        ${valText?`<div class="pd-val">${t('prod_val')}: <strong>${san(valText)}</strong></div>`:''}
       </div>
     </div>
     <div class="pd-acts">
@@ -1020,7 +1020,7 @@ function openCheckoutForProd(prodId){
   S.selProd=prod;S.cpn=null;S._cpnDisc=0;const price=calcPrice(prod);S._total=price;
   const valText=getValText(prod);
   const ci=$('coProdInfo');
-  if(ci)ci.innerHTML=`<div class="co-pname">${san(prod.name)} — ${san(valText)}</div><div class="co-pprice">${san(prod.sub||'')} · ${price.toLocaleString('en-US')} دج</div>`;
+  if(ci)ci.innerHTML=`<div class="co-pname">${san(prod.name)}${valText?' — '+san(valText):''}</div><div class="co-pprice">${san(prod.sub||'')} · ${price.toLocaleString('en-US')} دج</div>`;
   setText('coTotal',price.toLocaleString('en-US')+' دج');
   const cr=$('cpnRes');if(cr)cr.textContent='';const ci2=$('cpnInp');if(ci2)ci2.value='';if(S._offerCode&&ci2)ci2.value=S._offerCode;
   openM('checkoutModal');
@@ -1159,6 +1159,24 @@ async function validImg(file){
 /* ══════════════════════════════════════════
    SUBMIT ORDER
 ══════════════════════════════════════════ */
+/* A phone photo is 3–8 MB: it is shrunk in the browser (max 1600 px, JPEG) so it uploads fast on a weak connection and fits the store's receipt archive.
+   Any failure → the original file is sent unchanged. */
+async function shrinkReceipt(file){
+  try{
+    if(!file||file.size<=450*1024||!/^image\/(jpeg|png|webp)$/i.test(file.type))return file;
+    const url=URL.createObjectURL(file);
+    const img=await new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=url;});
+    URL.revokeObjectURL(url);
+    const k=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight));
+    const c=document.createElement('canvas');c.width=Math.max(1,Math.round(img.naturalWidth*k));c.height=Math.max(1,Math.round(img.naturalHeight*k));
+    const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(img,0,0,c.width,c.height);
+    for(const q of [0.82,0.7,0.58]){
+      const b=await new Promise(r=>c.toBlob(r,'image/jpeg',q));
+      if(b&&b.size<=600*1024||q===0.58){return b&&b.size&&b.size<file.size?new File([b],'receipt.jpg',{type:'image/jpeg'}):file;}
+    }
+  }catch(e){}
+  return file;
+}
 window.submitOrder=async()=>{
   if(!RL.ok('order',3,60000)){toast(t('t_too_many'),'twarn');return;}
   const items=S.selProd?[{id:S.selProd.id,qty:1}]:S.cart.map(c=>({id:c.id,qty:c.qty||1}));
@@ -1176,7 +1194,7 @@ window.submitOrder=async()=>{
     if(!fi?.files?.length){toast(t('t_upload_receipt'),'terr');return;}
     const ok=await validImg(fi.files[0]);if(!ok){toast(t('t_img_invalid'),'terr');return;}
     if(S.recv==='phone'){if(!rP){toast(t('t_phone_required'),'terr');return;}data.phone=rP;}
-    data.name=name;files={photo:fi.files[0]};
+    data.name=name;files={photo:await shrinkReceipt(fi.files[0])};
   }else{
     const phone=($('handPhone')?.value||'').trim().slice(0,20);
     if(!phone){toast(t('t_phone_required'),'terr');return;}
@@ -1261,12 +1279,25 @@ auth.onAuthStateChanged(async fbU=>{
   }else resetSess();
 });
 
+/* a suspension with an end time (`until`, epoch ms) stops counting once that time has passed; no `until` / 0 = permanent */
+function banActive(b){const u=Number(b&&b.until)||0;return !u||u>Date.now();}
+/* One account per e-mail inbox: the Worker keeps a registry of the real inbox behind every address (a.b@gmail.com = ab@gmail.com = ab+x@gmail.com).
+   'taken' = a second sign-up for an inbox that already has an account (the Worker has already removed the new, empty duplicate).
+   Any failure to reach the Worker is 'skip' — sign-up and login are never blocked by it. */
+async function claimEmail(user,mode){
+  try{
+    const tok=await user.getIdToken();
+    const r=await fetch(WORKER+'/account/claim-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken:tok,mode})});
+    if(r.status===409)return 'taken';
+    return r.ok?'ok':'skip';
+  }catch(e){return 'skip';}
+}
 async function endSess(fbU){
   S.user=fbU;
   try{
     const snap=await db.collection('users').doc(fbU.uid).get();
     const banned=await db.collection('banned_users').doc(fbU.uid).get();
-    if(banned.exists){await auth.signOut();toast(t('t_banned'),'terr');resetSess();return;}
+    if(banned.exists&&banActive(banned.data())){await auth.signOut();toast(t('t_banned'),'terr');resetSess();return;}
     if(snap.exists){
       S.udata=snap.data();
       if(!S.region&&S.udata.region&&REG_CFG.enabled&&REG_CFG.available[S.udata.region]){S.region=S.udata.region;S.regAuto=false;S.cur=S.udata.currency||'EUR';S.sym=S.udata.symbol||'€';LS.setItem('gq_reg',S.region);LS.setItem('gq_cur',S.cur);LS.setItem('gq_sym',S.sym);}
@@ -1282,6 +1313,8 @@ async function endSess(fbU){
   checkAbuse();
   const url=new URLSearchParams(window.location.search);if(url.get('ref'))processReferral();
   maybePromptRegion();
+  /* older accounts fill the inbox registry the first time they sign in on a device (never blocks, never deletes) */
+  const ck='gq_ck_'+fbU.uid;if(!LS.getItem(ck))claimEmail(fbU,'login').then(r=>{if(r==='ok')LS.setItem(ck,'1');});
 }
 
 function resetSess(){S.user=null;S.udata=null;S.history=null;if(S.ready){updHeaderUI();updProfUI();}}
@@ -1327,6 +1360,11 @@ $('regForm')?.addEventListener('submit',async e=>{
   }
   /* From here the account EXISTS. Nothing below may tell the customer that registration failed. */
   try{
+    if(await claimEmail(cred.user,'register')==='taken'){
+      try{await auth.signOut();}catch(e){}
+      toast(t('t_email_dup'),'terr');
+      return;
+    }
     _vCred={email,pass};
     try{await cred.user.updateProfile({displayName:`${first} ${last}`});}catch(e){}
     /* best effort: if this write does not land, the first activated login creates the profile document */

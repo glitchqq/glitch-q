@@ -66,7 +66,7 @@ export default {
 
     try {
       const routes = {
-        '/health':                 () => json({ ok: true, v: 10 }, 200, cors),
+        '/health':                 () => json({ ok: true, v: 11 }, 200, cors),
         '/maintenance':            () => handleMaintenance(request, env, cors),
         '/ticker':                 () => handleTicker(request, env, cors),
         '/stats/visit':            () => handleVisit(request, env, cors),
@@ -93,6 +93,9 @@ export default {
         '/admin/notify':           () => handleAdminNotify(request, env, cors),
         '/admin/send-code':        () => handleAdminSendCode(request, env, cors),
         '/admin/newsletter':       () => handleAdminNewsletter(request, env, cors),
+        '/admin/delete-user':      () => handleAdminDeleteUser(request, env, cors),
+        '/admin/notify-email':     () => handleAdminNotifyEmail(request, env, cors),
+        '/account/claim-email':    () => handleClaimEmail(request, env, cors),
       };
       const h = Object.prototype.hasOwnProperty.call(routes, path) ? routes[path] : null;
       if (!h) return json({ error: 'Not found' }, 404, cors);
@@ -215,7 +218,7 @@ async function readImage(file) {
   const buf = new Uint8Array(await file.arrayBuffer());
   const type = sniffImage(buf);
   if (!type) return { err: 'Invalid file type' };
-  return { blob: new Blob([buf], { type }), type };
+  return { blob: new Blob([buf], { type }), type, bytes: buf };
 }
 
 /* ═══════════════════════════════════════
@@ -257,6 +260,7 @@ function fsEnc(v) {
   if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
   if (typeof v === 'string') return { stringValue: v };
   if (v instanceof Date) return { timestampValue: v.toISOString() };
+  if (v instanceof Uint8Array) return { bytesValue: bytesToB64(v) };
   if (Array.isArray(v)) return { arrayValue: { values: v.map(fsEnc) } };
   if (typeof v === 'object') {
     const fields = {};
@@ -373,9 +377,22 @@ async function who(token, env, cors, optional = false) {
   return { claims };
 }
 
+// A suspension may be permanent (no `until`) or temporary (`until` = epoch milliseconds set by the owner's panel).
+// Once `until` has passed the account works again; the owner's panel shows the expired entry so it can be cleared.
 async function isBanned(env, uid) {
-  try { return (await fsGet(env, `banned_users/${encodeURIComponent(uid)}`)).exists; }
-  catch { return false; }
+  try {
+    const d = await fsGet(env, `banned_users/${encodeURIComponent(uid)}`);
+    if (!d.exists) return false;
+    const until = Number(d.data.until);
+    if (until > 0 && Date.now() >= until) return false;
+    return true;
+  } catch { return false; }
+}
+
+function bytesToB64(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
 }
 
 /* ═══════════════════════════════════════
@@ -395,6 +412,7 @@ async function loadCatalog(env) {
 }
 
 function unitPrice(prod, disc) {
+  if (prod.cur === 'item' && !(Number(prod.priceDZD) > 0)) return 0;   // a product type of the owner's own has no exchange rate: it needs its DZD price, or it cannot be bought
   const orig = Number(prod.priceDZD) || (Number(prod.val) * (RATES[prod.cur] || 220));
   if (!Number.isFinite(orig) || orig <= 0) return 0;
   return disc > 0 ? Math.floor(orig * (1 - disc / 100)) : Math.floor(orig);
@@ -403,6 +421,7 @@ function unitPrice(prod, disc) {
 function valueText(p) {
   if (p.cur === 'month') return `${p.val} شهر`;
   if (p.cur === 'copy') return 'نسخة';
+  if (p.cur === 'item') return cleanText(p.valText || '', 30);   // a product type of the owner's own: the text he wrote for the card face
   return `${p.val}${p.sym || ''}`;
 }
 
@@ -429,7 +448,7 @@ function priceItems(items, cat) {
     subtotal += unit * qty;
   }
   const label = (lines.length === 1 && lines[0].qty === 1)
-    ? `${lines[0].name} ${valueText(lines[0].prod)} (${cleanText(lines[0].prod.sub || '', 80)})`
+    ? [lines[0].name, valueText(lines[0].prod), cleanText(lines[0].prod.sub || '', 80) && `(${cleanText(lines[0].prod.sub || '', 80)})`].filter(Boolean).join(' ')
     : lines.map(l => `${l.name} x${l.qty}`).join(' + ');
   return { lines, subtotal, label: label.slice(0, 300) };
 }
@@ -493,6 +512,7 @@ async function handleOffer(request, env, cors) {
 /* ═══════════════════════════════════════
    CREATE ORDER — price, coupon, receipt and notification are all handled here
 ═══════════════════════════════════════ */
+const RECEIPT_MAX_BYTES = 700 * 1024;   // Firestore documents are limited to 1 MiB
 async function handleOrderCreate(request, env, cors) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
   const ip = clientIp(request);
@@ -525,11 +545,13 @@ async function handleOrderCreate(request, env, cors) {
   const senderName = cleanText(data.name, 100);
   if (pay === 'baridimob' && senderName.length < 2) return json({ error: 'Sender name required' }, 400, cors);
 
-  let photo = null;
+  let photo = null, receiptBytes = null, receiptType = '';
   if (pay === 'baridimob') {
     const img = await readImage(form.get('photo'));
     if (img.err) return json({ error: img.err }, 400, cors);
     photo = img.blob;
+    // a copy is kept for the owner's panel when it fits in one Firestore document (the browser shrinks it first); Telegram always gets the original
+    if (img.bytes.length <= RECEIPT_MAX_BYTES) { receiptBytes = img.bytes; receiptType = img.type; }
   }
 
   const cat = await loadCatalog(env);
@@ -574,7 +596,16 @@ async function handleOrderCreate(request, env, cors) {
   if (pay === 'hand') doc.phone = phone;
   if (pay === 'baridimob') doc.senderName = senderName;
 
-  const created = await fsCommit(env, [fsWrite(env, `orders/${oid}`, { fields: doc, transforms: { serverTime: ['ts'] }, precondition: { exists: false } })]);
+  const orderWrite = d => fsWrite(env, `orders/${oid}`, { fields: d, transforms: { serverTime: ['ts'] }, precondition: { exists: false } });
+  let created;
+  if (receiptBytes) {
+    // order + receipt copy in one atomic commit; if the copy is what the database refuses, the order still goes through without it
+    created = await fsCommit(env, [
+      orderWrite({ ...doc, hasReceipt: true }),
+      fsWrite(env, `order_receipts/${oid}`, { fields: { orderId: oid, userId: uid, mime: receiptType, size: receiptBytes.length, data: receiptBytes }, transforms: { serverTime: ['ts'] } }),
+    ]);
+    if (!created.ok) created = await fsCommit(env, [orderWrite(doc)]);
+  } else created = await fsCommit(env, [orderWrite(doc)]);
   if (!created.ok) { await releaseCoupon(env, couponUsed); return json({ error: 'Could not create the order' }, 503, cors); }
 
   const lines = [
@@ -590,7 +621,7 @@ async function handleOrderCreate(request, env, cors) {
   ].filter(Boolean).join('\n');
   const sent = await tgSend(env, lines, photo);
   if (!sent) {                                   // the owner would never see this order: undo it and let the customer retry
-    await fsCommit(env, [fsWrite(env, `orders/${oid}`, { delete: true })]);
+    await fsCommit(env, [fsWrite(env, `orders/${oid}`, { delete: true }), fsWrite(env, `order_receipts/${oid}`, { delete: true })]);
     await releaseCoupon(env, couponUsed);
     return json({ error: 'Could not notify the store, please try again' }, 502, cors);
   }
@@ -1144,6 +1175,218 @@ async function handleAdminSendCode(request, env, cors) {
   if (!sent.ok) return json({ error: sent.why }, 502, cors);
   return json({ ok: true, to: maskEmail(to) }, 200, cors);
 }
+/* ═══════════════════════════════════════
+   ONE ACCOUNT PER E-MAIL INBOX
+   Firebase already refuses the same address twice, but "a.b@gmail.com", "ab@gmail.com" and "ab+x@gmail.com" are three different
+   strings for Firebase and ONE inbox for Gmail. The Worker reduces an address to the inbox it really reaches and keeps a registry
+   `email_keys/{sha256(inbox)} → { uid }` (owner/Worker only, by the catch-all rule). A second sign-up for the same inbox is refused
+   and the half-created duplicate is removed. Existing accounts are never blocked at login: they just fill the registry.
+═══════════════════════════════════════ */
+const PLUS_DOMAINS = new Set(['outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'icloud.com', 'me.com', 'proton.me', 'protonmail.com', 'pm.me', 'fastmail.com']);
+function canonEmail(email) {
+  const e = String(email || '').trim().toLowerCase();
+  const at = e.lastIndexOf('@');
+  if (at < 1) return e;
+  let local = e.slice(0, at), dom = e.slice(at + 1);
+  if (dom === 'googlemail.com') dom = 'gmail.com';
+  if (dom === 'gmail.com') { const l = local.split('+')[0].replace(/\./g, ''); if (l) local = l; }
+  else if (PLUS_DOMAINS.has(dom)) { const l = local.split('+')[0]; if (l) local = l; }
+  return local + '@' + dom;
+}
+const emailKeyId = async email => (await sha256Hex(canonEmail(email))).slice(0, 40);
+
+// Deletes a Firebase Authentication user through the Identity Toolkit admin API. {ok} | {ok:false, code}
+async function authDeleteUser(env, uid) {
+  const adminToken = await getAdminToken(env);
+  if (!adminToken) return { ok: false, code: 'NO_ADMIN_TOKEN' };
+  const PROJECT_ID = pid(env);
+  const res = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accounts:delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}`, 'X-Goog-User-Project': PROJECT_ID },
+    body: JSON.stringify({ localId: uid }),
+  });
+  if (res.ok) return { ok: true };
+  const eb = await res.json().catch(() => ({}));
+  const code = String((eb && eb.error && (eb.error.message || eb.error.status)) || res.status).slice(0, 60);
+  if (/USER_NOT_FOUND/.test(code)) return { ok: true, gone: true };
+  console.error('AUTH_DELETE_ERROR status=' + res.status + ' ' + code);
+  return { ok: false, code };
+}
+
+async function handleClaimEmail(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  if (hit('clm:' + clientIp(request), 20, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+  const body = await readJson(request, 2048);
+  if (!body) return json({ error: 'Invalid data' }, 400, cors);
+  const a = await who(body.idToken, env, cors, false);
+  if (a.err) return a.err;
+  const claims = a.claims, uid = claims.sub;
+  if (hit('clmu:' + uid, 10, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+  const email = String(claims.email || '').toLowerCase();
+  if (!RE_EMAIL.test(email)) return json({ ok: true, skipped: true }, 200, cors);
+  const register = body.mode === 'register';
+  const key = await emailKeyId(email);
+  const path = `email_keys/${key}`;
+
+  let owner = null;                                      // uid of ANOTHER live account that already holds this inbox
+  for (let i = 0; i < 3 && !owner; i++) {
+    const cur = await fsGet(env, path);
+    if (cur.exists && cur.data.uid === uid) return json({ ok: true }, 200, cors);
+    if (cur.exists) {
+      const o = await fsGet(env, `users/${cur.data.uid}`);
+      if (o.exists) { owner = String(cur.data.uid); break; }
+      // the account that held it is gone: take the address over
+      const r = await fsCommit(env, [fsWrite(env, path, { fields: { uid, email, ts: Date.now() }, precondition: { updateTime: cur.updateTime } })]);
+      if (r.ok) return json({ ok: true }, 200, cors);
+      continue;
+    }
+    if (register) {                                      // not in the registry yet: older accounts may still hold the exact same address
+      const same = await fsQuery(env, 'users', { filters: [['email', 'EQUAL', email]], limit: 5 });
+      const other = same.find(d => d.id !== uid);
+      if (other) { owner = other.id; break; }
+    }
+    const r = await fsCommit(env, [fsWrite(env, path, { fields: { uid, email, ts: Date.now() }, precondition: { exists: false } })]);
+    if (r.ok) return json({ ok: true }, 200, cors);
+  }
+  if (!owner) return json({ error: 'Please try again' }, 503, cors);
+
+  if (!register) return json({ ok: true, duplicate: true }, 200, cors);   // existing account: never blocked, the owner sees it in the duplicates list
+
+  // A brand-new, unverified, empty account is removed again. Anything else (verified, has orders…) is left alone.
+  const mine = await fsGet(env, `users/${uid}`);
+  const fresh = claims.email_verified !== true && (!mine.exists || ((Number(mine.data.orders) || 0) === 0 && (Number(mine.data.totalSpend) || 0) === 0));
+  if (fresh) {
+    const del = await authDeleteUser(env, uid);
+    if (del.ok) await fsCommit(env, [fsWrite(env, `users/${uid}`, { delete: true })]);
+    else console.error('DUP_CLEANUP_FAILED uid=' + uid.slice(0, 8) + ' ' + del.code);
+  }
+  return json({ ok: false, code: 'email_taken' }, 409, cors);
+}
+
+/* ═══════════════════════════════════════
+   DELETE A CUSTOMER ACCOUNT (store owner only)
+   Removes the sign-in (Firebase Authentication) FIRST, then the profile. Orders are accounting records and stay.
+   If the service account is not allowed to delete sign-ins, nothing is touched unless the owner chose `dataOnly`:
+   then the profile is removed and the sign-in is blocked with a permanent suspension instead.
+═══════════════════════════════════════ */
+async function handleAdminDeleteUser(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  const body = await readJson(request, 2048);
+  if (!body) return json({ error: 'Invalid data' }, 400, cors);
+  const a = await who(body.idToken, env, cors, false);
+  if (a.err) return a.err;
+  if (!isAdminClaims(a.claims, env)) return json({ error: 'Forbidden' }, 403, cors);
+  if (hit('deluser', 30, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+
+  const uid = String(body.uid || '');
+  if (!RE_UID.test(uid)) return json({ error: 'Invalid uid' }, 400, cors);
+  if (uid === a.claims.sub) return json({ error: 'The owner account cannot be deleted' }, 403, cors);
+  const u = await fsGet(env, `users/${uid}`);
+  const email = u.exists ? String(u.data.email || '').toLowerCase() : '';
+  if (email === ADMIN_EMAIL) return json({ error: 'The owner account cannot be deleted' }, 403, cors);
+  const want = String(body.confirm || '').trim().toLowerCase();
+  if (want !== (email || uid.toLowerCase())) return json({ error: 'Confirmation does not match' }, 400, cors);
+
+  const dataOnly = body.dataOnly === true;
+  let authDeleted = false;
+  if (!dataOnly) {
+    const del = await authDeleteUser(env, uid);
+    if (!del.ok) return json({ error: 'auth_delete_failed', detail: del.code }, 502, cors);
+    authDeleted = true;
+  }
+  const writes = [fsWrite(env, `users/${uid}`, { delete: true })];
+  if (dataOnly) writes.push(fsWrite(env, `banned_users/${uid}`, { fields: { reason: 'حساب محذوف', date: dzDate(), until: 0 } }));
+  else writes.push(fsWrite(env, `banned_users/${uid}`, { delete: true }));
+  if (email) {
+    const kid = await emailKeyId(email);
+    const k = await fsGet(env, `email_keys/${kid}`);
+    if (k.exists && k.data.uid === uid) writes.push(fsWrite(env, `email_keys/${kid}`, { delete: true }));
+  }
+  writes.push(fsWrite(env, `admin_log/${randomId(20)}`, { fields: { action: 'delete-user', uid, email, authDeleted, dataOnly, by: a.claims.sub }, transforms: { serverTime: ['ts'] } }));
+  const r = await fsCommit(env, writes);
+  if (!r.ok) return json({ error: 'Could not remove the profile', authDeleted }, 503, cors);
+  await tgSend(env, `🗑️ Account deleted\n🔑 ${uid}\n📧 ${email || '—'}\n${authDeleted ? '✅ sign-in removed' : '⛔ sign-in blocked (data only)'}`);
+  return json({ ok: true, authDeleted }, 200, cors);
+}
+
+/* ═══════════════════════════════════════
+   E-MAIL A NOTIFICATION (store owner only). The in-site notification is written by the owner's panel; this adds the e-mail copy.
+   Recipients are user ids: the address is read from the stored profile here, never taken from the browser.
+   Brevo's free plan (~300/day) is shared with order codes, resets and verification mails, so notification mail has its own daily
+   ceiling and a request stops (and says so) when it is used up.
+═══════════════════════════════════════ */
+const NOTIF_MAILS_PER_DAY = 150;
+const NOTIF_MAILS_PER_CALL = 15;
+async function reserveNotifMail(env, want) {
+  const key = 'notifmail_' + dzDay();
+  let granted = 0, left = 0;
+  try {
+    const r = await fsUpdate(env, `rate_limits/${key}`, cur => {
+      const now = Date.now();
+      const live = cur.exists && Number(cur.data.until) > now;
+      const n = live ? (Number(cur.data.n) || 0) : 0;
+      granted = Math.max(0, Math.min(want, NOTIF_MAILS_PER_DAY - n));
+      left = NOTIF_MAILS_PER_DAY - n - granted;
+      if (!granted) return { abort: 'over' };
+      return { fields: { n: n + granted, until: live ? Number(cur.data.until) : now + 36 * 3600 * 1000 } };
+    });
+    if (!r.ok) return { granted: 0, left: r.aborted ? 0 : -1 };
+  } catch (e) { console.error('NOTIF_BUDGET_FAIL ' + e.message); return { granted: 0, left: -1 }; }
+  return { granted, left };
+}
+function buildNotifEmail({ title, lines, name }) {
+  const t = MAIL_TONE.crimson;
+  const hello = name ? `<p dir="rtl" style="margin:0 0 14px;${MB}font-size:15px;line-height:1.9;color:${MC.p};">أهلاً <strong style="color:#FFFFFF;"><span dir="auto" style="unicode-bidi:isolate;">${escHtml(name)}</span></strong>،</p>` : '';
+  const body = [
+    mH1(`<span dir="auto" style="unicode-bidi:isolate;">${escHtml(title)}</span>`),
+    hello,
+    ...lines.map(l => mP(`<span dir="auto" style="unicode-bidi:isolate;">${escHtml(l)}</span>`)),
+    mGap(6),
+    mButton(escHtml(SITE_URL), 'فتح المتجر', t),
+    mGap(18),
+  ].join('\n');
+  return mailShell({
+    tone: 'crimson',
+    label: 'رسالة من المتجر',
+    title: `${title} — Glitch Q`,
+    preheader: lines[0] || title,
+    body,
+    note: 'وصلتك هذه الرسالة لأنك مسجّل في متجر Glitch Q. ستجد الإشعار نفسه داخل حسابك في الموقع (أيقونة الجرس).',
+  });
+}
+function buildNotifText({ title, lines, name }) {
+  return `${title} — Glitch Q\n\n${name ? `أهلاً ${name}،\n` : ''}${lines.join('\n')}\n\nافتح المتجر: ${SITE_URL}\n\nوصلتك هذه الرسالة لأنك مسجّل في متجر Glitch Q. ستجد الإشعار نفسه داخل حسابك في الموقع.\n\nGlitch Q`;
+}
+async function handleAdminNotifyEmail(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  const body = await readJson(request, 12 * 1024);
+  if (!body) return json({ error: 'Invalid data' }, 400, cors);
+  const a = await who(body.idToken, env, cors, false);
+  if (a.err) return a.err;
+  if (!isAdminClaims(a.claims, env)) return json({ error: 'Forbidden' }, 403, cors);
+  if (hit('notifmail', 120, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+
+  const title = cleanText(body.title, 120);
+  const lines = String(body.text == null ? '' : body.text).split(/\r?\n/).slice(0, 20).map(l => cleanText(l, 500)).filter(Boolean);
+  const uids = [...new Set((Array.isArray(body.uids) ? body.uids : []).map(String).filter(x => RE_UID.test(x)))].slice(0, NOTIF_MAILS_PER_CALL);
+  if (!title || !uids.length) return json({ error: 'Title and recipients required' }, 400, cors);
+
+  const budget = await reserveNotifMail(env, uids.length);
+  if (!budget.granted) return json({ ok: true, sent: 0, failed: 0, noEmail: 0, limited: uids.length, left: Math.max(0, budget.left), busy: budget.left < 0 }, 200, cors);
+  let sent = 0, failed = 0, noEmail = 0;
+  const go = uids.slice(0, budget.granted);
+  for (const uid of go) {
+    let u;
+    try { u = await fsGet(env, `users/${uid}`); } catch { failed++; continue; }
+    const to = u.exists && RE_EMAIL.test(String(u.data.email || '').trim()) ? String(u.data.email).trim().toLowerCase() : '';
+    if (!to) { noEmail++; continue; }
+    const name = cleanText(u.data.firstName || '', 40);
+    const r = await sendBrevo(env, { to, subject: `${title} | Glitch Q`, html: buildNotifEmail({ title, lines, name }), text: buildNotifText({ title, lines, name }) });
+    if (r.ok) sent++; else failed++;
+  }
+  return json({ ok: true, sent, failed, noEmail, limited: uids.length - go.length, left: budget.left }, 200, cors);
+}
+
 /* ═══════════════════════════════════════
    PASSWORD RESET — Firebase link + Brevo email
 ═══════════════════════════════════════ */
