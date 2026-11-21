@@ -138,6 +138,7 @@ setInterval(()=>{const t=document.getElementById('topbarTime');if(t)t.textConten
 
 /* ══ INIT ══ */
 async function initAdmin(){
+  try{codesInit('sc');}catch(e){}
   await loadDashboard();
   setInterval(()=>{if(document.visibilityState==='visible'&&document.getElementById('tab-dashboard').classList.contains('on'))loadDashboard();},300000);   /* the dashboard reads whole collections: refreshing every minute used up the free daily read quota */
 }
@@ -154,17 +155,18 @@ async function loadDashboard(){
       db.collection('settings').doc('stats').get(),
     ]);
     const orders=ordersSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const PA=await loadPendingAccounts().catch(()=>null);const custDocs=usersSnap.docs.filter(d=>!(PA&&PA.ok&&PA.set.has(d.id)));
     const pending=orders.filter(o=>o.status==='pending').length;
     const done=orders.filter(o=>o.status==='done').length;
     const revenue=orders.filter(o=>o.status==='done').reduce((s,o)=>s+(o.totalDZD||0),0);
     const avgRating=ratingsSnap.size?(ratingsSnap.docs.reduce((s,d)=>s+(d.data().rating||0),0)/ratingsSnap.size).toFixed(1):'—';
     const visits=statsSnap.exists?(statsSnap.data().visitors||0):0;
     setVal('st-orders',ordersSnap.size);setVal('st-pending',pending);setVal('st-done',done);
-    setVal('st-users',usersSnap.size);setVal('st-revenue',revenue.toLocaleString()+' دج');
+    setVal('st-users',custDocs.length);setVal('st-revenue',revenue.toLocaleString()+' دج');
     setVal('st-rating',avgRating);setVal('st-visits',visits.toLocaleString());setVal('st-reports',reportsSnap.size);
     document.getElementById('sbPendingBadge').textContent=pending;
     document.getElementById('sbReportBadge').textContent=reportsSnap.size;
-    window._dash={orders,users:usersSnap.docs.map(d=>({id:d.id,...d.data()}))};   /* feeds the quick-search palette and the charts */
+    window._dash={orders,users:custDocs.map(d=>({id:d.id,...d.data()}))};   /* feeds the quick-search palette and the charts */
     try{renderInsights(orders,window._dash.users);}catch(e){console.error('insights',e);}
     // Recent orders
     const recent=orders.sort((a,b)=>(b.ts?.seconds||0)-(a.ts?.seconds||0)).slice(0,5);
@@ -177,7 +179,7 @@ async function loadDashboard(){
       rc.appendChild(el);
     });
     // Top users
-    const usersData=usersSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const usersData=custDocs.map(d=>({id:d.id,...d.data()}));
     const topUsers=usersData.sort((a,b)=>(b.points||0)-(a.points||0)).slice(0,5);
     const tu=document.getElementById('dashTopUsers');tu.innerHTML='';
         topUsers.forEach((u,i)=>{const el=document.createElement('div');el.className='top-user';el.innerHTML=`<span class="rk">${i+1}</span><span class="nm">${san(u.name||u.email||'مستخدم')}</span><span class="pt">${esc((u.points||0).toLocaleString())} نقطة</span><span style="color:var(--mid)">${esc(u.orders||0)} طلب</span>`;tu.appendChild(el);});
@@ -259,32 +261,84 @@ async function deleteReceipt(id){
 }
 async function deleteOrder(id){if(!confirm('حذف هذا الطلب نهائياً؟'))return;try{const b=db.batch();b.delete(db.collection('orders').doc(id));b.delete(db.collection('order_receipts').doc(id));await b.commit();allOrders=allOrders.filter(o=>o.id!==id);renderOrders();aToast('تم الحذف','info');}catch(e){aToast('خطأ','err');}}
 
-/* Several codes in one delivery (e.g. a 20€ order sent as four 5€ cards): one code per line, up to 20. Commas and semicolons also separate. */
+/* Several codes in one delivery (e.g. a 20€ order sent as four 5€ cards). The owner first picks HOW MANY codes and their VALUE (5€–60€);
+   one box per code appears ("الكود 1", "الكود 2"…, each with its own value so 15€+5€ is possible) and the note the customer reads is written
+   automatically from the codes and their values (still editable). Same component in the delivery dialog ("cm") and in manual send ("sc"). */
 const MAX_CODES=20;
-function parseCodes(txt){return String(txt||'').split(/[\r\n,;]+/).map(x=>x.trim()).filter(Boolean);}
-function codeCount(srcId,outId){
-  const all=parseCodes(document.getElementById(srcId).value),uniq=new Set(all),el=document.getElementById(outId);if(!el)return;
-  el.textContent='عدد الأكواد: '+uniq.size+(all.length>uniq.size?' — ⚠️ فيه '+(all.length-uniq.size)+' مكرر':'')+(uniq.size>MAX_CODES?' — ⚠️ الحد الأقصى '+MAX_CODES:'');
+const CODE_VALUES=[5,10,15,20,25,30,40,50,60];
+function codesRowsEl(pre){return document.getElementById(pre+'Rows');}
+function codesFillSelects(pre){
+  const n=document.getElementById(pre+'N'),v=document.getElementById(pre+'V');
+  if(n&&!n.options.length)for(let i=1;i<=MAX_CODES;i++)n.add(new Option(i===1?'1 كود':i+' أكواد',i));
+  if(v&&!v.options.length)CODE_VALUES.forEach(x=>v.add(new Option(x+'€',x)));
 }
-/* -> array of codes, or null after telling the owner what to fix */
-function readCodes(srcId){
-  const all=parseCodes(document.getElementById(srcId).value);
-  if(!all.length){aToast('أدخل كوداً واحداً على الأقل','err');return null;}
-  if(new Set(all).size!==all.length){aToast('فيه كود مكتوب مرتين — احذف المكرر','err');return null;}
-  if(all.length>MAX_CODES){aToast('الحد الأقصى '+MAX_CODES+' كوداً في الرسالة الواحدة','err');return null;}
-  if(all.some(c=>c.length>300)){aToast('أحد الأكواد أطول من 300 حرف','err');return null;}
-  return all;
+function codeValOptions(sel){return CODE_VALUES.map(x=>`<option value="${x}"${x===sel?' selected':''}>${x}€</option>`).join('');}
+/* (re)open the component: 1 code, a value (taken from the product name when it says e.g. "20€"), empty boxes, automatic note */
+function codesInit(pre,val){
+  codesFillSelects(pre);
+  const n=document.getElementById(pre+'N'),v=document.getElementById(pre+'V');if(!n||!v)return;
+  n.value='1';v.value=String(CODE_VALUES.includes(val)?val:5);
+  const rows=codesRowsEl(pre);if(rows)rows.innerHTML='';
+  const note=document.getElementById(pre+'Note');if(note){note.value='';delete note.dataset.manual;}
+  codesBuild(pre,true);
+}
+/* keep what was typed while the number of boxes changes; a new value for all boxes only when the value selector was touched */
+function codesBuild(pre,valChanged){
+  codesFillSelects(pre);
+  const rows=codesRowsEl(pre),n=Math.max(1,Math.min(MAX_CODES,parseInt(document.getElementById(pre+'N').value)||1)),v=parseInt(document.getElementById(pre+'V').value)||5;
+  if(!rows)return;
+  const old=[...rows.querySelectorAll('.code-row')].map(r=>({c:r.querySelector('.code-inp').value,v:parseInt(r.querySelector('.code-val').value)||v}));
+  rows.innerHTML='';
+  for(let i=0;i<n;i++){
+    const keep=old[i],val=valChanged?v:(keep?keep.v:v);
+    const r=document.createElement('div');r.className='code-row';r.style.cssText='display:flex;gap:8px;align-items:center;margin-bottom:8px';
+    r.innerHTML=`<span style="min-width:62px;font-size:12px;color:var(--mid);font-weight:700">الكود ${i+1}</span><input type="text" class="adm-inp code-inp" dir="ltr" spellcheck="false" autocomplete="off" maxlength="300" placeholder="XXXX-XXXX-XXXX" style="flex:1;margin:0;font-family:monospace" oninput="codesNote('${pre}')"><select class="adm-inp code-val" style="width:82px;margin:0" onchange="codesNote('${pre}')">${codeValOptions(val)}</select>`;
+    r.querySelector('.code-inp').value=keep?keep.c:'';
+    rows.appendChild(r);
+  }
+  codesNote(pre);
+}
+/* the sentence the customer reads, from the values only: "4 بطاقات × 5€ = 20€" / "بطاقتان: 1 × 15€ + 1 × 5€ = 20€ (1:15€ 2:5€)" */
+function codesAutoNote(vals){
+  const n=vals.length,total=vals.reduce((a,b)=>a+b,0);
+  if(n===1)return `بطاقة ${vals[0]}€`;
+  const g={};vals.forEach(x=>{g[x]=(g[x]||0)+1;});
+  const keys=Object.keys(g).map(Number).sort((a,b)=>b-a);
+  if(keys.length===1)return `${n} بطاقات × ${keys[0]}€ = ${total}€`;
+  return `${n} بطاقات: ${keys.map(k=>g[k]+' × '+k+'€').join(' + ')} = ${total}€ (${vals.map((x,i)=>(i+1)+':'+x+'€').join(' ')})`.slice(0,200);
+}
+function codesVals(pre){return [...codesRowsEl(pre).querySelectorAll('.code-val')].map(x=>parseInt(x.value)||0);}
+function codesNote(pre){
+  const vals=codesVals(pre),filled=[...codesRowsEl(pre).querySelectorAll('.code-inp')].filter(x=>x.value.trim()).length;
+  const sum=document.getElementById(pre+'Sum');
+  if(sum)sum.textContent=`المجموع: ${vals.reduce((a,b)=>a+b,0)}€ — ${vals.length===1?'كود واحد':vals.length+' أكواد'} (مكتوب منها ${filled})`;
+  const note=document.getElementById(pre+'Note');
+  if(note&&!note.dataset.manual)note.value=codesAutoNote(vals);
+}
+function codesNoteReset(pre){const note=document.getElementById(pre+'Note');if(note){delete note.dataset.manual;codesNote(pre);}}
+/* -> {codes,vals,note} or null after telling the owner what to fix */
+function readCodes(pre){
+  const rows=[...codesRowsEl(pre).querySelectorAll('.code-row')];
+  const codes=rows.map(r=>r.querySelector('.code-inp').value.trim()),vals=rows.map(r=>parseInt(r.querySelector('.code-val').value)||0);
+  const empty=codes.findIndex(c=>!c);
+  if(empty>=0){aToast(`خانة «الكود ${empty+1}» فارغة`,'err');rows[empty].querySelector('.code-inp').focus();return null;}
+  const dup=codes.findIndex((c,i)=>codes.indexOf(c)!==i);
+  if(dup>=0){aToast(`«الكود ${dup+1}» مكتوب مرتين — الكود ${codes.indexOf(codes[dup])+1} هو نفسه`,'err');return null;}
+  if(codes.length>MAX_CODES){aToast('الحد الأقصى '+MAX_CODES+' كوداً في الرسالة الواحدة','err');return null;}
+  if(codes.some(c=>c.length>300)){aToast('أحد الأكواد أطول من 300 حرف','err');return null;}
+  const note=(document.getElementById(pre+'Note').value||'').trim().slice(0,200);
+  return {codes,vals,note};
 }
 /* what the customer sees in his account */
-function codesNotice(codes,note){
-  return (note?note+'\n':'')+(codes.length===1?`الكود: ${codes[0]}`:`الأكواد (${codes.length}):\n`+codes.map((c,i)=>`${i+1}) ${c}`).join('\n'));
+function codesNotice(codes,note,vals){
+  return (note?note+'\n':'')+(codes.length===1?`الكود: ${codes[0]}`:`الأكواد (${codes.length}):\n`+codes.map((c,i)=>`${i+1}) ${c}${vals&&vals[i]?' — '+vals[i]+'€':''}`).join('\n'));
 }
-function codesTelegram(codes){return codes.length===1?codes[0]:'\n'+codes.map((c,i)=>`   ${i+1}) ${c}`).join('\n');}
+function codesTelegram(codes,vals){return codes.length===1?codes[0]:'\n'+codes.map((c,i)=>`   ${i+1}) ${c}${vals&&vals[i]?' ('+vals[i]+'€)':''}`).join('\n');}
 function openConfirmModal(orderId,product,contact){
   currentOrderForDelivery={orderId,product,contact};
   document.getElementById('cmOrderId').textContent=orderId;
   document.getElementById('cmProduct').textContent=product;
-  document.getElementById('cmCode').value='';document.getElementById('cmNote').value='';codeCount('cmCode','cmCount');
+  {const m=/(\d{1,2})\s*€/.exec(String(product||''));codesInit('cm',m?parseInt(m[1]):0);}
   document.getElementById('confirmModal').classList.remove('hidden');
 }
 function closeConfirmModal(){document.getElementById('confirmModal').classList.add('hidden');currentOrderForDelivery=null;}
@@ -341,22 +395,21 @@ async function completeOrder(orderId,notif){
 function u_ref(us){const d=us&&us.exists?us.data():null;return d&&d.referredBy?d.referredBy:null;}
 
 async function confirmDelivery(){
-  const codes=readCodes('cmCode');if(!codes)return;
-  const note=document.getElementById('cmNote').value.trim().slice(0,200);
+  const rc=readCodes('cm');if(!rc)return;const{codes,vals,note}=rc;
   const{orderId,product,contact}=currentOrderForDelivery||{};if(!orderId)return;
   try{
-    const notif={title:`طلبك جاهز — ${product}`,code:codesNotice(codes,note),date:new Date().toLocaleDateString('ar'),until:codeUntil(),read:false};
+    const notif={title:`طلبك جاهز — ${product}`,code:codesNotice(codes,note,vals),date:new Date().toLocaleDateString('ar'),until:codeUntil(),read:false};
     await completeOrder(orderId,notif);
     allOrders=allOrders.map(o=>o.id===orderId?{...o,status:'done'}:o);renderOrders();
     const m=await adminSendCode({orderId,codes,note,product});
-    await adminNotify(`✅ تم التسليم!\n🆔 ${orderId}\n🎮 ${product}\n🔑 ${codesTelegram(codes)}\n📧 ${contact}\n${m.ok?'✉️ أُرسل الإيميل إلى '+m.to:'⚠️ فشل إيميل الكود: '+m.error}`);
+    await adminNotify(`✅ تم التسليم!\n🆔 ${orderId}\n🎮 ${product}\n🔑 ${codesTelegram(codes,vals)}\n📧 ${contact}\n${m.ok?'✉️ أُرسل الإيميل إلى '+m.to:'⚠️ فشل إيميل الكود: '+m.error}`);
     if(m.ok){closeConfirmModal();aToast((codes.length>1?`تم التأكيد وأُرسلت ${codes.length} أكواد إلى `:'تم التأكيد وأُرسل الكود إلى ')+m.to,'ok');await loadDashboard();}
     else aToast('تم تأكيد الطلب وظهر الكود في حساب العميل، لكن فشل الإيميل: '+m.error+'. اضغط الزر لإعادة المحاولة','warn');
   }catch(e){aToast('خطأ: '+e.message,'err');}
 }
 
 /* ══ CATEGORIES ══ */
-let allCats=[],editingCat=null;
+let allCats=[],editingCat=null,catIconData='',catIconPicked=false;
 const CAT_EMOJIS=['🎮','🎴','👑','🕹️','💳','🎁','⭐','🔥','🛒','🎧','🏆','💎','🎟️','📦'];
 const CAT_SWATCHES=[['#203a43','#2c5364'],['#4c1d95','#c026d3'],['#1e3a8a','#0ea5e9'],['#065f46','#10b981'],['#7c2d12','#f59e0b'],['#7f1d1d','#ef4444'],['#831843','#ec4899'],['#1f2937','#6b7280']];
 const HEX6=/^#[0-9a-f]{6}$/i;
@@ -366,12 +419,12 @@ function catPrev(){const el=document.getElementById('catPrev');if(!el)return;el.
 function slugId(t){return String(t||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,30);}
 function catAuto(){if(editingCat)return;const idEl=document.getElementById('newCatId');if(idEl.dataset.touched)return;idEl.value=slugId(document.getElementById('newCatNameEn').value);}
 function initCatForm(){
-  const g=document.getElementById('catEmojiGrid');if(g&&!g.children.length){CAT_EMOJIS.forEach(e=>{const b=document.createElement('button');b.type='button';b.textContent=e;b.onclick=()=>{document.getElementById('newCatIcon').value=e;catPrev();};g.appendChild(b);});}
+  const g=document.getElementById('catEmojiGrid');if(g&&!g.children.length){CAT_EMOJIS.forEach(e=>{const b=document.createElement('button');b.type='button';b.textContent=e;b.onclick=()=>{document.getElementById('newCatIcon').value=e;catIconPicked=true;catPrev();};g.appendChild(b);});}
   const sw=document.getElementById('catSwatches');if(sw&&!sw.children.length){CAT_SWATCHES.forEach(([a,b2])=>{const b=document.createElement('button');b.type='button';b.style.background=`linear-gradient(135deg,${a},${b2})`;b.title=a+' → '+b2;b.onclick=()=>{document.getElementById('newCatC1').value=a;document.getElementById('newCatC2').value=b2;catPrev();};sw.appendChild(b);});}
   const idEl=document.getElementById('newCatId');if(idEl&&!idEl.dataset.bound){idEl.dataset.bound='1';idEl.addEventListener('input',()=>{idEl.dataset.touched='1';});}
   catPrev();
 }
-function clearCatForm(){editingCat=null;['newCatId','newCatName','newCatNameEn','newCatIcon','newCatIconUrl','newCatOrder'].forEach(i=>{const e=document.getElementById(i);e.value='';delete e.dataset.touched;});
+function clearCatForm(){editingCat=null;catIconData='';catIconPicked=false;catIconShow();['newCatId','newCatName','newCatNameEn','newCatIcon','newCatIconUrl','newCatOrder'].forEach(i=>{const e=document.getElementById(i);e.value='';delete e.dataset.touched;});
   document.getElementById('newCatId').readOnly=false;document.getElementById('newCatC1').value='#203a43';document.getElementById('newCatC2').value='#2c5364';
   document.getElementById('catFormTitle').textContent='إضافة قسم جديد';document.getElementById('catSaveBtn').innerHTML='<i class="fa-solid fa-plus"></i> إضافة قسم';catPrev();}
 /* The storefront shows these three sections when Firestore has no `settings/categories` document (same list as script.js).
@@ -387,7 +440,35 @@ async function readCats(){
   const saved=d.exists&&Array.isArray(d.data().categories)?d.data().categories:null;
   return {cats:saved?saved:ADMIN_DEFAULT_CATS.map(c=>({...c})),saved:!!saved};
 }
-function catIco(i,url){const u=safeUrl(url);if(u)return `<img src="${esc(u)}" alt="" style="width:26px;height:26px;object-fit:contain">`;const v=String(i||'')==='👑'?'+':String(i||'');return /^<i class="fa-(solid|brands|regular) fa-[a-z0-9-]{1,40}"><\/i>$/.test(v)?v:esc(v||'📦');}
+/* A section's icon: an uploaded picture wins, otherwise exactly what the owner picked (emoji / Font Awesome tag) is shown — nothing is rewritten. */
+const ICON_DATA=/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+\/=]+$/;
+function safeIcon(u){u=String(u||'').trim();return (safeUrl(u)||(u.length<=70000&&ICON_DATA.test(u)?u:''));}
+function catIco(i,url,unpicked){const u=safeIcon(url);if(u)return `<img src="${esc(u)}" alt="" style="height:26px;width:auto;max-width:64px;object-fit:contain">`;const v=String(i||'');if(unpicked&&(!v||v==='👑'||v==='+'))return '+';return /^<i class="fa-(solid|brands|regular) fa-[a-z0-9-]{1,40}"><\/i>$/.test(v)?v:esc(v||'📦');}
+/* Upload the section's own picture (e.g. the PlayStation Plus logo the owner is entitled to use): the file is shrunk in the browser
+   and stored inside the section itself, so no file hosting or link is needed. PNG/JPEG/WebP only (no SVG: it can carry script). */
+function catIconShow(){
+  const box=document.getElementById('catIconPrev');if(!box)return;
+  const u=catIconData||document.getElementById('newCatIconUrl')?.value.trim()||'';
+  box.innerHTML=safeIcon(u)?`<img src="${esc(safeIcon(u))}" alt="" style="height:44px;width:auto;max-width:120px;object-fit:contain"> <button type="button" class="btn btn-o" onclick="catIconClear()">إزالة الصورة</button>`:'';
+}
+function catIconClear(){catIconData='';document.getElementById('newCatIconUrl').value='';const f=document.getElementById('newCatIconFile');if(f)f.value='';catIconShow();}
+async function catIconPick(inp){
+  const f=inp.files&&inp.files[0];if(!f)return;
+  if(!/^image\/(png|jpeg|webp)$/.test(f.type)){aToast('اختر صورة PNG أو JPG أو WebP','err');inp.value='';return;}
+  if(f.size>6*1024*1024){aToast('الصورة كبيرة جداً (الحد 6 ميغابايت)','err');inp.value='';return;}
+  try{
+    const bmp=await createImageBitmap(f);
+    let out='';
+    for(const max of [192,144,112,80]){
+      const k=Math.min(1,max/Math.max(bmp.width,bmp.height)),w=Math.max(1,Math.round(bmp.width*k)),h=Math.max(1,Math.round(bmp.height*k));
+      const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(bmp,0,0,w,h);
+      const png=cv.toDataURL('image/png');
+      if(png.length<=70000){out=png;break;}
+    }
+    if(!out)throw new Error('big');
+    catIconData=out;document.getElementById('newCatIconUrl').value='';catIconShow();aToast('تم تجهيز الصورة — اضغط حفظ القسم','ok');
+  }catch(e){aToast('تعذّر قراءة الصورة، جرّب صورة أخرى','err');inp.value='';}
+}
 async function loadCats(){
   const el=document.getElementById('catsList');el.innerHTML=loading();initCatForm();
   try{
@@ -397,7 +478,7 @@ async function loadCats(){
     if(!rc.saved)el.innerHTML='<div class="pf-hint" style="margin-bottom:10px">هذه الأقسام الافتراضية التي يعرضها المتجر. أول تعديل أو إضافة تحفظها كلها معاً.</div>';
     allCats.forEach(cat=>{
       const card=document.createElement('div');card.className='adm-card';
-      card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:${esc(cat.bg||'#1c2a44')};font-size:20px">${catIco(cat.icon,cat.iconUrl)}</div><div class="adm-card-info"><div class="adm-card-title">${san(cat.name)} | ${san(cat.nameEn||'')}</div><div class="adm-card-sub">ID: ${san(cat.id)} · ترتيب: ${esc(cat.order||0)}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${esc(cat.enabled?'checked':'')} onchange="toggleCat('${jsq(cat.id)}',this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="editCat('${jsq(cat.id)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-pen"></i> تعديل</button><button onclick="deleteCat('${jsq(cat.id)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
+      card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:${esc(cat.bg||'#1c2a44')};font-size:20px">${catIco(cat.icon,cat.iconUrl,cat.id==='psplus'&&!cat.iconSet)}</div><div class="adm-card-info"><div class="adm-card-title">${san(cat.name)} | ${san(cat.nameEn||'')}</div><div class="adm-card-sub">ID: ${san(cat.id)} · ترتيب: ${esc(cat.order||0)}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${esc(cat.enabled?'checked':'')} onchange="toggleCat('${jsq(cat.id)}',this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="editCat('${jsq(cat.id)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-pen"></i> تعديل</button><button onclick="deleteCat('${jsq(cat.id)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
       el.appendChild(card);
     });
     const pf=document.getElementById('prodCatFilter');pf.innerHTML='<button class="filter-btn on" onclick="filterProds(\'all\',this)">الكل</button>';
@@ -406,7 +487,7 @@ async function loadCats(){
 }
 function editCat(id){
   const c=allCats.find(x=>x.id===id);if(!c)return;editingCat=id;
-  document.getElementById('newCatId').value=c.id;document.getElementById('newCatId').readOnly=true;document.getElementById('newCatName').value=c.name||'';document.getElementById('newCatNameEn').value=c.nameEn||'';document.getElementById('newCatIcon').value=c.icon||'';document.getElementById('newCatIconUrl').value=c.iconUrl||'';document.getElementById('newCatOrder').value=c.order||'';
+  document.getElementById('newCatId').value=c.id;document.getElementById('newCatId').readOnly=true;document.getElementById('newCatName').value=c.name||'';document.getElementById('newCatNameEn').value=c.nameEn||'';document.getElementById('newCatIcon').value=(c.id==='psplus'&&!c.iconSet&&(!c.icon||c.icon==='👑'))?'+':(c.icon||'');catIconPicked=false;catIconData=/^data:/.test(c.iconUrl||'')?c.iconUrl:'';document.getElementById('newCatIconUrl').value=catIconData?'':(c.iconUrl||'');catIconShow();document.getElementById('newCatOrder').value=c.order||'';
   const m=/^linear-gradient\(135deg,\s*(#[0-9a-f]{6}),\s*(#[0-9a-f]{6})\)$/i.exec(String(c.bg||''));
   document.getElementById('newCatC1').value=m?m[1]:'#203a43';document.getElementById('newCatC2').value=m?m[2]:'#2c5364';
   document.getElementById('catFormTitle').textContent='تعديل القسم: '+(c.name||id);document.getElementById('catSaveBtn').innerHTML='<i class="fa-solid fa-floppy-disk"></i> حفظ التعديل';catPrev();
@@ -424,11 +505,13 @@ async function addCat(){
       if(cats.find(c=>c.id===id)){aToast('المعرّف موجود مسبقاً','err');return;}
     }
     const order=parseInt(document.getElementById('newCatOrder').value)||(Math.max(0,...cats.map(c=>c.order||0))+1);
-    const iconUrl=document.getElementById('newCatIconUrl').value.trim();
-    if(iconUrl&&!safeUrl(iconUrl)){aToast('رابط الصورة يجب أن يبدأ بـ https://','err');return;}
+    const typed=document.getElementById('newCatIconUrl').value.trim();
+    if(typed&&!safeUrl(typed)){aToast('رابط الصورة يجب أن يبدأ بـ https://','err');return;}
+    const iconUrl=catIconData||typed;
+    if(iconUrl&&!safeIcon(iconUrl)){aToast('الصورة غير صالحة أو كبيرة جداً','err');return;}
     const rec={id:editingCat||id,name,nameEn:nameEn||name,icon:icon||'📦',iconUrl:iconUrl||'',bg:catGrad(),order};
-    if(editingCat){const i=cats.findIndex(c=>c.id===editingCat);if(i<0){aToast('القسم لم يعد موجوداً','err');return;}cats[i]={...cats[i],...rec};}
-    else cats.push({...rec,enabled:true});
+    if(editingCat){const i=cats.findIndex(c=>c.id===editingCat);if(i<0){aToast('القسم لم يعد موجوداً','err');return;}cats[i]={...cats[i],...rec,iconSet:catIconPicked||!!cats[i].iconSet};}
+    else cats.push({...rec,iconSet:catIconPicked,enabled:true});
     await db.collection('settings').doc('categories').set({categories:cats});
     aToast(editingCat?'تم حفظ التعديل':'تم إضافة القسم','ok');clearCatForm();loadCats();
   }catch(e){aToast('خطأ: '+e.message,'err');}
@@ -669,8 +752,9 @@ function errCode(e){return String((e&&(e.code||e.message))||'').slice(0,80);}
 async function loadUsers(){
   const el=document.getElementById('usersList');el.innerHTML=loading();
   try{
-    const[snap]=await Promise.all([db.collection('users').orderBy('points','desc').limit(USERS_LIMIT).get(),loadBannedMap()]);
-    allUsers=snap.docs.map(d=>({uid:d.id,...d.data()}));renderUsers();
+    const[snap,P]=await Promise.all([db.collection('users').orderBy('points','desc').limit(USERS_LIMIT).get(),loadPendingAccounts(true).catch(()=>null),loadBannedMap()]);
+    renderPendBox(P);
+    allUsers=snap.docs.map(d=>({uid:d.id,...d.data()})).filter(u=>!(P&&P.ok&&P.set.has(u.uid)));renderUsers();
   }catch(e){el.innerHTML=errState('خطأ في تحميل المستخدمين: '+errCode(e));}
 }
 function renderUsers(){
@@ -700,6 +784,37 @@ async function adminWk(path,payload){
     const j=await r.json().catch(()=>({}));
     return{status:r.status,ok:r.ok&&j.ok!==false,data:j};
   }catch(e){return{status:0,ok:false,data:{}};}
+}
+/* ── Sign-ups that never clicked their activation link are not customers: kept out of the list and the counts (needs Worker v13) ── */
+let _pend=null,_pendAt=0;
+async function loadPendingAccounts(force){
+  if(!force&&_pend&&Date.now()-_pendAt<60000)return _pend;
+  const r=await adminWk('/admin/unverified',{action:'list',hours:24});
+  _pend=(r.ok&&r.data&&Array.isArray(r.data.uids))
+    ?{ok:true,set:new Set(r.data.uids),count:Number(r.data.count)||r.data.uids.length,old:Number(r.data.old)||0}
+    :{ok:false,set:new Set(),count:0,old:0,status:r.status,detail:String((r.data&&(r.data.error||r.data.detail))||'')};
+  _pendAt=Date.now();return _pend;
+}
+function renderPendBox(P){
+  const el=document.getElementById('pendBox');if(!el)return;
+  if(!P||!P.ok){
+    const why=P&&P.status===404?'الصق نسخة الـ Worker الجديدة (v13) في Cloudflare.':P&&P.detail==='auth_list_failed'?'امنح حساب خدمة الـ Worker دور «Firebase Authentication Admin» في IAM.':'تعذّر الاتصال بالخادم.';
+    el.innerHTML=`<div class="pf-hint" style="margin-bottom:12px">⚠️ لا أستطيع تمييز الحسابات التي لم تُفعَّل بعد، لذلك تظهر كلها في القائمة. ${why}</div>`;return;
+  }
+  el.innerHTML=P.count?`<div class="pf-hint" style="margin-bottom:12px">⏳ <b>${P.count}</b> حساب بانتظار التفعيل (سُجّل ولم يضغط صاحبه على رابط الإيميل بعد) — مخفيّ من القائمة والإحصاء إلى أن يُفعَّل.${P.old?` <button class="btn btn-o" style="margin-top:8px" onclick="purgePending()"><i class="fa-solid fa-broom"></i> حذف ${P.old} حساب مضى عليه أكثر من 24 ساعة</button>`:''}</div>`:'';
+}
+async function purgePending(){
+  const P=await loadPendingAccounts(true);
+  if(!P.ok||!P.old){aToast('لا يوجد ما يُنظَّف','ok');return;}
+  if(!confirm(`سيُحذف نهائياً ${P.old} حساب سُجّل منذ أكثر من 24 ساعة ولم يُفعَّل (لا يستطيع أصحابها الدخول أصلاً، ويمكنهم التسجيل من جديد). الحسابات التي لديها طلبات لا تُمَسّ. متابعة؟`))return;
+  let deleted=0,except=[];
+  for(let i=0;i<60;i++){
+    const r=await adminWk('/admin/unverified',{action:'purge',hours:24,except});
+    if(!r.ok){aToast('توقّف التنظيف بعد حذف '+deleted+': '+String((r.data&&(r.data.detail||r.data.error))||wkWhy(r)),'err');break;}
+    deleted+=Number(r.data.deleted)||0;except=except.concat(r.data.keptUids||[]).slice(0,300);
+    if(!r.data.remaining)break;
+  }
+  _pend=null;aToast(`تم حذف ${deleted} حساب غير مفعّل`,'ok');loadUsers();
 }
 function wkWhy(r){return r.status===0?'تعذّر الاتصال بالخادم':r.status===404?'الـ Worker القديم لا يعرف هذه الميزة — الصق النسخة الجديدة (worker/worker.js) في Cloudflare':r.status===403?'ليست لديك صلاحية (سجّل الدخول بحساب Google للمالك)':r.status===429?'طلبات كثيرة، انتظر قليلاً':String((r.data&&r.data.error)||('خطأ '+r.status)).slice(0,120);}
 
@@ -964,19 +1079,19 @@ async function deleteFAQ(idx){if(!confirm('حذف؟'))return;try{const d=await d
 
 /* ══ SEND CODE ══ */
 async function sendCodeManual(){
-  const orderId=document.getElementById('scOrderId').value.trim();const userId=document.getElementById('scUserId').value.trim();const product=document.getElementById('scProduct').value.trim();const codes=readCodes('scCode');const note=document.getElementById('scNote').value.trim().slice(0,200);const contact=document.getElementById('scContact').value.trim();
+  const orderId=document.getElementById('scOrderId').value.trim();const userId=document.getElementById('scUserId').value.trim();const product=document.getElementById('scProduct').value.trim();const rc=readCodes('sc');const codes=rc&&rc.codes,vals=rc&&rc.vals,note=rc?rc.note:'';const contact=document.getElementById('scContact').value.trim();
   if(!codes)return;
   const mp={codes,note,product};
   if(orderId)mp.orderId=orderId;else if(userId)mp.userId=userId;else if(contact.includes('@'))mp.to=contact;
   if(!mp.orderId&&!mp.userId&&!mp.to){aToast('أدخل رقم الطلب أو UID أو إيميل العميل','err');return;}
   try{
-    const notif=(userId||orderId)?{title:`${product||'طلبك جاهز'}`,code:codesNotice(codes,note),date:new Date().toLocaleDateString('ar'),until:codeUntil(),read:false}:null;
+    const notif=(userId||orderId)?{title:`${product||'طلبك جاهز'}`,code:codesNotice(codes,note,vals),date:new Date().toLocaleDateString('ar'),until:codeUntil(),read:false}:null;
     if(orderId)await completeOrder(orderId,notif);
     else if(userId)await db.collection('users').doc(userId).update({notifications:firebase.firestore.FieldValue.arrayUnion(notif)});
     const m=await adminSendCode(mp);
-    await adminNotify(`✅ إرسال كود يدوي\n🎮 ${product}\n🔑 ${codesTelegram(codes)}\n📧 ${contact}\n🆔 ${orderId||'—'}\n${m.ok?'✉️ أُرسل الإيميل إلى '+m.to:'⚠️ فشل الإيميل: '+m.error}`);
+    await adminNotify(`✅ إرسال كود يدوي\n🎮 ${product}\n🔑 ${codesTelegram(codes,vals)}\n📧 ${contact}\n🆔 ${orderId||'—'}\n${m.ok?'✉️ أُرسل الإيميل إلى '+m.to:'⚠️ فشل الإيميل: '+m.error}`);
     if(!m.ok){aToast('تم تسجيل الكود لكن فشل الإيميل: '+m.error,'warn');return;}
-    aToast('تم الإرسال إلى '+m.to,'ok');['scOrderId','scUserId','scProduct','scCode','scNote','scContact'].forEach(i=>document.getElementById(i).value='');codeCount('scCode','scCount');
+    aToast('تم الإرسال إلى '+m.to,'ok');['scOrderId','scUserId','scProduct','scContact'].forEach(i=>document.getElementById(i).value='');codesInit('sc');
   }catch(e){aToast('خطأ: '+e.message,'err');}
 }
 

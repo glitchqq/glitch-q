@@ -66,7 +66,7 @@ export default {
 
     try {
       const routes = {
-        '/health':                 () => json({ ok: true, v: 12 }, 200, cors),
+        '/health':                 () => json({ ok: true, v: 13 }, 200, cors),
         '/maintenance':            () => handleMaintenance(request, env, cors),
         '/ticker':                 () => handleTicker(request, env, cors),
         '/stats/visit':            () => handleVisit(request, env, cors),
@@ -94,6 +94,7 @@ export default {
         '/admin/send-code':        () => handleAdminSendCode(request, env, cors),
         '/admin/newsletter':       () => handleAdminNewsletter(request, env, cors),
         '/admin/delete-user':      () => handleAdminDeleteUser(request, env, cors),
+        '/admin/unverified':       () => handleAdminUnverified(request, env, cors),
         '/admin/notify-email':     () => handleAdminNotifyEmail(request, env, cors),
         '/account/claim-email':    () => handleClaimEmail(request, env, cors),
         '/account/check-email':    () => handleCheckEmail(request, env, cors),
@@ -666,9 +667,14 @@ async function handleLeaderboard(request, env, cors) {
   if (hit('lb:' + clientIp(request), 30, 60000)) return json({ error: 'Too many requests' }, 429, cors);
   if (_lb && Date.now() < _lbExp) return json({ ok: true, top: _lb }, 200, cors);
   const rows = await fsQuery(env, 'users', { order: ['points', 'DESCENDING'], limit: 25 });
+  /* a sign-up that never clicked its activation link is not a customer: older versions wrote its profile at sign-up, so keep those off the public board
+     (fail-open: if the sign-in list cannot be read, the board is shown as before) */
+  let waiting = new Set();
+  try { const p = await listPendingAccounts(env); if (p.ok) waiting = new Set(p.list.map(x => x.uid)); } catch (e) { /* keep going */ }
   const top = [];
   for (const r of rows) {
     const u = r.data;
+    if (waiting.has(r.id)) continue;
     if (u.prefs && u.prefs.hideLb === true) continue;
     let nick = cleanText(u.nick, 20);
     if (NICK_BLOCK.test(nick)) nick = '';                       // reserved names cannot be used to pose as the store
@@ -1415,6 +1421,94 @@ async function handleAdminDeleteUser(request, env, cors) {
   if (!r.ok) return json({ error: 'Could not remove the profile', authDeleted }, 503, cors);
   await tgSend(env, `🗑️ Account deleted\n🔑 ${uid}\n📧 ${email || '—'}\n${authDeleted ? '✅ sign-in removed' : '⛔ sign-in blocked (data only)'}`);
   return json({ ok: true, authDeleted }, 200, cors);
+}
+
+/* ═══════════════════════════════════════
+   SIGN-UPS THAT WERE NEVER ACTIVATED (store owner only)
+   A Firebase account exists the moment someone signs up, even with a made-up address. It cannot sign in until the activation link
+   is clicked, and since v13 the browser no longer writes a customer profile before that. This route lets the owner's panel
+     • "list":  learn which accounts are still waiting for activation, so the panel can keep them out of the customer list/counts;
+     • "purge": delete the ones older than `hours` (min 1): their sign-in, profile document (if any) and inbox registry entry.
+   Never touched: activated accounts, disabled accounts, the owner, non-password sign-ins, and any profile that has orders/spend.
+   At most PURGE_PER_CALL accounts per call (the panel repeats the call) to stay under the Worker's sub-request limit.
+═══════════════════════════════════════ */
+const PENDING_MAX_UIDS = 3000;
+const PURGE_PER_CALL = 8;
+async function listPendingAccounts(env) {
+  const adminToken = await getAdminToken(env);
+  if (!adminToken) return { ok: false, code: 'NO_ADMIN_TOKEN' };
+  const PROJECT_ID = pid(env);
+  const list = [];
+  let pageToken = '', pages = 0;
+  do {
+    const url = `https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accounts:batchGet?maxResults=500` + (pageToken ? '&nextPageToken=' + encodeURIComponent(pageToken) : '');
+    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${adminToken}`, 'X-Goog-User-Project': PROJECT_ID } });
+    if (!res.ok) {
+      const eb = await res.json().catch(() => ({}));
+      const code = String((eb && eb.error && (eb.error.message || eb.error.status)) || res.status).slice(0, 60);
+      console.error('AUTH_LIST_ERROR status=' + res.status + ' ' + code);
+      return { ok: false, code };
+    }
+    const j = await res.json().catch(() => ({}));
+    for (const u of (Array.isArray(j.users) ? j.users : [])) {
+      if (!u || !RE_UID.test(String(u.localId || ''))) continue;
+      if (u.emailVerified === true || u.disabled === true) continue;
+      const email = String(u.email || '').toLowerCase();
+      if (!email || email === ADMIN_EMAIL) continue;
+      const viaPassword = (Array.isArray(u.providerUserInfo) && u.providerUserInfo.some(x => x && x.providerId === 'password')) || !!u.passwordHash;
+      if (!viaPassword) continue;
+      list.push({ uid: String(u.localId), email, created: Number(u.createdAt) || 0 });
+      if (list.length >= PENDING_MAX_UIDS) break;
+    }
+    pageToken = String(j.nextPageToken || '');
+    pages++;
+  } while (pageToken && pages < 10 && list.length < PENDING_MAX_UIDS);
+  return { ok: true, list, truncated: !!pageToken };
+}
+async function handleAdminUnverified(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  const body = await readJson(request, 8192);
+  if (!body) return json({ error: 'Invalid data' }, 400, cors);
+  const a = await who(body.idToken, env, cors, false);
+  if (a.err) return a.err;
+  if (!isAdminClaims(a.claims, env)) return json({ error: 'Forbidden' }, 403, cors);
+  if (hit('unver', 120, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+
+  const hours = Math.max(1, Math.min(24 * 365, Math.floor(Number(body.hours)) || 24));
+  const cutoff = Date.now() - hours * 3600000;
+  const listed = await listPendingAccounts(env);
+  if (!listed.ok) return json({ error: 'auth_list_failed', detail: listed.code }, 502, cors);
+  const all = listed.list;
+
+  if (body.action !== 'purge') {
+    const old = all.filter(x => x.created && x.created <= cutoff);
+    return json({ ok: true, count: all.length, uids: all.map(x => x.uid), old: old.length, hours, truncated: listed.truncated, sample: old.slice(0, 5).map(x => maskEmail(x.email)) }, 200, cors);
+  }
+
+  const except = new Set((Array.isArray(body.except) ? body.except : []).slice(0, 300).map(String).filter(x => RE_UID.test(x)));
+  const old = all.filter(x => x.created && x.created <= cutoff && !except.has(x.uid));
+  const batch = old.slice(0, PURGE_PER_CALL);
+  let deleted = 0, failed = 0, failCode = '';
+  const keptUids = [], writes = [];
+  for (const u of batch) {
+    const mine = await fsGet(env, `users/${u.uid}`);
+    if (mine.exists && ((Number(mine.data.orders) || 0) > 0 || (Number(mine.data.totalSpend) || 0) > 0)) { keptUids.push(u.uid); continue; }
+    const del = await authDeleteUser(env, u.uid);
+    if (!del.ok) { failed++; failCode = del.code; break; }
+    deleted++;
+    writes.push(fsWrite(env, `users/${u.uid}`, { delete: true }));
+    const kid = await emailKeyId(u.email);
+    const k = await fsGet(env, `email_keys/${kid}`);
+    if (k.exists && k.data.uid === u.uid) writes.push(fsWrite(env, `email_keys/${kid}`, { delete: true }));
+  }
+  if (!deleted && failed) return json({ error: 'auth_delete_failed', detail: failCode }, 502, cors);
+  if (deleted) {
+    writes.push(fsWrite(env, `admin_log/${randomId(20)}`, { fields: { action: 'purge-unverified', deleted, hours, by: a.claims.sub }, transforms: { serverTime: ['ts'] } }));
+    const r = await fsCommit(env, writes);
+    if (!r.ok) console.error('PURGE_COMMIT_FAILED');
+    await tgSend(env, `🧹 Removed ${deleted} never-activated sign-up(s) older than ${hours}h`);
+  }
+  return json({ ok: true, deleted, kept: keptUids.length, keptUids, failed, remaining: old.length - batch.length, pending: all.length - deleted }, 200, cors);
 }
 
 /* ═══════════════════════════════════════

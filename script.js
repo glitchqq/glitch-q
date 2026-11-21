@@ -909,11 +909,15 @@ function renderHomeProds(){
    (an <i> Font Awesome tag is allowed, a plain emoji is shown as text). */
 function catGlyph(cat){
   const pic=String(cat.iconUrl||'');
-  if(/^https:\/\/[^\s"'<>`]+$/i.test(pic))return `<img src="${san(pic)}" alt="" loading="lazy" style="width:1.4em;height:1.4em;object-fit:contain">`;
-  if(cat.id==='psstore')return '<i class="fa-brands fa-playstation"></i>';
-  if(cat.id==='psplus')return '<span class="gf-plus">+</span>';
-  if(cat.id==='games')return '<i class="fa-solid fa-gamepad"></i>';
+  const IMG_STYLE='height:1.5em;width:auto;max-width:3.4em;object-fit:contain';
+  if(/^https:\/\/[^\s"'<>`]+$/i.test(pic))return `<img src="${san(pic)}" alt="" loading="lazy" style="${IMG_STYLE}">`;
+  /* an uploaded picture: the pattern admits only base64 characters, so the value can sit in the attribute as it is (san() would strip the "data:" prefix) */
+  if(pic.length<=70000&&/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+\/=]+$/.test(pic))return `<img src="${pic}" alt="" style="${IMG_STYLE}">`;
   const ic=String(cat.icon||'');
+  if(cat.id==='psstore')return '<i class="fa-brands fa-playstation"></i>';
+  /* PS Plus: a picture the owner uploaded (above) or an icon he explicitly picked wins; only when nothing was picked does a plain "+" stand in */
+  if(cat.id==='psplus'&&!(cat.iconSet&&ic&&ic!=='+'))return '<span class="gf-plus">+</span>';
+  if(cat.id==='games')return '<i class="fa-solid fa-gamepad"></i>';
   return /^<i class="[a-z0-9 -]+"><\/i>$/i.test(ic)?ic:(san(ic)||'<i class="fa-solid fa-layer-group"></i>');
 }
 function renderHomeCats(){
@@ -1320,7 +1324,8 @@ async function endSess(fbU){
       S.udata=snap.data();
       if(!S.region&&S.udata.region&&REG_CFG.enabled&&REG_CFG.available[S.udata.region]){S.region=S.udata.region;S.regAuto=false;S.cur=S.udata.currency||'EUR';S.sym=S.udata.symbol||'€';LS.setItem('gq_reg',S.region);LS.setItem('gq_cur',S.cur);LS.setItem('gq_sym',S.sym);}
     }else{
-      S.udata={points:5,notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],uid_short:fbU.uid.slice(0,12),email:fbU.email||'',name:fbU.displayName||'',created:new Date()};
+      const dn=String(fbU.displayName||'').trim().slice(0,101),sp=dn.indexOf(' ');
+      S.udata={firstName:(sp>0?dn.slice(0,sp):dn).slice(0,50),lastName:(sp>0?dn.slice(sp+1):'').slice(0,50),points:5,notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],uid_short:fbU.uid.slice(0,12),email:fbU.email||'',name:dn,region:['eu','us','sa','ae'].includes(S.region)?S.region:null,created:new Date()};
       await db.collection('users').doc(fbU.uid).set(S.udata);
     }
   }catch(e){S.udata={points:0,history:[],notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,badges:[],claimedMilestones:[]};}
@@ -1391,8 +1396,7 @@ $('regForm')?.addEventListener('submit',async e=>{
     }
     _vCred={email,pass};
     try{await cred.user.updateProfile({displayName:`${first} ${last}`});}catch(e){}
-    /* best effort: if this write does not land, the first activated login creates the profile document */
-    try{await db.collection('users').doc(cred.user.uid).set({firstName:first,lastName:last,name:`${first} ${last}`,email,points:5,notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],uid_short:cred.user.uid.slice(0,12),region:S.region||null,created:new Date()});}catch(e){}
+    /* NO customer profile is written here. An account that has not clicked its activation link does not exist as a customer: the profile document (which the owner's panel lists and counts) is created by the first ACTIVATED sign-in below. */
     const r=await sendVerification(cred.user);
     if(r==='fail')toast(t('t_verify_fail'),'twarn');else if(r==='wait')toast(t('t_too_many'),'twarn');
     try{await auth.signOut();}catch(e){}
