@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' https: data: blob:; connect-src https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://glitchq-proxy.kadirom7k777.workers.dev wss://*.firebaseio.com; frame-src https://*.firebaseapp.com https://accounts.google.com https://apis.google.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' https: data: blob:; connect-src https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://glitchq-proxy.kadirom7k777.workers.dev wss://*.firebaseio.com; frame-src https://*.firebaseapp.com https://accounts.google.com https://apis.google.com; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
 <meta name="referrer" content="no-referrer">
 <style id="antiClick">html{display:none!important}</style>
 <script>if(window.top===window.self){document.getElementById('antiClick').remove();}else{try{window.top.location=window.self.location;}catch(e){}}</script>
@@ -588,6 +588,8 @@ input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,se
           <label class="form-label">الأيقونة — اختر واحدة أو اكتب إيموجي</label>
           <div class="emoji-grid" id="catEmojiGrid"></div>
           <input type="text" id="newCatIcon" class="adm-inp" placeholder="🎮" maxlength="4" style="max-width:120px;text-align:center" oninput="catPrev()">
+          <label class="form-label">أو صورة خاصة بك للأيقونة (اختياري) — رابط https لصورة PNG/SVG رفعتها أنت (مثلاً داخل مجلد assets في المستودع)</label>
+          <input type="text" id="newCatIconUrl" class="adm-inp" dir="ltr" placeholder="https://…/my-icon.png" maxlength="300">
           <label class="form-label">لون الخلفية — اضغط على الدائرة الملوّنة واختر اللون بالقلم أو بإصبعك</label>
           <div class="swatches" id="catSwatches"></div>
           <div class="form-row">
@@ -612,7 +614,7 @@ input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,se
           <label class="form-label">1) ما نوع المنتج؟</label>
           <div class="pf-kinds" id="pfKinds">
             <button type="button" class="pf-kind" data-k="card" onclick="pfKind('card')"><span><i class="fa-solid fa-credit-card"></i></span><b>بطاقة</b><small>PlayStation Store</small></button>
-            <button type="button" class="pf-kind" data-k="sub" onclick="pfKind('sub')"><span><i class="fa-solid fa-crown"></i></span><b>اشتراك</b><small>PlayStation Plus</small></button>
+            <button type="button" class="pf-kind" data-k="sub" onclick="pfKind('sub')"><span><b style="font-size:1.5em;line-height:1">+</b></span><b>اشتراك</b><small>PlayStation Plus</small></button>
             <button type="button" class="pf-kind" data-k="game" onclick="pfKind('game')"><span><i class="fa-solid fa-gamepad"></i></span><b>لعبة رقمية</b><small>نسخة</small></button>
             <button type="button" class="pf-kind" data-k="other" onclick="pfKind('other')"><span><i class="fa-solid fa-box-open"></i></span><b>منتج آخر</b><small>أي نوع تحدده بنفسك</small></button>
           </div>
@@ -913,8 +915,11 @@ input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,se
           <input type="text" id="scUserId" class="adm-inp" placeholder="UID المستخدم">
           <label class="form-label">اسم المنتج</label>
           <input type="text" id="scProduct" class="adm-inp" placeholder="PlayStation Store 10€ EU">
-          <label class="form-label">الكود الرقمي</label>
-          <input type="text" id="scCode" class="adm-inp" placeholder="XXXX-XXXX-XXXX-XXXX">
+          <label class="form-label">الأكواد — كل كود في سطر مستقل (حتى 20)</label>
+          <textarea id="scCode" class="adm-inp" rows="3" dir="ltr" spellcheck="false" autocomplete="off" placeholder="XXXX-XXXX-XXXX-XXXX&#10;XXXX-XXXX-XXXX-XXXX" oninput="codeCount('scCode','scCount')" style="font-family:monospace;resize:vertical;min-height:80px"></textarea>
+          <div class="pf-hint" id="scCount" style="margin:-6px 0 10px">عدد الأكواد: 0</div>
+          <label class="form-label">ملاحظة تظهر للعميل (اختياري)</label>
+          <input type="text" id="scNote" class="adm-inp" maxlength="200" placeholder="مثال: 4 بطاقات × 5€ = 20€">
           <label class="form-label">إيميل العميل (اختياري إن كتبت رقم الطلب أو UID — يُؤخذ الإيميل منهما تلقائياً)</label>
           <input type="text" id="scContact" class="adm-inp" placeholder="example@email.com">
           <button onclick="sendCodeManual()" class="btn btn-c"><i class="fa-solid fa-paper-plane"></i> إرسال الكود</button>
@@ -977,6 +982,12 @@ input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,se
             <label class="toggle"><input type="checkbox" id="maintenanceMode" onchange="toggleMaintenance()"><span class="toggle-sl"></span></label>
             <span class="toggle-lbl">تفعيل وضع الصيانة (يوقف الموقع للزوار)</span>
           </div>
+          <label class="form-label">نظام النقاط</label>
+          <div class="toggle-wrap" style="margin-bottom:6px">
+            <label class="toggle"><input type="checkbox" id="pointsOffMode" onchange="togglePointsOff()"><span class="toggle-sl"></span></label>
+            <span class="toggle-lbl">إيقاف نظام النقاط مؤقتاً (للتطوير أو سدّ ثغرة)</span>
+          </div>
+          <p style="font-size:12px;color:var(--mid);margin-bottom:16px;line-height:1.7">عند التفعيل: لا تُمنح نقاط (لا طلبات ولا مكافأة يومية ولا عجلة ولا إحالة) ولا يمكن استبدال المكافآت، ويرى الزبائن رسالة «النظام متوقف مؤقتاً». نقاطهم تبقى محفوظة. الطلبات التي تُسلَّم أثناء الإيقاف <strong>لا تُمنح نقاطاً بأثر رجعي</strong>. يسري التغيير خلال نحو 15 ثانية.</p>
           <hr style="border:none;border-top:1px solid var(--brd);margin:16px 0">
           <label class="form-label">إعادة تعيين عداد الزيارات</label>
           <button onclick="resetVisitors()" class="btn btn-r" style="margin-bottom:16px"><i class="fa-solid fa-rotate-left"></i> إعادة تعيين</button>
@@ -1040,8 +1051,11 @@ input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,se
     <div class="adm-modal-title"><i class="fa-solid fa-check-circle" style="color:var(--green)"></i> تأكيد التسليم وإرسال الكود</div>
     <p style="font-size:12px;color:var(--mid);margin-bottom:6px">الطلب: <strong id="cmOrderId" style="color:var(--cyan)"></strong></p>
     <p style="font-size:12px;color:var(--mid);margin-bottom:14px">المنتج: <strong id="cmProduct" style="color:var(--text)"></strong></p>
-    <label class="form-label">الكود الرقمي</label>
-    <input type="text" id="cmCode" class="adm-inp" placeholder="XXXX-XXXX-XXXX-XXXX">
+    <label class="form-label">الأكواد — اكتب كل كود في سطر مستقل (حتى 20 كوداً في الطلب الواحد، مثلاً 4 بطاقات × 5€ لطلب 20€)</label>
+    <textarea id="cmCode" class="adm-inp" rows="4" dir="ltr" spellcheck="false" autocomplete="off" placeholder="XXXX-XXXX-XXXX-XXXX&#10;XXXX-XXXX-XXXX-XXXX" oninput="codeCount('cmCode','cmCount')" style="font-family:monospace;resize:vertical;min-height:90px"></textarea>
+    <div class="pf-hint" id="cmCount" style="margin:-6px 0 10px">عدد الأكواد: 0</div>
+    <label class="form-label">ملاحظة تظهر للعميل في الرسالة (اختياري) — مثال: 4 بطاقات × 5€ = 20€</label>
+    <input type="text" id="cmNote" class="adm-inp" maxlength="200" placeholder="مثال: 4 بطاقات × 5€ = 20€">
     <button onclick="confirmDelivery()" class="btn btn-g" style="width:100%;justify-content:center"><i class="fa-solid fa-paper-plane"></i> تأكيد وإرسال للعميل</button>
   </div>
 </div>

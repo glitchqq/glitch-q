@@ -66,7 +66,7 @@ export default {
 
     try {
       const routes = {
-        '/health':                 () => json({ ok: true, v: 11 }, 200, cors),
+        '/health':                 () => json({ ok: true, v: 12 }, 200, cors),
         '/maintenance':            () => handleMaintenance(request, env, cors),
         '/ticker':                 () => handleTicker(request, env, cors),
         '/stats/visit':            () => handleVisit(request, env, cors),
@@ -96,6 +96,7 @@ export default {
         '/admin/delete-user':      () => handleAdminDeleteUser(request, env, cors),
         '/admin/notify-email':     () => handleAdminNotifyEmail(request, env, cors),
         '/account/claim-email':    () => handleClaimEmail(request, env, cors),
+        '/account/check-email':    () => handleCheckEmail(request, env, cors),
       };
       const h = Object.prototype.hasOwnProperty.call(routes, path) ? routes[path] : null;
       if (!h) return json({ error: 'Not found' }, 404, cors);
@@ -971,6 +972,7 @@ function normDay(v) {
 
 async function handleStreak(request, env, cors) {
   const g = await account(request, env, cors); if (g.err) return g.err;
+  if (await pointsPaused(env)) return json({ ok: false, reason: 'paused' }, 200, cors);
   const today = dzDay(), yesterday = dzDay(-1);
   const res = await fsUpdate(env, `users/${g.uid}`, cur => {
     if (!cur.exists) return { abort: 'nouser' };
@@ -987,6 +989,7 @@ async function handleStreak(request, env, cors) {
 
 async function handleSpin(request, env, cors) {
   const g = await account(request, env, cors); if (g.err) return g.err;
+  if (await pointsPaused(env)) return json({ ok: false, reason: 'paused' }, 200, cors);
   const now = Date.now();
   const total = SPIN_SEGMENTS.reduce((s, p) => s + p.prob, 0);
   let r = randomInt(total * 100) / 100, idx = 0;
@@ -1010,17 +1013,18 @@ async function handleSpin(request, env, cors) {
 // What the customer may redeem right now. Nothing here reveals cost prices or margins.
 async function handleRewards(request, env, cors) {
   const g = await account(request, env, cors); if (g.err) return g.err;
-  const [e, u] = await Promise.all([loadEcon(env), fsGet(env, `users/${g.uid}`)]);
+  const [e, u, paused] = await Promise.all([loadEcon(env), fsGet(env, `users/${g.uid}`), pointsPaused(env)]);
   if (!u.exists) return json({ ok: false, reason: 'nouser' }, 404, cors);
   const points = Math.max(0, Math.floor(Number(u.data.points) || 0)), red = redeemablePts(u.data, e);
   return json({
-    ok: true, points, redeemablePts: red, lockedPts: points - red, ptDZD: e.ptDZD, refMaxPts: e.refMaxPts, refMinOrderDZD: e.refMinOrderDZD,
+    ok: true, paused, points, redeemablePts: red, lockedPts: points - red, ptDZD: e.ptDZD, refMaxPts: e.refMaxPts, refMinOrderDZD: e.refMinOrderDZD,
     rewards: e.rewards.map(r => ({ id: r.id, name: r.name, nameEn: r.nameEn, pts: rewardPts(r, e) })),
   }, 200, cors);
 }
 
 async function handleRedeem(request, env, cors) {
   const g = await account(request, env, cors); if (g.err) return g.err;
+  if (await pointsPaused(env)) return json({ ok: false, reason: 'paused' }, 200, cors);
   const e = await loadEcon(env);
   const rw = e.rewards.find(r => r.id === cleanText(g.body.id, 20));
   if (!rw) return json({ error: 'Unknown reward' }, 400, cors);
@@ -1128,17 +1132,23 @@ async function sendBrevo(env, { to, subject, html, text }) {
   }
   return { ok: true };
 }
+const MAX_CODES_PER_MAIL = 20;
 async function handleAdminSendCode(request, env, cors) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
-  const body = await readJson(request, 4096);
+  const body = await readJson(request, 12288);
   if (!body) return json({ error: 'Invalid data' }, 400, cors);
   const a = await who(body.idToken, env, cors, false);
   if (a.err) return a.err;
   if (!isAdminClaims(a.claims, env)) return json({ error: 'Forbidden' }, 403, cors);
   if (hit('sendcode', 60, 600000)) return json({ error: 'Too many requests' }, 429, cors);
 
-  const code = cleanText(body.code, 300);
-  if (!code) return json({ error: 'Code required' }, 400, cors);
+  // one e-mail can carry several codes (e.g. a 20€ order delivered as four 5€ cards); `code` (a single string) is still accepted
+  const rawCodes = Array.isArray(body.codes) ? body.codes : [body.code];
+  if (rawCodes.length > MAX_CODES_PER_MAIL) return json({ error: 'Too many codes' }, 400, cors);
+  const codes = [...new Set(rawCodes.map(c => cleanText(c, 300)).filter(Boolean))];
+  if (!codes.length) return json({ error: 'Code required' }, 400, cors);
+  const code = codes[0];
+  const note = cleanText(body.note, 200);
   let product = cleanText(body.product, 200);
   const orderId = RE_UID.test(String(body.orderId || '')) ? String(body.orderId) : '';
   const userId = RE_UID.test(String(body.userId || '')) ? String(body.userId) : '';
@@ -1168,12 +1178,12 @@ async function handleAdminSendCode(request, env, cors) {
 
   const sent = await sendBrevo(env, {
     to,
-    subject: 'طلبك جاهز — الكود الخاص بك | Glitch Q',
-    html: buildCodeEmail({ product, code, orderId, validity: codeValidity(until) }),
-    text: buildCodeText({ product, code, orderId, validity: codeValidity(until) }),
+    subject: codes.length > 1 ? `طلبك جاهز — أكوادك (${codes.length}) | Glitch Q` : 'طلبك جاهز — الكود الخاص بك | Glitch Q',
+    html: buildCodeEmail({ product, code, codes, note, orderId, validity: codeValidity(until) }),
+    text: buildCodeText({ product, code, codes, note, orderId, validity: codeValidity(until) }),
   });
   if (!sent.ok) return json({ error: sent.why }, 502, cors);
-  return json({ ok: true, to: maskEmail(to) }, 200, cors);
+  return json({ ok: true, to: maskEmail(to), count: codes.length }, 200, cors);
 }
 /* ═══════════════════════════════════════
    ONE ACCOUNT PER E-MAIL INBOX
@@ -1213,6 +1223,96 @@ async function authDeleteUser(env, uid) {
   return { ok: false, code };
 }
 
+/* ═══════════════════════════════════════
+   IS THIS E-MAIL ADDRESS REAL?  (sign-up pre-check, repeated server-side after the account is created)
+   What can honestly be proven without sending a message: the address is well formed, it is not a throw-away inbox, it is not a
+   typo of a famous provider, and its domain really exists and accepts mail (a DNS MX lookup through Cloudflare's resolver).
+   Whether the MAILBOX itself exists can only be proven by the activation link, which stays mandatory: an account whose e-mail
+   was not confirmed cannot sign in. If the DNS lookup cannot be completed the address is let through (the link still decides).
+═══════════════════════════════════════ */
+const DISPOSABLE_DOMAINS = new Set(('mailinator.com guerrillamail.com guerrillamail.net guerrillamail.org guerrillamail.biz guerrillamail.de guerrillamail.info guerrillamailblock.com ' +
+  'sharklasers.com grr.la spam4.me pokemail.net 10minutemail.com 10minutemail.net 20minutemail.com tempmail.com temp-mail.org temp-mail.io tempmail.net tempmailo.com tempail.com ' +
+  'yopmail.com yopmail.fr yopmail.net cool.fr.nf jetable.org trashmail.com trashmail.net trashmail.de trash-mail.com getnada.com nada.email dispostable.com maildrop.cc mailnesia.com ' +
+  'mailcatch.com mintemail.com throwawaymail.com fakeinbox.com fakemail.net emailondeck.com mohmal.com burnermail.io spamgourmet.com mytemp.email tmail.ws tmpmail.org tmpmail.net ' +
+  'moakt.com mailtemp.net inboxkitten.com discard.email discardmail.com mail.tm 1secmail.com 1secmail.net 1secmail.org harakirimail.com mailsac.com emailfake.com tempinbox.com ' +
+  'mvrht.net byom.de anonbox.net spambox.us mailforspam.com tempr.email dropmail.me emltmp.com luxusmail.org gettempmail.com tempmailer.com owlymail.com mail7.io ' +
+  'tempmailaddress.com temporary-mail.net throwam.com spamex.com getairmail.com mailpoof.com tempmailnow.com fexpost.com fexbox.org tmailor.com').split(' '));
+const MAIL_TYPOS = {
+  'gmial.com': 'gmail.com', 'gmai.com': 'gmail.com', 'gamil.com': 'gmail.com', 'gmail.con': 'gmail.com', 'gmail.cm': 'gmail.com', 'gmail.om': 'gmail.com', 'gmaill.com': 'gmail.com',
+  'gnail.com': 'gmail.com', 'gmal.com': 'gmail.com', 'gmeil.com': 'gmail.com', 'gmail.comm': 'gmail.com', 'gmail.co': 'gmail.com', 'gimail.com': 'gmail.com',
+  'hotmial.com': 'hotmail.com', 'hotmai.com': 'hotmail.com', 'hotmail.con': 'hotmail.com', 'hotmal.com': 'hotmail.com', 'hotnail.com': 'hotmail.com',
+  'yahooo.com': 'yahoo.com', 'yahoo.con': 'yahoo.com', 'yahho.com': 'yahoo.com', 'yaho.com': 'yahoo.com',
+  'outlok.com': 'outlook.com', 'outlook.con': 'outlook.com', 'outloook.com': 'outlook.com', 'iclould.com': 'icloud.com', 'icloud.con': 'icloud.com', 'live.con': 'live.com',
+};
+const RE_MAIL_DOMAIN = /^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/;
+const mailDomainCache = new Map();   // domain -> { v: 'ok'|'none', until }
+async function dohAnswers(name, type) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 2500);
+  try {
+    const r = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`, { headers: { accept: 'application/dns-json' }, signal: ctl.signal });
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!j || typeof j.Status !== 'number') return null;
+    return { status: j.Status, answers: Array.isArray(j.Answer) ? j.Answer : [] };
+  } catch { return null; } finally { clearTimeout(timer); }
+}
+/* 'ok' = it receives mail · 'none' = the domain does not exist or says it takes no mail · 'unknown' = could not be checked */
+async function mailDomainStatus(domain) {
+  const c = mailDomainCache.get(domain);
+  if (c && c.until > Date.now()) return c.v;
+  const mx = await dohAnswers(domain, 'MX');
+  if (!mx) return 'unknown';
+  let v;
+  if (mx.status === 3) v = 'none';
+  else if (mx.status !== 0) return 'unknown';
+  else {
+    const recs = mx.answers.filter(a => a.type === 15).map(a => String(a.data || '').trim());
+    if (recs.length) v = recs.every(d => /^\d+\s+\.?$/.test(d)) ? 'none' : 'ok';        // "0 ." is the explicit "this domain takes no mail" record
+    else {                                                                              // no MX: mail servers fall back to the address records
+      const [a4, a6] = await Promise.all([dohAnswers(domain, 'A'), dohAnswers(domain, 'AAAA')]);
+      if (!a4 && !a6) return 'unknown';
+      v = ((a4 && a4.answers.some(x => x.type === 1)) || (a6 && a6.answers.some(x => x.type === 28))) ? 'ok' : 'none';
+    }
+  }
+  if (mailDomainCache.size > 2000) mailDomainCache.clear();
+  mailDomainCache.set(domain, { v, until: Date.now() + (v === 'ok' ? 6 * 3600000 : 600000) });
+  return v;
+}
+/* -> { ok: true, checked: bool } | { ok: false, code: 'bad_format'|'typo'|'disposable'|'bad_domain', suggest? } */
+async function checkEmailAddress(raw) {
+  const email = String(raw || '').trim().toLowerCase();
+  const at = email.lastIndexOf('@');
+  if (email.length > 254 || at < 1 || !RE_EMAIL.test(email)) return { ok: false, code: 'bad_format' };
+  const local = email.slice(0, at);
+  let domain = email.slice(at + 1);
+  try { domain = new URL('http://' + domain).hostname; } catch { return { ok: false, code: 'bad_format' }; }   // punycode for non-ASCII names
+  if (!RE_MAIL_DOMAIN.test(domain) || local.startsWith('.') || local.endsWith('.') || local.includes('..')) return { ok: false, code: 'bad_format' };
+  if (MAIL_TYPOS[domain]) return { ok: false, code: 'typo', suggest: local + '@' + MAIL_TYPOS[domain] };
+  const parts = domain.split('.');
+  for (let i = 0; i < parts.length - 1; i++) if (DISPOSABLE_DOMAINS.has(parts.slice(i).join('.'))) return { ok: false, code: 'disposable' };
+  const st = await mailDomainStatus(domain);
+  if (st === 'none') return { ok: false, code: 'bad_domain' };
+  return { ok: true, checked: st === 'ok' };
+}
+async function handleCheckEmail(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  if (hit('chk:' + clientIp(request), 30, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+  const body = await readJson(request, 1024);
+  if (!body) return json({ error: 'Invalid data' }, 400, cors);
+  return json(await checkEmailAddress(body.email), 200, cors);
+}
+/* A brand-new, unverified, empty account is removed again. Anything else (verified, has orders…) is left alone. */
+async function removeFreshAccount(env, claims, uid) {
+  const mine = await fsGet(env, `users/${uid}`);
+  const fresh = claims.email_verified !== true && (!mine.exists || ((Number(mine.data.orders) || 0) === 0 && (Number(mine.data.totalSpend) || 0) === 0));
+  if (!fresh) return false;
+  const del = await authDeleteUser(env, uid);
+  if (del.ok) await fsCommit(env, [fsWrite(env, `users/${uid}`, { delete: true })]);
+  else console.error('FRESH_CLEANUP_FAILED uid=' + uid.slice(0, 8) + ' ' + del.code);
+  return del.ok;
+}
+
 async function handleClaimEmail(request, env, cors) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
   if (hit('clm:' + clientIp(request), 20, 600000)) return json({ error: 'Too many requests' }, 429, cors);
@@ -1225,6 +1325,10 @@ async function handleClaimEmail(request, env, cors) {
   const email = String(claims.email || '').toLowerCase();
   if (!RE_EMAIL.test(email)) return json({ ok: true, skipped: true }, 200, cors);
   const register = body.mode === 'register';
+  if (register) {                                        // the pre-check in the browser can be skipped by a script: it is enforced here too
+    const chk = await checkEmailAddress(email);
+    if (!chk.ok) { await removeFreshAccount(env, claims, uid); return json({ ok: false, code: chk.code, suggest: chk.suggest }, 422, cors); }
+  }
   const key = await emailKeyId(email);
   const path = `email_keys/${key}`;
 
@@ -1250,16 +1354,20 @@ async function handleClaimEmail(request, env, cors) {
   }
   if (!owner) return json({ error: 'Please try again' }, 503, cors);
 
-  if (!register) return json({ ok: true, duplicate: true }, 200, cors);   // existing account: never blocked, the owner sees it in the duplicates list
-
-  // A brand-new, unverified, empty account is removed again. Anything else (verified, has orders…) is left alone.
-  const mine = await fsGet(env, `users/${uid}`);
-  const fresh = claims.email_verified !== true && (!mine.exists || ((Number(mine.data.orders) || 0) === 0 && (Number(mine.data.totalSpend) || 0) === 0));
-  if (fresh) {
-    const del = await authDeleteUser(env, uid);
-    if (del.ok) await fsCommit(env, [fsWrite(env, `users/${uid}`, { delete: true })]);
-    else console.error('DUP_CLEANUP_FAILED uid=' + uid.slice(0, 8) + ' ' + del.code);
+  if (!register) {
+    // A second account on the same inbox that was NOT created through the sign-up form (it can be made by calling Firebase directly) is
+    // refused at sign-in when it is newer than the account that owns the inbox and has no orders. It is never deleted here; older
+    // accounts and accounts that bought something are never refused (they show in the owner's duplicates list instead).
+    try {
+      const [mine, theirs] = await Promise.all([fsGet(env, `users/${uid}`), fsGet(env, `users/${owner}`)]);
+      const tMine = mine.exists ? Date.parse(mine.data.created) : NaN, tTheirs = theirs.exists ? Date.parse(theirs.data.created) : NaN;
+      const empty = mine.exists && (Number(mine.data.orders) || 0) === 0 && (Number(mine.data.totalSpend) || 0) === 0;
+      if (empty && Number.isFinite(tMine) && Number.isFinite(tTheirs) && tMine > tTheirs) return json({ ok: false, code: 'email_taken' }, 409, cors);
+    } catch (e) { console.error('DUP_LOGIN_CHECK_FAILED ' + (e && e.message)); }
+    return json({ ok: true, duplicate: true }, 200, cors);
   }
+
+  await removeFreshAccount(env, claims, uid);
   return json({ ok: false, code: 'email_taken' }, 409, cors);
 }
 
@@ -1698,6 +1806,7 @@ async function handleLoginAlert(request, env, cors) {
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/users/${encodeURIComponent(uid)}`,
     { headers: { 'Authorization': `Bearer ${fsToken}` } }
   );
+  if (docRes.status === 404) return json({ ok: true, sent: false }, 200, cors);      // no profile document (e.g. the owner's Google account): nothing to alert about
   if (!docRes.ok) return json({ error: 'Profile unavailable' }, 502, cors);
   const doc = await docRes.json().catch(() => ({}));
   const enabled = doc?.fields?.prefs?.mapValue?.fields?.loginAlerts?.booleanValue === true;
@@ -1751,6 +1860,11 @@ async function publicSetting(env, doc) {
   const d = await fsGet(env, 'settings/' + doc);
   _pub[doc] = { data: d.data || {}, exp: Date.now() + 15000 };
   return _pub[doc].data;
+}
+/* Owner's "pause the points system" switch: settings/maintenance.pointsOff (the one public document the owner can already write; no rule change).
+   Read through the 15-second cache. If the setting cannot be read the system counts as PAUSED: a kill switch must fail closed. */
+async function pointsPaused(env) {
+  try { return (await publicSetting(env, 'maintenance')).pointsOff === true; } catch { return true; }
 }
 async function handleMaintenance(request, env, cors) {
   try { return json({ maintenance: (await publicSetting(env, 'maintenance')).active === true }, 200, cors); }
@@ -2192,27 +2306,34 @@ function validityCopy(v) {
   };
 }
 
-function buildCodeEmail({ product, code, orderId, validity }) {
+function buildCodeEmail({ product, code, codes, note, orderId, validity }) {
   const t = MAIL_TONE.mint;
   const v = validity || codeValidity();
   const vc = validityCopy(v);
   const vt = MAIL_TONE[vc.tone];
-  const raw = String(code == null ? '' : code);
-  const longest = Math.max(1, ...raw.split(/\r?\n/).map((l) => l.length));
-  const desk = longest <= 19 ? 26 : longest <= 30 ? 20 : 16;                       // desktop size (media query ≥600px)
-  const phoneAvail = 236;                                                          // px for the code on a 320px phone: 320 − paddings − borders
-  let size = 11;
-  for (let fs = Math.min(desk, 26); fs >= 11; fs--) { if (longest * (0.62 * fs + (fs >= 20 ? 2 : 1)) <= phoneAvail) { size = fs; break; } }
+  const list = (Array.isArray(codes) && codes.length ? codes : [code]).map(c => String(c == null ? '' : c));
+  const many = list.length > 1;
+  // one cell per code: the size is worked out from THAT code's length so a long one still fits a 320px phone
+  const codeCell = (raw, label, last) => {
+    const longest = Math.max(1, ...raw.split(/\r?\n/).map((l) => l.length));
+    const desk = longest <= 19 ? 26 : longest <= 30 ? 20 : 16;                       // desktop size (media query ≥600px)
+    const phoneAvail = 236;                                                          // px for the code on a 320px phone: 320 − paddings − borders
+    let size = 11;
+    for (let fs = Math.min(desk, 26); fs >= 11; fs--) { if (longest * (0.62 * fs + (fs >= 20 ? 2 : 1)) <= phoneAvail) { size = fs; break; } }
+    return `
+      <tr><td dir="rtl" align="center" class="tk" style="padding:${many ? '14px 14px 14px' : '18px 14px 22px'};font-family:${MAIL_FONT};direction:rtl;text-align:center;">
+        <div style="font-size:12px;line-height:1.6;color:${MC.dim};margin-bottom:6px;">${label}</div>
+        <div class="cd${desk}" dir="ltr" style="font-family:${MAIL_MONO};font-size:${size}px;line-height:1.5;font-weight:700;letter-spacing:${size >= 20 ? 2 : 1}px;color:${t.ink};text-align:center;white-space:pre-wrap;word-break:break-all;overflow-wrap:anywhere;-webkit-user-select:all;user-select:all;">${escHtml(raw)}</div>
+      </td></tr>${many && !last ? `
+      <tr><td class="tk" style="padding:0 14px;"><div style="height:0;line-height:0;font-size:0;border-top:1px dashed ${MC.line2};">&nbsp;</div></td></tr>` : ''}`;
+  };
+  const cells = list.map((c, i) => codeCell(c, many ? `الكود ${i + 1} من ${list.length}` : 'الكود', i === list.length - 1)).join('');
   const ticket = `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#08080B" style="background-color:#08080B;border:1px solid ${MC.line2};border-radius:14px;border-collapse:separate;">
       <tr><td dir="rtl" align="center" class="tk" style="padding:20px 14px 16px;font-family:${MAIL_FONT};direction:rtl;text-align:center;">
         <div style="font-size:12px;line-height:1.6;color:${MC.dim};">المنتج</div>
         <div dir="auto" style="font-size:17px;line-height:1.7;font-weight:700;color:${MC.h};">${escHtml(product || '—')}</div>
       </td></tr>
-      <tr><td class="tk" style="padding:0 14px;"><div style="height:0;line-height:0;font-size:0;border-top:1px dashed ${MC.line2};">&nbsp;</div></td></tr>
-      <tr><td dir="rtl" align="center" class="tk" style="padding:18px 14px 22px;font-family:${MAIL_FONT};direction:rtl;text-align:center;">
-        <div style="font-size:12px;line-height:1.6;color:${MC.dim};margin-bottom:6px;">الكود</div>
-        <div class="cd${desk}" dir="ltr" style="font-family:${MAIL_MONO};font-size:${size}px;line-height:1.5;font-weight:700;letter-spacing:${size >= 20 ? 2 : 1}px;color:${t.ink};text-align:center;white-space:pre-wrap;word-break:break-all;overflow-wrap:anywhere;-webkit-user-select:all;user-select:all;">${escHtml(raw)}</div>
-      </td></tr>${orderId ? `
+      <tr><td class="tk" style="padding:0 14px;"><div style="height:0;line-height:0;font-size:0;border-top:1px dashed ${MC.line2};">&nbsp;</div></td></tr>${cells}${orderId ? `
       <tr><td dir="rtl" align="center" bgcolor="${MC.card}" style="background-color:${MC.card};border-top:1px solid ${MC.line};border-radius:0 0 13px 13px;padding:11px 14px;font-family:${MAIL_FONT};direction:rtl;text-align:center;font-size:12px;line-height:1.7;color:${MC.dim};">رقم الطلب &nbsp;<span dir="ltr" style="unicode-bidi:isolate;font-family:${MAIL_MONO};color:${MC.p};word-break:break-all;overflow-wrap:anywhere;">${escHtml(orderId)}</span></td></tr>` : ''}
     </table>`;
   // validity band: a dark calendar tile with the last day of the month + what it means
@@ -2233,10 +2354,11 @@ function buildCodeEmail({ product, code, orderId, validity }) {
       </td></tr></table>`;
   const body = [
     mH1('طلبك جاهز'),
-    mP('شكراً لشرائك من متجرنا. كودك أدناه، وهو جاهز للاستخدام الآن.'),
+    mP(many ? `شكراً لشرائك من متجرنا. أكوادك (${list.length}) أدناه، وكلها جاهزة للاستخدام الآن.` : 'شكراً لشرائك من متجرنا. كودك أدناه، وهو جاهز للاستخدام الآن.'),
+    ...(note ? [mNote(t, `<span dir="auto" style="unicode-bidi:isolate;">${escHtml(note)}</span>`), mGap(10)] : []),
     ticket,
     mGap(10),
-    mSmall('لتنسخ الكود: اضغط عليه مطولاً على الجوال، أو حدّده بالماوس على الكمبيوتر.'),
+    mSmall(many ? 'لتنسخ كوداً: اضغط عليه مطولاً على الجوال، أو حدّده بالماوس على الكمبيوتر.' : 'لتنسخ الكود: اضغط عليه مطولاً على الجوال، أو حدّده بالماوس على الكمبيوتر.'),
     mGap(14),
     validityBand,
     mGap(12),
@@ -2246,7 +2368,7 @@ function buildCodeEmail({ product, code, orderId, validity }) {
     mSteps([
       `افتح <strong style="color:#FFFFFF;">${lat('PlayStation Store')}</strong> من جهازك أو من المتصفح.`,
       `اختر <strong style="color:#FFFFFF;">«استرداد الرموز»</strong> ${lat('(Redeem Codes)')}`,
-      'أدخل الكود أعلاه ثم أكّد.',
+      many ? 'أدخل أحد الأكواد أعلاه ثم أكّد، وكرّر الخطوات لكل كود على حدة.' : 'أدخل الكود أعلاه ثم أكّد.',
     ], t),
     mGap(6),
     mNote(t, `<strong>تأكد من المنطقة:</strong> بطاقات ${lat('PlayStation')} مرتبطة بمنطقة محددة، فيجب أن تطابق منطقة حسابك منطقة البطاقة قبل إدخال الكود.`),
@@ -2259,20 +2381,21 @@ function buildCodeEmail({ product, code, orderId, validity }) {
     tone: 'mint',
     label: 'تسليم الطلب',
     title: 'طلبك جاهز — Glitch Q',
-    preheader: v.daysLeft >= 0 ? `كودك جاهز وصالح حتى ${vc.full}. افتح الرسالة لنسخه وتفعيله.` : 'كودك جاهز. افتح الرسالة لنسخه وتفعيله.',
+    preheader: many ? (v.daysLeft >= 0 ? `أكوادك (${list.length}) جاهزة وصالحة حتى ${vc.full}. افتح الرسالة لنسخها وتفعيلها.` : `أكوادك (${list.length}) جاهزة. افتح الرسالة لنسخها وتفعيلها.`) : (v.daysLeft >= 0 ? `كودك جاهز وصالح حتى ${vc.full}. افتح الرسالة لنسخه وتفعيله.` : 'كودك جاهز. افتح الرسالة لنسخه وتفعيله.'),
     body,
     note: 'وصلتك هذه الرسالة لأن طلباً مرتبطاً بهذا البريد تم تسليمه من متجرنا.',
   });
 }
 
-function buildCodeText({ product, code, orderId, validity }) {
+function buildCodeText({ product, code, codes, note, orderId, validity }) {
   const vc = validityCopy(validity || codeValidity());
+  const list = (Array.isArray(codes) && codes.length ? codes : [code]).map(c => String(c == null ? '' : c));
+  const codeBlock = list.length > 1 ? `الأكواد (${list.length}):\n` + list.map((c, i) => `${i + 1}) ${c}`).join('\n') : `الكود:\n${list[0]}`;
   return `طلبك جاهز — Glitch Q
 
-المنتج: ${product || '—'}${orderId ? `\nرقم الطلب: ${orderId}` : ''}
+المنتج: ${product || '—'}${orderId ? `\nرقم الطلب: ${orderId}` : ''}${note ? `\n${note}` : ''}
 
-الكود:
-${code}
+${codeBlock}
 
 ${vc.title}
 ${vc.sub}
@@ -2282,7 +2405,7 @@ ${vc.sub}
 طريقة التفعيل على PlayStation:
 1) افتح PlayStation Store من جهازك أو من المتصفح.
 2) اختر «استرداد الرموز» (Redeem Codes).
-3) أدخل الكود ثم أكّد.
+3) أدخل الكود (إن كانت عدة أكواد فأدخل كل كود على حدة) ثم أكّد.
 
 تأكد من المنطقة: بطاقات PlayStation مرتبطة بمنطقة محددة، فيجب أن تطابق منطقة حسابك منطقة البطاقة قبل إدخال الكود.
 

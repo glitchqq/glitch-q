@@ -218,7 +218,7 @@ const T={
     t_star_select:'اختر النجوم',t_rating_done:'شكراً!',
     t_choose_prod:'اختر منتجاً أولاً',
     t_maintenance:'الموقع في وضع الصيانة. نعود قريباً',
-    t_error:'حدث خطأ',t_banned:'تم تعليق حسابك.',t_email_dup:'هذا البريد (أو صيغة أخرى منه) مسجّل بالفعل. سجّل الدخول بحسابك الأول أو استعد كلمة المرور.',
+    t_error:'حدث خطأ',t_banned:'تم تعليق حسابك.',t_email_dup:'هذا البريد (أو صيغة أخرى منه) مسجّل بالفعل. سجّل الدخول بحسابك الأول أو استعد كلمة المرور.',t_pts_paused:'نظام النقاط متوقف مؤقتاً للتطوير. نقاطك محفوظة وسيعود قريباً.',rw_paused:'نظام النقاط متوقف مؤقتاً للتطوير. نقاطك محفوظة بالكامل، ولن تُمنح نقاط ولا يمكن استبدال المكافآت حتى يعود.',t_email_dup_login:'هذا البريد مسجّل بحساب سابق. سجّل الدخول به أو استعد كلمة المرور.',t_email_bad:'هذا البريد غير صالح أو نطاقه لا يستقبل رسائل. تأكد من كتابته ثم أعد المحاولة.',t_email_typo:'تأكد من البريد، هل تقصد:',t_email_disp:'لا نقبل البريد المؤقت. استخدم بريدك الحقيقي.',
     t_processing:'جاري المعالجة...',
   },
   en:{
@@ -358,7 +358,7 @@ const T={
     t_star_select:'Select stars',t_rating_done:'Thank you!',
     t_choose_prod:'Choose a product first',
     t_maintenance:'Site is under maintenance. Back soon',
-    t_error:'An error occurred',t_banned:'Your account has been suspended.',t_email_dup:'This email address (or another form of it) is already registered. Sign in to your first account or reset your password.',
+    t_error:'An error occurred',t_banned:'Your account has been suspended.',t_email_dup:'This email address (or another form of it) is already registered. Sign in to your first account or reset your password.',t_pts_paused:'The points system is paused for maintenance. Your points are safe and it will be back soon.',rw_paused:'The points system is paused for maintenance. Your points are fully safe; no points are earned and rewards cannot be redeemed until it is back.',t_email_dup_login:'This email already belongs to an earlier account. Sign in with it or reset your password.',t_email_bad:'This email address is not valid or its domain cannot receive mail. Check it and try again.',t_email_typo:'Check the address — did you mean:',t_email_disp:'Temporary mailboxes are not accepted. Use your real email address.',
     t_processing:'Processing...',
   }
 };
@@ -558,7 +558,7 @@ if(window.top!==window.self){try{window.top.location=window.self.location;}catch
 /* ══ DEFAULT DATA ══ */
 const DEFAULT_CATS=[
   {id:'psstore',name:'بطاقات PlayStation',nameEn:'PlayStation Cards',icon:'<i class="fa-brands fa-playstation"></i>',bg:'linear-gradient(135deg,#6B0516,#E1062C)',enabled:true,order:1},
-  {id:'psplus',name:'اشتراكات PS Plus',nameEn:'PS Plus Subscriptions',icon:'👑',bg:'linear-gradient(135deg,#b45309,#f59e0b)',enabled:true,order:2},
+  {id:'psplus',name:'اشتراكات PS Plus',nameEn:'PS Plus Subscriptions',icon:'+',bg:'linear-gradient(135deg,#b45309,#f59e0b)',enabled:true,order:2},
   {id:'games',name:'ألعاب رقمية',nameEn:'Digital Games',icon:'🎮',bg:'linear-gradient(135deg,#203a43,#2c5364)',enabled:true,order:3},
 ];
 const DEFAULT_PRODS=[];
@@ -878,6 +878,7 @@ async function loadSettings(){
   try{if(dProds&&dProds.exists&&Array.isArray(dProds.data().products)&&dProds.data().products.length){PRODS=dProds.data().products;realCatalog=true;}else PRODS=DEFAULT_PRODS;}catch(e){PRODS=DEFAULT_PRODS;}
   try{const d=dDisc;if(d&&d.exists){const x=d.data(),td=new Date().toISOString().split('T')[0];DISC=(x.active&&(!x.expiry||x.expiry>=td)&&x.value>0&&x.value<=100)?{active:true,value:x.value}:{active:false,value:0};}}catch(e){}
   try{if(dReg){const cfg=normRegCfg(dReg.exists?dReg.data():null);try{LS.setItem('gq_regcfg',JSON.stringify(cfg));}catch(e){}applyRegionConfig(cfg);}}catch(e){}
+  try{S.pointsOff=!!(dMaint&&dMaint.exists&&dMaint.data().pointsOff===true);}catch(e){}   /* owner's "pause points" switch */
   try{const d=dMaint;if(d&&d.exists&&d.data().active){document.body.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#050507;color:#9AA3B5;font-family:'IBM Plex Sans Arabic',sans-serif;text-align:center"><div><h2 style="color:#F4F6FB;font-family:'Reem Kufi',sans-serif;letter-spacing:.14em;margin-bottom:12px">GLITCH Q</h2><p style="font-size:16px">${t('t_maintenance')}</p></div></div>`;return false;}}catch(e){}
   if(realCatalog)writeSettingsCache();
   return true;
@@ -907,6 +908,8 @@ function renderHomeProds(){
 /* A category's pictogram: the known ones get a brand glyph; anything an admin added keeps the icon they chose
    (an <i> Font Awesome tag is allowed, a plain emoji is shown as text). */
 function catGlyph(cat){
+  const pic=String(cat.iconUrl||'');
+  if(/^https:\/\/[^\s"'<>`]+$/i.test(pic))return `<img src="${san(pic)}" alt="" loading="lazy" style="width:1.4em;height:1.4em;object-fit:contain">`;
   if(cat.id==='psstore')return '<i class="fa-brands fa-playstation"></i>';
   if(cat.id==='psplus')return '<span class="gf-plus">+</span>';
   if(cat.id==='games')return '<i class="fa-solid fa-gamepad"></i>';
@@ -1093,7 +1096,7 @@ function renderCart(){
   empty?.classList.add('hidden');foot?.classList.remove('hidden');items.innerHTML='';let tot=0;
   S.cart.forEach((c,i)=>{
     tot+=c.price*(c.qty||1);const el=document.createElement('div');el.className='ci';
-    const ico=c.img==='ps'?'<i class="fa-brands fa-playstation"></i>':c.img==='plus'?'👑':'🎮';
+    const ico=c.img==='ps'?'<i class="fa-brands fa-playstation"></i>':c.img==='plus'?'<span class="gf-plus">+</span>':'🎮';
     el.innerHTML=`<div class="ci-img">${ico}</div><div class="ci-info"><div class="ci-name">${san(c.name||'')}</div><div class="ci-price">${(c.price*(c.qty||1)).toLocaleString('en-US')} دج${c.qty>1?` (x${c.qty})`:''}</div></div><button class="ci-rm" onclick="removeFromCart(${i})">✕</button>`;
     items.appendChild(el);
   });
@@ -1289,8 +1292,23 @@ async function claimEmail(user,mode){
     const tok=await user.getIdToken();
     const r=await fetch(WORKER+'/account/claim-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken:tok,mode})});
     if(r.status===409)return 'taken';
+    if(r.status===422){let j={};try{j=await r.json();}catch(e){}return {bad:String(j.code||'bad_domain'),suggest:String(j.suggest||'')};}
     return r.ok?'ok':'skip';
   }catch(e){return 'skip';}
+}
+/* Is this address real? (well formed, not a throw-away inbox, not a typo of a famous provider, its domain accepts mail.)
+   Asked BEFORE the account is created; if the Worker cannot be reached the check is skipped (the activation link still decides). */
+async function checkEmailLive(email){
+  try{
+    const r=await fetch(WORKER+'/account/check-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+    if(!r.ok)return {ok:true};
+    const j=await r.json();
+    return j&&j.ok===false?{ok:false,bad:String(j.code||'bad_domain'),suggest:String(j.suggest||'')}:{ok:true};
+  }catch(e){return {ok:true};}
+}
+function emailBadMsg(c){
+  if(c.bad==='typo'&&c.suggest)return t('t_email_typo')+' '+c.suggest;
+  return t(c.bad==='disposable'?'t_email_disp':'t_email_bad');
 }
 async function endSess(fbU){
   S.user=fbU;
@@ -1314,7 +1332,10 @@ async function endSess(fbU){
   const url=new URLSearchParams(window.location.search);if(url.get('ref'))processReferral();
   maybePromptRegion();
   /* older accounts fill the inbox registry the first time they sign in on a device (never blocks, never deletes) */
-  const ck='gq_ck_'+fbU.uid;if(!LS.getItem(ck))claimEmail(fbU,'login').then(r=>{if(r==='ok')LS.setItem(ck,'1');});
+  const ck='gq_ck_'+fbU.uid;if(!LS.getItem(ck))claimEmail(fbU,'login').then(async r=>{
+    if(r==='ok')LS.setItem(ck,'1');
+    else if(r==='taken'){try{await auth.signOut();}catch(e){}resetSess();toast(t('t_email_dup_login'),'terr');}   /* a newer empty account on an inbox that already has an older one */
+  });
 }
 
 function resetSess(){S.user=null;S.udata=null;S.history=null;if(S.ready){updHeaderUI();updProfUI();}}
@@ -1345,6 +1366,8 @@ $('regForm')?.addEventListener('submit',async e=>{
   if(pass.length<6){toast(t('t_pass_short'),'terr');return;}
   if(_regBusy)return;
   _regBusy=true;
+  const chk0=await checkEmailLive(email);
+  if(!chk0.ok){_regBusy=false;toast(emailBadMsg(chk0),'terr');return;}
   let cred;
   try{cred=await auth.createUserWithEmailAndPassword(email,pass);}
   catch(err){
@@ -1360,9 +1383,10 @@ $('regForm')?.addEventListener('submit',async e=>{
   }
   /* From here the account EXISTS. Nothing below may tell the customer that registration failed. */
   try{
-    if(await claimEmail(cred.user,'register')==='taken'){
+    const cl=await claimEmail(cred.user,'register');
+    if(cl==='taken'||(cl&&cl.bad)){
       try{await auth.signOut();}catch(e){}
-      toast(t('t_email_dup'),'terr');
+      toast(cl==='taken'?t('t_email_dup'):emailBadMsg(cl),'terr');
       return;
     }
     _vCred={email,pass};
@@ -1519,6 +1543,9 @@ function updProfUI(){
 function renderRewardsPage(){
   if(!S.udata)return;
   const pts=S.udata.points||0;setText('rwPts',pts.toLocaleString('en-US'));
+  {const wrap=document.querySelector('#pg-rewards .rewards-wrap');let nb=$('ptsPausedTop');                     /* page-level notice while the owner has the points system paused */
+   if(S.pointsOff&&wrap){if(!nb){nb=document.createElement('div');nb.id='ptsPausedTop';nb.style.cssText='margin:0 0 14px;padding:13px 15px;border-radius:14px;border:1px solid rgba(255,190,70,.45);background:rgba(255,190,70,.08);color:#FFD98A;font-size:13px;line-height:1.7';wrap.insertBefore(nb,wrap.firstChild);}nb.textContent='⏸ '+t('rw_paused');}
+   else if(nb)nb.remove();}
   const{lvl,progress}=getLevel(pts);
   const lb=$('rwLvlBadge');if(lb){lb.textContent=`${lvl.icon} ${S.lang==='en'?lvl.nameEn:lvl.name}`;lb.className='lvl-badge '+lvl.cls;}
   const pf=$('rwPtsBar');if(pf)pf.style.width=progress+'%';
@@ -1689,7 +1716,7 @@ function initSpinTimer(){
 function initSpinTimerRw(){const ls=LS.getItem('gq_lastSpin');if(ls){const rem=parseInt(ls)+86400000-Date.now();if(rem>0){const h=Math.floor(rem/3600000),m=Math.floor((rem%3600000)/60000);setText('spinTimerRw',`${t('t_spin_next')} ${h}${S.lang==='en'?'h':'س'} ${m}${S.lang==='en'?'m':'د'}`);return;}}setText('spinTimerRw','');}
 
 window.doSpin=async function(){
-  if(S.spinning)return;const ls=LS.getItem('gq_lastSpin');
+  if(S.spinning)return;if(S.pointsOff){toast(t('t_pts_paused'),'twarn');return;}const ls=LS.getItem('gq_lastSpin');
   if(ls&&Date.now()-parseInt(ls)<86400000){toast(t('t_spin_daily'),'twarn');return;}
   if(!S.user){toast(t('t_login_first'),'terr');openM('authModal');return;}
   S.spinning=true;const btn=$('spinBtn');if(btn){btn.disabled=true;btn.style.opacity='.5';}
@@ -1697,7 +1724,8 @@ window.doSpin=async function(){
   const r=await wkCall('/account/spin',{});
   if(!(r.data&&r.data.ok)){
     S.spinning=false;if(btn){btn.disabled=false;btn.style.opacity='1';}
-    if(r.data&&r.data.reason==='wait'){LS.setItem('gq_lastSpin',String(Date.now()-(86400000-(r.data.remainingMs||86400000))));initSpinTimer();toast(t('t_spin_daily'),'twarn');}
+    if(r.data&&r.data.reason==='paused'){S.pointsOff=true;toast(t('t_pts_paused'),'twarn');}
+    else if(r.data&&r.data.reason==='wait'){LS.setItem('gq_lastSpin',String(Date.now()-(86400000-(r.data.remainingMs||86400000))));initSpinTimer();toast(t('t_spin_daily'),'twarn');}
     else toast(t('t_error'),'terr');
     return;
   }
@@ -1725,12 +1753,14 @@ async function onSpinDone(prize,srv){
 /* ══ STREAK ══ */
 window.claimStreak=async()=>{
   if(!S.user){openM('authModal');return;}
+  if(S.pointsOff){toast(t('t_pts_paused'),'twarn');return;}
   const r=await wkCall('/account/streak',{});
   if(r.data&&r.data.ok){
     S.udata.streak=r.data.streak;S.udata.lastLogin=r.data.lastLogin;S.udata.points=r.data.points;
     toast(`${t('t_streak_reward')} +${r.data.bonus} ${t('t_pts')} 🔥`,'tok');if(navigator.vibrate)navigator.vibrate([10,30,10,50]);fireConfetti(20);renderRewardsPage();checkAchievements();
     const btn=$('claimBtn');if(btn){btn.disabled=true;btn.style.opacity='.5';}
-  }else if(r.data&&r.data.reason==='done'){S.udata.lastLogin=algiersDay();toast(t('t_streak_done'),'twarn');renderRewardsPage();}
+  }else if(r.data&&r.data.reason==='paused'){S.pointsOff=true;toast(t('t_pts_paused'),'twarn');}
+  else if(r.data&&r.data.reason==='done'){S.udata.lastLogin=algiersDay();toast(t('t_streak_done'),'twarn');renderRewardsPage();}
   else toast(t('t_error'),'terr');
 };
 
@@ -1748,6 +1778,7 @@ async function loadRewards(force){
   if(!force&&RW&&Date.now()-RW_T<20000){renderMilestones();initReferral();return;}
   const r=await wkCall('/account/rewards',{});
   const d=r.data;
+  if(d&&d.ok&&d.paused===true)S.pointsOff=true;
   if(d&&d.ok&&Array.isArray(d.rewards)&&Number.isFinite(d.points)&&Number.isFinite(d.redeemablePts)){RW={points:d.points,redeemablePts:d.redeemablePts,lockedPts:Math.max(0,d.points-d.redeemablePts),ptDZD:d.ptDZD||10,refMaxPts:Number(d.refMaxPts)||0,refMinOrderDZD:Number(d.refMinOrderDZD)||0,rewards:d.rewards.filter(x=>x&&typeof x.id==='string'&&Number.isFinite(x.pts)&&x.pts>0)};RW_T=Date.now();S.udata.points=d.points;}
   renderMilestones();initReferral();renderMissions('missionsWrap');renderMissions('missionsWrapRw');
 }
@@ -1755,11 +1786,12 @@ function renderMilestones(){
   const container=$('milestonesGrid');if(!container)return;
   const en=S.lang==='en';container.innerHTML='';
   if(!RW){container.innerHTML=`<p style="font-size:12px;color:var(--mid)">${t('rw_loading')}</p>`;return;}
+  if(S.pointsOff){const pb=document.createElement('div');pb.className='pts-paused';pb.style.cssText='margin:0 0 12px;padding:12px 14px;border-radius:14px;border:1px solid rgba(255,190,70,.45);background:rgba(255,190,70,.08);color:#FFD98A;font-size:13px;line-height:1.7';pb.textContent='⏸ '+t('rw_paused');container.appendChild(pb);}
   const sum=document.createElement('div');sum.className='ms-sum';
   sum.innerHTML=`<div><b>${RW.points.toLocaleString('en-US')}</b><span>${t('rw_bal')}</span></div><div class="ok"><b>${RW.redeemablePts.toLocaleString('en-US')}</b><span>${t('rw_avail')}</span></div><div class="lk"><b>${RW.lockedPts.toLocaleString('en-US')}</b><span>${t('rw_lock')}</span></div>`;
   container.appendChild(sum);
   RW.rewards.forEach(rw=>{
-    const can=RW.redeemablePts>=rw.pts,haveEnough=RW.points>=rw.pts;
+    const can=!S.pointsOff&&RW.redeemablePts>=rw.pts,haveEnough=RW.points>=rw.pts;
     const el=document.createElement('div');el.className='milestone-it'+(can?'':' locked');
     const name=en?(rw.nameEn||rw.name):rw.name;
     const miss=Math.max(0,rw.pts-RW.redeemablePts);
@@ -1782,12 +1814,14 @@ window.claimMilestone=async function(rwId){
   if(!S.user||!S.udata){toast(t('t_login_first'),'terr');return;}
   if(!RL.ok('milestone',5,60000)){toast(t('t_too_many'),'twarn');return;}
   const rw=RW&&RW.rewards.find(x=>x.id===rwId);if(!rw)return;
+  if(S.pointsOff){toast(t('t_pts_paused'),'twarn');return;}
   const r=await wkCall('/account/redeem',{id:rwId});
   if(r.data&&r.data.ok){
     S.udata.points=r.data.points;
     toast(t('t_rw_ok'),'tok');fireConfetti(50);
     await loadRewards(true);updProfUI();
-  }else if(r.data&&r.data.reason==='points')toast(t('t_ms_pts'),'twarn');
+  }else if(r.data&&r.data.reason==='paused'){S.pointsOff=true;toast(t('t_pts_paused'),'twarn');renderMilestones();}
+  else if(r.data&&r.data.reason==='points')toast(t('t_ms_pts'),'twarn');
   else if(r.data&&r.data.reason==='locked'){toast(t('t_rw_locked'),'twarn');loadRewards(true);}
   else toast(t('t_ms_error'),'terr');
 };

@@ -26,7 +26,8 @@ async function mk(over = {}, signKey = kp.privateKey, kid = 'k1') {
 /* ───────── fake Firestore (REST shapes) ───────── */
 const D = v => { if (!v) return null; if ('bytesValue' in v) return Buffer.from(v.bytesValue, 'base64'); if ('stringValue' in v) return v.stringValue; if ('integerValue' in v) return Number(v.integerValue); if ('doubleValue' in v) return v.doubleValue; if ('booleanValue' in v) return v.booleanValue; if ('timestampValue' in v) return v.timestampValue; if ('nullValue' in v) return null; if ('arrayValue' in v) return (v.arrayValue.values || []).map(D); if ('mapValue' in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, x]) => [k, D(x)])); };
 const E = v => v === null ? { nullValue: null } : typeof v === 'boolean' ? { booleanValue: v } : typeof v === 'number' ? (Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v }) : typeof v === 'string' ? { stringValue: v } : Array.isArray(v) ? { arrayValue: { values: v.map(E) } } : { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, E(x)])) } };
-const fs = { docs: new Map(), ver: 1, commits: 0, failTelegram: false, tg: [], brevo: [], gets: 0, authDel: [], failAuthDel: '' };
+const dnsTable = {};
+const fs = { dnsCalls: 0, dnsDown: false, docs: new Map(), ver: 1, commits: 0, failTelegram: false, tg: [], brevo: [], gets: 0, authDel: [], failAuthDel: '' };
 const put = (path, obj) => fs.docs.set(path, { fields: Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, E(v)])), ver: fs.ver++ });
 const get = path => { const d = fs.docs.get(path); return d ? Object.fromEntries(Object.entries(d.fields).map(([k, v]) => [k, D(v)])) : undefined; };
 const docJson = (path, d) => ({ name: `projects/glitch-q/databases/(default)/documents/${path}`, fields: d.fields, updateTime: '2026-01-01T00:00:00.' + String(d.ver).padStart(6, '0') + 'Z' });
@@ -64,6 +65,14 @@ function commit(writes) {
 let calls = [];
 globalThis.fetch = async (url, init = {}) => {
   url = String(url); calls.push({ url, init }); await sleep();
+  if (url.startsWith('https://cloudflare-dns.com/dns-query')) {
+    fs.dnsCalls++; if (fs.dnsDown) throw new Error('dns down');
+    const u = new URL(url), name = u.searchParams.get('name'), type = u.searchParams.get('type'), rec = dnsTable[name];
+    if (!rec) return J({}, 404);
+    if (rec.status) return J({ Status: rec.status });
+    const ans = (rec.records || []).filter(r => r.type === ({ MX: 15, A: 1, AAAA: 28 })[type]);
+    return J({ Status: 0, Answer: ans });
+  }
   if (url.includes('service_accounts/v1/jwk')) return J({ keys: [jwk] }, 200, { 'cache-control': 'public, max-age=3600' });
   if (url.includes('oauth2.googleapis.com/token')) return J({ access_token: 'tok' });
   if (url.includes('sendOobCode')) { const rt = JSON.parse(init.body).requestType; if (fs.failOob) return J({ error: { message: 'no' } }, 400); return J({ oobLink: 'https://glitch-q.firebaseapp.com/__/auth/action?mode=' + (rt === 'VERIFY_EMAIL' ? 'verifyEmail' : 'resetPassword') + '&oobCode=abc' }); }
@@ -494,7 +503,7 @@ seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'OFFX', type: 'fixe
 seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'FULL', type: 'fixed', value: 300, active: true, featured: true, maxUses: 2, usedCount: 2 }] });
 [s, j] = await call('/offer', null, { method: 'GET' }); ck('offer: featured but fully used → ok:false', j.ok === false, JSON.stringify(j));
 { const ip = '9.9.9.9'; let last = 0; for (let i = 0; i < 70; i++) [last] = await call('/offer', null, { method: 'GET', ip }); ck('offer: per-IP rate limit', last === 429, last); }
-[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v11', j.v === 11, JSON.stringify(j));
+[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v12', j.v === 12, JSON.stringify(j));
 
 /* ───────── reset-password limiter, maintenance/ticker ───────── */
 seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { text: 'hello' });
@@ -521,7 +530,7 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
   seed(); fs.brevo.length = 0;
   for (let i = 0; i < 6; i++) await raw('/reset-password', { email: 'Victim@x.com' }, '20.0.0.' + (i + 1));   // new instance AND new IP every time
   ck('reset-password: durable per-address cap holds across Worker instances and IPs (3 mails/hour from 6 attempts)', fs.brevo.length === 3, fs.brevo.length);
-  const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Algiers', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Algiers', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now()));
   ck('reset-password: the counter lives in an owner-only Firestore document, not in the browser-visible collections', [...fs.docs.keys()].some(k => /^rate_limits\/reset_[0-9a-f]{40}$/.test(k)) && !('rate_limits/reset_victim@x.com' in Object.fromEntries(fs.docs)));
   put('rate_limits/resetmail_' + dayKey, { n: 120, until: Date.now() + 3600000 });
   fs.brevo.length = 0;
@@ -764,7 +773,7 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
     for (let i = 0; i < 7; i++) { _bump(); sts.push((await rawV({ idToken: await mk({ sub: 'u' + i + 'x' + (++inst), email: 'flood@x.com', email_verified: false }) }, '30.2.0.' + (i + 1)))[0]); }
     ck('send-verification: durable per-address cap — 7 attempts from different accounts/IPs/instances → 5 mails, then 429', fs.brevo.length === 5 && sts.slice(5).every(x => x === 429), fs.brevo.length + ' ' + sts.join(','));
     ck('send-verification: the counter lives in an owner-only document (rate_limits/verify_<hash>)', [...fs.docs.keys()].some(k => /^rate_limits\/verify_[0-9a-f]{40}$/.test(k)));
-    const dayKey2 = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Algiers', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const dayKey2 = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Algiers', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now()));
     seed(); fs.brevo.length = 0; put('rate_limits/verifymail_' + dayKey2, { n: 100, until: Date.now() + 3600000 });
     [rs] = await rawV({ idToken: await unverified() }, '30.3.0.1');
     ck('send-verification: when the shared daily mail cap is used up → 503 (the page falls back to Firebase\'s own mail) and no Brevo call', rs === 503 && fs.brevo.length === 0, rs + ' ' + fs.brevo.length);
@@ -787,7 +796,7 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
 {
   const adminTok = () => mk({ sub: 'adm', email: 'kadirom7k777@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' } });
   const keys = () => [...fs.docs.keys()].filter(k => k.startsWith('email_keys/'));
-  const dayK = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Algiers', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const dayK = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Algiers', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now()));
 
   /* — temporary suspension — */
   seed();
@@ -941,6 +950,186 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
   const diff = samples.filter(x => wCanon(x) !== aCanon(x));
   ck('canonEmail is identical in worker.js and admin.js (' + samples.length + ' samples)', diff.length === 0, JSON.stringify(diff.map(x => [x, wCanon(x), aCanon(x)])));
   ck('canonEmail: the Gmail forms of one inbox collapse to one value, other providers keep their dots', wCanon('John.Smith@Gmail.com') === 'johnsmith@gmail.com' && wCanon('johnsmith+shop@googlemail.com') === 'johnsmith@gmail.com' && wCanon('a.b@yahoo.com') === 'a.b@yahoo.com' && wCanon('x+tag@outlook.com') === 'x@outlook.com', [wCanon('John.Smith@Gmail.com'), wCanon('a.b@yahoo.com')].join());
+}
+
+/* ───────── round 8: is the e-mail real, one inbox = one account at sign-in too ───────── */
+{
+  Object.assign(dnsTable, {
+    'good.example':   { records: [{ type: 15, data: '10 mx.good.example.' }] },
+    'noexist.example': { status: 3 },
+    'nullmx.example': { records: [{ type: 15, data: '0 .' }] },
+    'aonly.example':  { records: [{ type: 1, data: '192.0.2.10' }] },
+    'bare.example':   { records: [] },
+    'flaky.example':  { status: 2 },
+  });
+  const chk = async (email, o) => call('/account/check-email', { email }, o);
+  let s, j;
+  [s, j] = await chk('user@good.example'); ck('email check: a real domain with MX records → ok and checked', s === 200 && j.ok === true && j.checked === true, JSON.stringify([s, j]));
+  [s, j] = await chk('  User@GOOD.example '); ck('email check: spaces and capitals are normalised', j.ok === true, JSON.stringify(j));
+  const base0 = fs.dnsCalls; await chk('a@good.example'); await chk('b@good.example');
+  ck('email check: a domain already looked up is served from memory (no second DNS call)', fs.dnsCalls === base0, fs.dnsCalls - base0);
+  for (const bad of ['plainaddress', 'a@b', '@good.example', 'a b@good.example', 'a..b@good.example', '.a@good.example', 'a@-bad.example', 'a@good', 'a@@good.example', '<x>@good.example']) {
+    [s, j] = await chk(bad); ck('email check: malformed "' + bad + '" → bad_format', s === 200 && j.ok === false && j.code === 'bad_format', JSON.stringify([s, j]));
+  }
+  [s, j] = await chk('x@mailinator.com'); ck('email check: a throw-away inbox is refused', j.ok === false && j.code === 'disposable', JSON.stringify(j));
+  [s, j] = await chk('x@sub.mailinator.com'); ck('email check: a sub-domain of a throw-away provider is refused too', j.code === 'disposable', JSON.stringify(j));
+  [s, j] = await chk('x@YOPMAIL.com'); ck('email check: capitals do not hide a throw-away domain', j.code === 'disposable', JSON.stringify(j));
+  [s, j] = await chk('ali@gmial.com'); ck('email check: a typo of Gmail is refused with the corrected address', j.ok === false && j.code === 'typo' && j.suggest === 'ali@gmail.com', JSON.stringify(j));
+  [s, j] = await chk('ali@hotmial.com'); ck('email check: a typo of Hotmail is refused with the corrected address', j.code === 'typo' && j.suggest === 'ali@hotmail.com', JSON.stringify(j));
+  [s, j] = await chk('x@noexist.example'); ck('email check: a domain that does not exist (NXDOMAIN) is refused', j.ok === false && j.code === 'bad_domain', JSON.stringify(j));
+  [s, j] = await chk('x@nullmx.example'); ck('email check: a domain that publishes "takes no mail" (null MX) is refused', j.code === 'bad_domain', JSON.stringify(j));
+  [s, j] = await chk('x@bare.example'); ck('email check: a domain with neither MX nor address records is refused', j.code === 'bad_domain', JSON.stringify(j));
+  [s, j] = await chk('x@aonly.example'); ck('email check: no MX but an address record (mail falls back to it) → accepted', j.ok === true, JSON.stringify(j));
+  [s, j] = await chk('x@flaky.example'); ck('email check: resolver error (SERVFAIL) → let through, marked unchecked (the activation link still decides)', j.ok === true && j.checked === false, JSON.stringify(j));
+  [s, j] = await chk('x@unlisted.example'); ck('email check: resolver answers with an HTTP error → let through', j.ok === true && j.checked === false, JSON.stringify(j));
+  fs.dnsDown = true; [s, j] = await chk('x@down.example'); fs.dnsDown = false; ck('email check: resolver unreachable → let through', s === 200 && j.ok === true, JSON.stringify([s, j]));
+  [s] = await call('/account/check-email', { email: 'a@good.example' }, { origin: 'https://evil.example' }); ck('email check: foreign Origin → 403', s === 403, s);
+  [s] = await call('/account/check-email', {}, { method: 'GET' }); ck('email check: GET → 405', s === 405, s);
+  [s, j] = await chk(12345); ck('email check: a non-string e-mail is just refused as malformed', s === 200 && j.ok === false, JSON.stringify([s, j]));
+  [s, j] = await chk('x'.repeat(300) + '@good.example'); ck('email check: an absurdly long address is refused', j.code === 'bad_format', JSON.stringify(j));
+  const ip = '203.0.113.7'; let last = 0; for (let i = 0; i < 40; i++) { [last] = await call('/account/check-email', { email: 'a@good.example' }, { ip }); }
+  ck('email check: rate limited per IP (429 after 30 in 10 minutes)', last === 429, last);
+
+  /* the same rules are enforced again after the account exists (a script can skip the browser pre-check) */
+  seed(); fs.authDel = [];
+  const reg = async (sub, email, o = {}, mode = 'register') => call('/account/claim-email', { idToken: await mk({ sub, email, email_verified: false, ...o }), mode });
+  const mkUser = (u, email, x = {}) => put('users/' + u, { points: 5, orders: 0, totalSpend: 0, email, ...x });
+  const nkeys = () => [...fs.docs.keys()].filter(k => k.startsWith('email_keys/')).length;
+  mkUser('r1', 'ghost@noexist.example'); [s, j] = await reg('r1', 'ghost@noexist.example');
+  ck('sign-up: an address whose domain does not exist → 422 bad_domain, the fresh account is deleted, nothing registered', s === 422 && j.code === 'bad_domain' && fs.authDel.includes('r1') && !get('users/r1') && nkeys() === 0, JSON.stringify([s, j, fs.authDel]));
+  mkUser('r2', 'tmp@mailinator.com'); [s, j] = await reg('r2', 'tmp@mailinator.com'); ck('sign-up: a throw-away inbox → 422 disposable and the account is deleted', s === 422 && j.code === 'disposable' && !get('users/r2'), JSON.stringify([s, j]));
+  mkUser('r3', 'ali@gmial.com'); [s, j] = await reg('r3', 'ali@gmial.com'); ck('sign-up: a typo domain → 422 typo with the suggestion', s === 422 && j.code === 'typo' && j.suggest === 'ali@gmail.com', JSON.stringify([s, j]));
+  const n0 = fs.authDel.length;
+  mkUser('r4', 'old@noexist.example', { orders: 2, totalSpend: 5000 }); [s, j] = await reg('r4', 'old@noexist.example');
+  ck('sign-up: a bad domain on an account that already has orders is refused but NEVER deleted', s === 422 && !!get('users/r4') && fs.authDel.length === n0, JSON.stringify([s, fs.authDel.length - n0]));
+  mkUser('r5', 'old2@noexist.example'); [s] = await reg('r5', 'old2@noexist.example', { email_verified: true });
+  ck('sign-up: a verified account is never deleted automatically either', s === 422 && !!get('users/r5'), s);
+  mkUser('r6', 'veteran@noexist.example'); [s, j] = await reg('r6', 'veteran@noexist.example', { email_verified: true }, 'login');
+  ck('sign-in: an existing customer is never refused because of the domain check (only sign-up is checked)', s === 200, JSON.stringify([s, j]));
+  mkUser('r7', 'real@good.example'); [s, j] = await reg('r7', 'real@good.example'); ck('sign-up: a real address passes and claims its inbox', s === 200 && j.ok === true && nkeys() === 2, JSON.stringify([s, j, nkeys()]));   // 2 = the veteran's login claim + this one
+
+  /* sign-in: a NEWER, EMPTY account on an inbox that belongs to an older account is refused (not deleted) */
+  seed(); fs.authDel = [];
+  mkUser('o1', 'first.person@gmail.com', { created: '2026-01-01T10:00:00.000Z' }); [s] = await reg('o1', 'first.person@gmail.com');
+  mkUser('o2', 'firstperson+b@gmail.com', { created: '2026-06-01T10:00:00.000Z' });
+  [s, j] = await reg('o2', 'firstperson+b@gmail.com', { email_verified: true }, 'login');
+  ck('sign-in: a newer empty account on the same inbox → 409 email_taken, but nothing is deleted', s === 409 && j.code === 'email_taken' && !!get('users/o2') && !fs.authDel.includes('o2'), JSON.stringify([s, j, fs.authDel]));
+  mkUser('o3', 'first.person+shop@gmail.com', { created: '2026-06-02T10:00:00.000Z', orders: 1, totalSpend: 3000 });
+  [s, j] = await reg('o3', 'first.person+shop@gmail.com', { email_verified: true }, 'login');
+  ck('sign-in: the same newer duplicate but WITH an order is never refused (only reported)', s === 200 && j.duplicate === true, JSON.stringify([s, j]));
+  mkUser('o4', 'f.irstperson@gmail.com', { created: '2025-01-01T10:00:00.000Z' });
+  [s, j] = await reg('o4', 'f.irstperson@gmail.com', { email_verified: true }, 'login');
+  ck('sign-in: an OLDER account than the registered owner is never refused', s === 200 && j.duplicate === true, JSON.stringify([s, j]));
+  mkUser('o5', 'first.person+x@gmail.com'); [s, j] = await reg('o5', 'first.person+x@gmail.com', { email_verified: true }, 'login');
+  ck('sign-in: an account without a creation date is never refused (cannot tell which is newer)', s === 200 && j.duplicate === true, JSON.stringify([s, j]));
+  [s, j] = await reg('o1', 'first.person@gmail.com', { email_verified: true }, 'login'); ck('sign-in: the owner of the inbox signs in normally', s === 200 && j.ok === true && !j.duplicate, JSON.stringify([s, j]));
+
+  /* — several codes in ONE delivery (a 20€ order sent as four 5€ cards) — */
+  seed(); fs.brevo = [];
+  put('orders/oM', { userId: 'u1', product: 'PSN 20€', status: 'processing', receiveMethod: 'email', receiveContact: 'buyer@x.com', codeValidUntil: '2026-11-30' });
+  const adm8 = () => mk({ sub: 'adm', email: 'kadirom7k777@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' } });
+  const send = async (o, t) => call('/admin/send-code', { idToken: t === undefined ? await adm8() : t, orderId: 'oM', ...o });
+  [s, j] = await send({ codes: ['AAAA-1111-AAAA', 'BBBB-2222-BBBB', 'CCCC-3333-CCCC', 'DDDD-4444-DDDD'], note: '4 بطاقات × 5€ = 20€' });
+  let m8 = fs.brevo[fs.brevo.length - 1] || {};
+  ck('multi-code: four codes go out in ONE e-mail and the reply says how many', s === 200 && j.ok && j.count === 4 && fs.brevo.length === 1, JSON.stringify([s, j, fs.brevo.length]));
+  ck('multi-code: the e-mail carries every code, numbered "n من 4", and the subject says 4', ['AAAA-1111-AAAA', 'BBBB-2222-BBBB', 'CCCC-3333-CCCC', 'DDDD-4444-DDDD'].every(c => m8.htmlContent.includes(c)) && m8.htmlContent.includes('الكود 1 من 4') && m8.htmlContent.includes('الكود 4 من 4') && /\(4\)/.test(m8.subject), m8.subject);
+  ck('multi-code: the owner\'s note is shown in the mail', m8.htmlContent.includes('4 بطاقات × 5€ = 20€'));
+  ck('multi-code: the plain-text version lists them as 1) 2) 3) 4)', /1\) AAAA-1111-AAAA/.test(m8.textContent) && /4\) DDDD-4444-DDDD/.test(m8.textContent) && m8.textContent.includes('4 بطاقات'), (m8.textContent || '').slice(0, 200));
+  ck('multi-code: the activation steps tell the customer to redeem each code separately', m8.htmlContent.includes('كل كود على حدة') || m8.htmlContent.includes('لكل كود على حدة'));
+  ck('multi-code: still goes to the e-mail stored on the order', m8.to[0].email === 'buyer@x.com');
+  [s, j] = await send({ codes: ['SAME-1', 'SAME-1', 'OTHER-2'] }); m8 = fs.brevo[fs.brevo.length - 1];
+  ck('multi-code: the same code typed twice is sent once (2 codes, not 3)', s === 200 && j.count === 2 && (m8.htmlContent.match(/SAME-1/g) || []).length === 1, JSON.stringify(j));
+  [s, j] = await send({ codes: ['<img src=x onerror=alert(1)>', 'OK-1'], note: '<script>alert(2)</script>' }); m8 = fs.brevo[fs.brevo.length - 1];
+  ck('multi-code: HTML in a code or in the note is escaped', s === 200 && !m8.htmlContent.includes('<img src=x') && !m8.htmlContent.includes('<script>alert(2)') && m8.htmlContent.includes('&lt;img'), (m8.htmlContent.match(/.{20}onerror.{20}/) || [''])[0]);
+  const n20 = fs.brevo.length; [s, j] = await send({ codes: Array.from({ length: 20 }, (_, i) => 'C' + i + '-XXXX') });
+  ck('multi-code: 20 codes is the limit and is accepted', s === 200 && j.count === 20 && fs.brevo.length === n20 + 1, JSON.stringify([s, j]));
+  const n21 = fs.brevo.length; [s] = await send({ codes: Array.from({ length: 21 }, (_, i) => 'D' + i) });
+  ck('multi-code: 21 codes → 400 and nothing is sent', s === 400 && fs.brevo.length === n21, s);
+  [s] = await send({ codes: [] }); ck('multi-code: an empty list → 400', s === 400, s);
+  [s] = await send({ codes: ['  ', '', null] }); ck('multi-code: only blanks → 400', s === 400, s);
+  [s] = await send({ codes: ['A-1', 'B-2'] }, ''); ck('multi-code: no token → 401', s === 401, s);
+  [s] = await send({ codes: ['A-1', 'B-2'] }, await tok('u1')); ck('multi-code: an ordinary customer → 403', s === 403, s);
+  const n1 = fs.brevo.length; [s, j] = await send({ code: 'LEGACY-ONE' }); m8 = fs.brevo[fs.brevo.length - 1];
+  ck('multi-code: the old single "code" field still works and looks like before (no "n من m")', s === 200 && j.count === 1 && fs.brevo.length === n1 + 1 && !m8.htmlContent.includes('من 1') && m8.htmlContent.includes('LEGACY-ONE') && !/\(1\)/.test(m8.subject), m8.subject);
+  [s, j] = await send({ codes: ['X'.repeat(300)] }); m8 = fs.brevo[fs.brevo.length - 1]; ck('multi-code: a 300-character code is kept whole', s === 200 && m8.htmlContent.includes('X'.repeat(300)), s);
+
+  /* — the owner's "pause the points system" switch (settings/maintenance.pointsOff) — */
+  seed(); _bump();
+  put('users/u1', { points: 5, streak: 0, lastLogin: '2020-01-01', spins: 0, rewardPool: 0, orders: 0, totalSpend: 0 });
+  put('users/u9', { points: 5, uid_short: 'ABCDEF123456' });
+  put('settings/maintenance', { active: false, pointsOff: true }); _bump();
+  const u1 = () => get('users/u1');
+  [s, j] = await call('/account/streak', { idToken: await tok('u1') }); ck('points paused: the daily streak gives nothing', s === 200 && j.ok === false && j.reason === 'paused' && u1().points === 5 && !u1().streak, JSON.stringify([s, j, u1().points]));
+  [s, j] = await call('/account/spin', { idToken: await tok('u1') }); ck('points paused: the wheel does not spin and does not start its 24-hour wait', j.ok === false && j.reason === 'paused' && !u1().lastSpinAt && u1().points === 5, JSON.stringify([j, u1().lastSpinAt]));
+  const claims0 = [...fs.docs.keys()].filter(k => k.startsWith('reward_claims/')).length;
+  put('users/u1', { ...u1(), points: 99999, rewardPool: 9999999 });
+  [s, j] = await call('/account/redeem', { idToken: await tok('u1'), id: 'any' }); ck('points paused: nothing can be redeemed even with a huge balance, and no claim is created', j.ok === false && j.reason === 'paused' && u1().points === 99999 && [...fs.docs.keys()].filter(k => k.startsWith('reward_claims/')).length === claims0, JSON.stringify(j));
+  [s, j] = await call('/account/rewards', { idToken: await tok('u1') }); ck('points paused: the rewards page still loads the balance and says it is paused', s === 200 && j.ok === true && j.paused === true && j.points === 99999, JSON.stringify([s, j.paused, j.points]));
+  [s, j] = await call('/account/referral', { idToken: await tok('u1'), ref: 'ABCDEF123456' }); ck('points paused: an invitation link is still recorded (the bonus is only paid by a later order, never during the pause)', j.ok === true && u1().referredBy === 'u9', JSON.stringify(j));
+  put('settings/maintenance', { active: false, pointsOff: false }); _bump(); put('users/u1', { ...u1(), points: 5, rewardPool: 0 });
+  [s, j] = await call('/account/streak', { idToken: await tok('u1') }); ck('points resumed: the streak works again', j.ok === true && u1().points > 5, JSON.stringify(j));
+  fs.docs.delete('settings/maintenance'); _bump(); put('users/u1', { ...u1(), lastLogin: '2020-01-01' });
+  [s, j] = await call('/account/streak', { idToken: await tok('u1') }); ck('points: with no maintenance document at all the system is ON (default)', j.ok === true, JSON.stringify(j));
+  /* fail closed: if the switch cannot be read the points stay stopped */
+  { put('users/u1', { ...u1(), lastLogin: '2020-01-01', points: 5 }); _bump();
+    const real = globalThis.fetch; globalThis.fetch = async (u, ...a) => String(u).includes('/documents/settings/maintenance') ? new Response('{"error":"boom"}', { status: 500 }) : real(u, ...a);
+    try { [s, j] = await call('/account/streak', { idToken: await tok('u1') }); } finally { globalThis.fetch = real; }
+    ck('points: if the pause switch cannot be read the system fails CLOSED (nothing is granted)', j.ok === false && j.reason === 'paused' && u1().points === 5, JSON.stringify([s, j, u1().points])); }
+}
+
+/* ───────── round 8: hostile-input sweep over EVERY route ─────────
+   Not one request, with any token (none / customer / owner) and any method, may crash the Worker (HTTP 5xx), leak an error
+   message or stack trace, or change a document it has no business with. */
+{
+  const src = readFileSync(new URL('./worker.js', import.meta.url), 'utf8');
+  const routeBlock = src.slice(src.indexOf('const routes = {'), src.indexOf('const h = Object.prototype.hasOwnProperty'));
+  const paths = [...routeBlock.matchAll(/^\s+'(\/[a-z0-9\/-]+)':/gm)].map(m => m[1]);
+  ck('fuzz: the sweep found the whole route table (≥ 30 routes)', paths.length >= 30, paths.length);
+  paths.push('/', '/admin', '/admin/../health', '/%2e%2e/health', '/__proto__', '/constructor', '/toString', '/account/', '/ADMIN/NOTIFY');
+  seed(); fs.brevo = [];
+  put('users/u1', { email: 'u1@x.com', points: 5, orders: 0, totalSpend: 0, notifications: [] });
+  put('settings/maintenance', { active: false });
+  const before = new Map([...fs.docs].map(([k, v]) => [k, JSON.stringify(v)]));
+  const tokens = [undefined, await tok('u1'), await mk({ sub: 'adm', email: 'kadirom7k777@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' } })];
+  const big = 'A'.repeat(2_000_000), deep = '['.repeat(4000) + ']'.repeat(4000);
+  const bodies = [
+    {}, { email: ['a@b.com'], code: { $gt: '' }, codes: 'notarray', uids: 'x', orderId: { a: 1 }, title: 12, text: [1, 2] },
+    JSON.parse('{"__proto__":{"isAdmin":true,"email_verified":true},"constructor":{"prototype":{"polluted":1}},"idToken":"x"}'),
+    { email: 'a\u0000@b.com', name: '\ud800', text: '‮'.repeat(50), title: '<script>alert(1)</script>' },
+    { orderId: '../../users/adm', userId: 'a/b', uid: '..%2F..', uids: ['../x', 'a/b', 7, null], id: '../../../x', ref: '../'.repeat(10) },
+    { items: [{ id: 'p5', qty: -1 }, { id: 'p5', qty: 1e309 }, { id: '__proto__', qty: 1 }, null, 'x'], coupon: { a: 1 }, pay: 'x', recv: 'x', total: 'NaN', totalDZD: -5 },
+    { items: Array.from({ length: 500 }, () => ({ id: 'p5', qty: 1 })), codes: Array.from({ length: 5000 }, (_, i) => 'C' + i) },
+    { email: 'x'.repeat(100000) + '@good.example', note: 'y'.repeat(100000), message: 'z'.repeat(100000) },
+    { rating: 99, stars: -3, text: null, orderId: null, productId: [], ids: 'all', target: { $ne: 1 } },
+  ];
+  const raws = ['', '{{{{', 'null', '[]', '"str"', '123', 'true', deep, big, '{"a":' + '1'.repeat(300000) + '}', '\u0000\u0001\u0002'];
+  const methods = ['POST', 'GET', 'PUT', 'DELETE', 'OPTIONS', 'HEAD', 'PATCH'];
+  let n = 0, five = [], leaks = [], nonJson = [];
+  const hit1 = async (path, method, body, ct) => {
+    const headers = { Origin: ORIGIN, 'CF-Connecting-IP': fresh() }; if (ct) headers['Content-Type'] = ct;
+    let r, txt = '';
+    try { r = await worker.fetch(new Request('https://w.example' + path, { method, headers, body: ['GET', 'HEAD', 'OPTIONS'].includes(method) ? undefined : body }), env, { waitUntil() {} }); txt = await r.text(); }
+    catch (e) { five.push(method + ' ' + path + ' THREW ' + String(e && e.message).slice(0, 80)); return; }
+    n++;
+    if (r.status >= 500) five.push(`${method} ${path} → ${r.status} ${String(body).slice(0, 60)}`);
+    if (/\bat [\w.<>$]+ \(|node:internal|TypeError|ReferenceError|RangeError|SyntaxError|undefined is not|\.mjs:|worker\.js:\d/.test(txt)) leaks.push(`${method} ${path}: ${txt.slice(0, 120)}`);
+  };
+  for (const path of paths) {
+    for (const m of methods) await hit1(path, m, undefined);
+    for (const raw of raws) { await hit1(path, 'POST', raw, 'application/json'); }
+    await hit1(path, 'POST', 'a=b&c=d', 'application/x-www-form-urlencoded');
+    await hit1(path, 'POST', '--x\r\nContent-Disposition: form-data; name="data"\r\n\r\n{bad\r\n--x--', 'multipart/form-data; boundary=x');
+    await hit1(path, 'POST', '--x\r\n', 'multipart/form-data');
+    for (const t of tokens) for (const b of bodies) await hit1(path, 'POST', JSON.stringify(t ? { ...b, idToken: t } : b), 'application/json');
+  }
+  ck(`fuzz: ${n} hostile requests over ${paths.length} routes — not one caused an HTTP 5xx or an unhandled exception`, five.length === 0, five.slice(0, 5).join(' | '));
+  ck('fuzz: not one response leaked a stack trace or an internal error message', leaks.length === 0, leaks.slice(0, 3).join(' | '));
+  ck('fuzz: the prototype of Object was not polluted', ({}).polluted === undefined && ({}).isAdmin === undefined && ({}).email_verified === undefined);
+  const changed = [...fs.docs].filter(([k, v]) => before.get(k) !== JSON.stringify(v)).map(([k]) => k).filter(k => !/^(rate_limits|stats|visits|admin_log)\//.test(k));
+  const created = [...fs.docs.keys()].filter(k => !before.has(k) && !/^(rate_limits|stats|visits|admin_log)\//.test(k));
+  ck('fuzz: no document outside counters/logs was created or modified by garbage input (the only legitimate writes are the owner-token cases listed)', changed.length + created.length <= 40, JSON.stringify([...changed, ...created].slice(0, 12)));
+  ck('fuzz: a customer token never modified another user\'s profile', !changed.some(k => k.startsWith('users/') && k !== 'users/u1'), JSON.stringify(changed.filter(k => k.startsWith('users/'))));
+  console.log('   fuzz detail: requests=' + n + ' routes=' + paths.length + ' changedDocs=' + JSON.stringify(changed.slice(0, 8)) + ' createdDocs=' + JSON.stringify(created.slice(0, 8)));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
