@@ -66,7 +66,8 @@ function world(econRaw, products) {
       else if (v && typeof v === 'object' && T.ts in v) o[k] = { seconds: 1 };
       else o[k] = v;
     } return o; };
-  const doc = (c, id) => ({ path: c + '/' + id });
+  let readFails = false;
+  const doc = (c, id) => ({ path: c + '/' + id, get: async () => { if (readFails) throw new Error('offline'); return { exists: store.has(c + '/' + id), data: () => store.get(c + '/' + id) }; } });
   const db = {
     collection: c => ({ doc: id => doc(c, id) }),
     async runTransaction(fn) {
@@ -80,7 +81,7 @@ function world(econRaw, products) {
   const ctx = { firebase: { firestore: { FieldValue: FV } }, db, GQEcon: E, ECO_RATES: RATES, allProds: products,
     ensureEcon: async () => E.normEcon(econRaw), ensureProds: async () => products, codeUntil: () => '2026-11-30' };
   vm.runInNewContext(fnSrc + ';this.completeOrder=completeOrder;this.u_ref=u_ref;', ctx);
-  return { store, completeOrder: ctx.completeOrder };
+  return { store, completeOrder: ctx.completeOrder, failReads: v => { readFails = v; } };
 }
 const mkOrder = (o = {}) => ({ userId: 'cust', status: 'pending', awarded: false, totalDZD: 4500, items: [{ id: 'p15', qty: 1, unitDZD: 4500 }], ...o });
 const econCost = { costs: { p15: 4000, p5: 1500 }, marginPct: 5 };
@@ -96,6 +97,28 @@ const econCost = { costs: { p15: 4000, p5: 1500 }, marginPct: 5 };
   await w.completeOrder('o1', { title: 't' });
   ck('deliver: second call is harmless (no double payment)', w.store.get('users/cust').points === 25 && w.store.get('users/cust').orders === 1);
   ck('deliver: balance can never exceed pool/ptDZD from purchases alone (points 20 ≤ pool 200 / 10)', E.redeemablePts({ points: 20, rewardPool: u.rewardPool }, E.normEcon(econCost)) === 20); }
+
+{ const w = world(econCost, prods);   // owner's "pause points" switch (settings/maintenance.pointsOff)
+  w.store.set('settings/maintenance', { active: false, pointsOff: true });
+  w.store.set('users/ref', { points: 5, rewardPool: 0, referrals: 0, refPoints: 0, notifications: [] });
+  w.store.set('users/cust', { points: 5, rewardPool: 0, referredBy: 'ref', orders: 0, totalSpend: 0, notifications: [] });
+  w.store.set('orders/p1', mkOrder());
+  await w.completeOrder('p1', { title: 't' });
+  const u = w.store.get('users/cust'), r = w.store.get('users/ref'), o = w.store.get('orders/p1'), l = w.store.get('order_econ/p1');
+  ck('points paused: the order is delivered, the customer gets NO points and NO reward pool', o.status === 'done' && u.points === 5 && u.rewardPool === 0, JSON.stringify(u));
+  ck('points paused: the purchase still counts in his order count and spend (statistics are not points)', u.orders === 1 && u.totalSpend === 4500, JSON.stringify(u));
+  ck('points paused: the inviter is NOT paid and the friend\'s one-time bonus is not burnt', r.points === 5 && r.referrals === 0 && !u.refRewarded, JSON.stringify([r, u.refRewarded]));
+  ck('points paused: the order is closed (awarded) so it can never pay points retroactively, and the ledger says why', o.awarded === true && l && l.pts === 0 && l.refPts === 0 && l.paused === true, JSON.stringify(l));
+  await w.completeOrder('p1', { title: 't2' });
+  w.store.set('settings/maintenance', { active: false, pointsOff: false });
+  await w.completeOrder('p1', { title: 't3' });
+  ck('points paused: re-sending codes for that order after the switch is turned off still pays nothing', w.store.get('users/cust').points === 5 && w.store.get('users/cust').orders === 1);
+  w.store.set('orders/p2', mkOrder());
+  await w.completeOrder('p2', null);
+  ck('points resumed: the NEXT order pays normally again (20 pts) and the invitation bonus is paid then', w.store.get('users/cust').points === 25 && w.store.get('users/ref').points === 25 && w.store.get('users/cust').refRewarded === true, JSON.stringify([w.store.get('users/cust'), w.store.get('users/ref')]));
+  const w2 = world(econCost, prods); w2.store.set('users/cust', { points: 5, rewardPool: 0, orders: 0, totalSpend: 0, notifications: [] }); w2.store.set('orders/p3', mkOrder());
+  w2.failReads(true); let threw = false; try { await w2.completeOrder('p3', null); } catch { threw = true; }
+  ck('points: if the pause switch cannot be read the order is NOT delivered (fails closed) and nothing is written', threw && w2.store.get('orders/p3').status === 'pending' && w2.store.get('users/cust').points === 5); }
 
 { const w = world(econCost, prods);   // referral
   w.store.set('users/ref', { points: 5, rewardPool: 0, referrals: 0, refPoints: 0, notifications: [] });

@@ -226,6 +226,7 @@ function renderOrders(){
       <div class="adm-card-actions">
         ${o.status==='pending'?`<button onclick="setOrderStatus('${jsq(o.id)}','processing')" class="btn btn-o btn-sm"><i class="fa-solid fa-gear"></i> معالجة</button><button onclick="openConfirmModal('${jsq(o.id)}','${jsq(o.product||'')}','${jsq(o.receiveContact||'')}')" class="btn btn-g btn-sm"><i class="fa-solid fa-check"></i> إرسال</button><button onclick="setOrderStatus('${jsq(o.id)}','rejected')" class="btn btn-r btn-sm"><i class="fa-solid fa-xmark"></i> رفض</button>`:''}
         ${o.status==='processing'?`<button onclick="openConfirmModal('${jsq(o.id)}','${jsq(o.product||'')}','${jsq(o.receiveContact||'')}')" class="btn btn-g btn-sm"><i class="fa-solid fa-paper-plane"></i> إرسال الكود</button><button onclick="setOrderStatus('${jsq(o.id)}','rejected')" class="btn btn-r btn-sm"><i class="fa-solid fa-xmark"></i> رفض</button>`:''}
+        ${o.status==='done'?`<button onclick="openConfirmModal('${jsq(o.id)}','${jsq(o.product||'')}','${jsq(o.receiveContact||'')}')" class="btn btn-c btn-sm" title="إرسال أكواد إضافية لنفس الطلب (النقاط لا تُمنح مرة ثانية)"><i class="fa-solid fa-plus"></i> أكواد إضافية</button>`:''}
         ${o.hasReceipt?`<button onclick="viewReceipt('${jsq(o.id)}')" class="btn btn-c btn-sm"><i class="fa-solid fa-receipt"></i> الوصل</button>`:o.paymentMethod==='baridimob'?`<span class="badge badge-info" title="هذا الطلب سبق تفعيل حفظ الوصولات، أو أن الصورة كبيرة جداً: صورته في تيليجرام">الوصل في تيليجرام</span>`:''}
         <button onclick="copyText('${jsq(o.id)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> ID</button>
         <button onclick="deleteOrder('${jsq(o.id)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i></button>
@@ -258,11 +259,32 @@ async function deleteReceipt(id){
 }
 async function deleteOrder(id){if(!confirm('حذف هذا الطلب نهائياً؟'))return;try{const b=db.batch();b.delete(db.collection('orders').doc(id));b.delete(db.collection('order_receipts').doc(id));await b.commit();allOrders=allOrders.filter(o=>o.id!==id);renderOrders();aToast('تم الحذف','info');}catch(e){aToast('خطأ','err');}}
 
+/* Several codes in one delivery (e.g. a 20€ order sent as four 5€ cards): one code per line, up to 20. Commas and semicolons also separate. */
+const MAX_CODES=20;
+function parseCodes(txt){return String(txt||'').split(/[\r\n,;]+/).map(x=>x.trim()).filter(Boolean);}
+function codeCount(srcId,outId){
+  const all=parseCodes(document.getElementById(srcId).value),uniq=new Set(all),el=document.getElementById(outId);if(!el)return;
+  el.textContent='عدد الأكواد: '+uniq.size+(all.length>uniq.size?' — ⚠️ فيه '+(all.length-uniq.size)+' مكرر':'')+(uniq.size>MAX_CODES?' — ⚠️ الحد الأقصى '+MAX_CODES:'');
+}
+/* -> array of codes, or null after telling the owner what to fix */
+function readCodes(srcId){
+  const all=parseCodes(document.getElementById(srcId).value);
+  if(!all.length){aToast('أدخل كوداً واحداً على الأقل','err');return null;}
+  if(new Set(all).size!==all.length){aToast('فيه كود مكتوب مرتين — احذف المكرر','err');return null;}
+  if(all.length>MAX_CODES){aToast('الحد الأقصى '+MAX_CODES+' كوداً في الرسالة الواحدة','err');return null;}
+  if(all.some(c=>c.length>300)){aToast('أحد الأكواد أطول من 300 حرف','err');return null;}
+  return all;
+}
+/* what the customer sees in his account */
+function codesNotice(codes,note){
+  return (note?note+'\n':'')+(codes.length===1?`الكود: ${codes[0]}`:`الأكواد (${codes.length}):\n`+codes.map((c,i)=>`${i+1}) ${c}`).join('\n'));
+}
+function codesTelegram(codes){return codes.length===1?codes[0]:'\n'+codes.map((c,i)=>`   ${i+1}) ${c}`).join('\n');}
 function openConfirmModal(orderId,product,contact){
   currentOrderForDelivery={orderId,product,contact};
   document.getElementById('cmOrderId').textContent=orderId;
   document.getElementById('cmProduct').textContent=product;
-  document.getElementById('cmCode').value='';
+  document.getElementById('cmCode').value='';document.getElementById('cmNote').value='';codeCount('cmCode','cmCount');
   document.getElementById('confirmModal').classList.remove('hidden');
 }
 function closeConfirmModal(){document.getElementById('confirmModal').classList.add('hidden');currentOrderForDelivery=null;}
@@ -280,6 +302,8 @@ async function completeOrder(orderId,notif){
   const FV=firebase.firestore.FieldValue;
   const e=await ensureEcon();
   if(e._failed)throw new Error('تعذّر قراءة قواعد النقاط — لم يُسلَّم الطلب. أعد المحاولة');
+  /* the owner's "pause points" switch: while it is on the order is delivered normally, but no points, reward pool or referral bonus are paid */
+  let paused;try{const ms=await db.collection('settings').doc('maintenance').get();paused=ms.exists&&ms.data().pointsOff===true;}catch(er){throw new Error('تعذّر قراءة مفتاح إيقاف النقاط — لم يُسلَّم الطلب. أعد المحاولة');}
   await ensureProds();
   const oref=db.collection('orders').doc(orderId);
   return db.runTransaction(async tx=>{
@@ -289,7 +313,7 @@ async function completeOrder(orderId,notif){
     if(o.awarded===false&&uid&&uid!=='guest'){   /* only orders created by the new Worker carry awarded:false; older orders were already paid when they were placed */
       uref=db.collection('users').doc(uid);us=await tx.get(uref);
       const u=us.exists?us.data():null;
-      if(u&&u.referredBy&&u.referredBy!==uid&&!u.refRewarded&&(Number(o.totalDZD)||0)>=e.refMinOrderDZD){rref=db.collection('users').doc(u.referredBy);rs=await tx.get(rref);}
+      if(!paused&&u&&u.referredBy&&u.referredBy!==uid&&!u.refRewarded&&(Number(o.totalDZD)||0)>=e.refMinOrderDZD){rref=db.collection('users').doc(u.referredBy);rs=await tx.get(rref);}
     }
     /* the deadline is fixed the first time the order is delivered; a later re-send never extends it */
     const upd0=o.awarded===false?{status:'done',awarded:true}:{status:'done'};if(!o.codeValidUntil)upd0.codeValidUntil=(notif&&notif.until)||codeUntil();
@@ -297,8 +321,9 @@ async function completeOrder(orderId,notif){
     if(us&&us.exists){
       const total=Math.max(0,Number(o.totalDZD)||0);
       const pr=GQEcon.orderProfit(o,allProds,e,ECO_RATES);
-      const pts=GQEcon.earnPts(pr.profit,e);
-      const upd={points:FV.increment(pts),rewardPool:FV.increment(pts*e.ptDZD),orders:FV.increment(1),totalSpend:FV.increment(total)};
+      const pts=paused?0:GQEcon.earnPts(pr.profit,e);
+      const upd={orders:FV.increment(1),totalSpend:FV.increment(total)};
+      if(!paused){upd.points=FV.increment(pts);upd.rewardPool=FV.increment(pts*e.ptDZD);}
       if(notif)upd.notifications=FV.arrayUnion(notif);
       let rp=0;
       if(rs&&rs.exists){
@@ -307,7 +332,7 @@ async function completeOrder(orderId,notif){
         tx.update(rref,{points:FV.increment(rp),rewardPool:FV.increment(rp*e.ptDZD),referrals:FV.increment(1),refPoints:FV.increment(rp)});
       }
       tx.update(uref,upd);
-      tx.set(db.collection('order_econ').doc(orderId),{orderId,userId:uid,revenue:pr.revenue,cost:pr.cost,profit:pr.profit,estimated:pr.estimated,pts,refPts:rp,refUserId:(rs&&rs.exists)?u_ref(us):null,ptDZD:e.ptDZD,earnPct:e.earnPct,refPct:e.refPct,ts:FV.serverTimestamp()});
+      tx.set(db.collection('order_econ').doc(orderId),{orderId,userId:uid,revenue:pr.revenue,cost:pr.cost,profit:pr.profit,estimated:pr.estimated,pts,refPts:rp,paused,refUserId:(rs&&rs.exists)?u_ref(us):null,ptDZD:e.ptDZD,earnPct:e.earnPct,refPct:e.refPct,ts:FV.serverTimestamp()});
     }else if(notif&&uid&&uid!=='guest'){
       tx.update(db.collection('users').doc(uid),{notifications:FV.arrayUnion(notif)});
     }
@@ -316,16 +341,16 @@ async function completeOrder(orderId,notif){
 function u_ref(us){const d=us&&us.exists?us.data():null;return d&&d.referredBy?d.referredBy:null;}
 
 async function confirmDelivery(){
-  const code=document.getElementById('cmCode').value.trim();
-  if(!code){aToast('أدخل الكود','err');return;}
+  const codes=readCodes('cmCode');if(!codes)return;
+  const note=document.getElementById('cmNote').value.trim().slice(0,200);
   const{orderId,product,contact}=currentOrderForDelivery||{};if(!orderId)return;
   try{
-    const notif={title:`طلبك جاهز — ${product}`,code:`الكود: ${code}`,date:new Date().toLocaleDateString('ar'),until:codeUntil(),read:false};
+    const notif={title:`طلبك جاهز — ${product}`,code:codesNotice(codes,note),date:new Date().toLocaleDateString('ar'),until:codeUntil(),read:false};
     await completeOrder(orderId,notif);
     allOrders=allOrders.map(o=>o.id===orderId?{...o,status:'done'}:o);renderOrders();
-    const m=await adminSendCode({orderId,code,product});
-    await adminNotify(`✅ تم التسليم!\n🆔 ${orderId}\n🎮 ${product}\n🔑 ${code}\n📧 ${contact}\n${m.ok?'✉️ أُرسل الإيميل إلى '+m.to:'⚠️ فشل إيميل الكود: '+m.error}`);
-    if(m.ok){closeConfirmModal();aToast('تم التأكيد وأُرسل الكود إلى '+m.to,'ok');await loadDashboard();}
+    const m=await adminSendCode({orderId,codes,note,product});
+    await adminNotify(`✅ تم التسليم!\n🆔 ${orderId}\n🎮 ${product}\n🔑 ${codesTelegram(codes)}\n📧 ${contact}\n${m.ok?'✉️ أُرسل الإيميل إلى '+m.to:'⚠️ فشل إيميل الكود: '+m.error}`);
+    if(m.ok){closeConfirmModal();aToast((codes.length>1?`تم التأكيد وأُرسلت ${codes.length} أكواد إلى `:'تم التأكيد وأُرسل الكود إلى ')+m.to,'ok');await loadDashboard();}
     else aToast('تم تأكيد الطلب وظهر الكود في حساب العميل، لكن فشل الإيميل: '+m.error+'. اضغط الزر لإعادة المحاولة','warn');
   }catch(e){aToast('خطأ: '+e.message,'err');}
 }
@@ -346,7 +371,7 @@ function initCatForm(){
   const idEl=document.getElementById('newCatId');if(idEl&&!idEl.dataset.bound){idEl.dataset.bound='1';idEl.addEventListener('input',()=>{idEl.dataset.touched='1';});}
   catPrev();
 }
-function clearCatForm(){editingCat=null;['newCatId','newCatName','newCatNameEn','newCatIcon','newCatOrder'].forEach(i=>{const e=document.getElementById(i);e.value='';delete e.dataset.touched;});
+function clearCatForm(){editingCat=null;['newCatId','newCatName','newCatNameEn','newCatIcon','newCatIconUrl','newCatOrder'].forEach(i=>{const e=document.getElementById(i);e.value='';delete e.dataset.touched;});
   document.getElementById('newCatId').readOnly=false;document.getElementById('newCatC1').value='#203a43';document.getElementById('newCatC2').value='#2c5364';
   document.getElementById('catFormTitle').textContent='إضافة قسم جديد';document.getElementById('catSaveBtn').innerHTML='<i class="fa-solid fa-plus"></i> إضافة قسم';catPrev();}
 /* The storefront shows these three sections when Firestore has no `settings/categories` document (same list as script.js).
@@ -354,7 +379,7 @@ function clearCatForm(){editingCat=null;['newCatId','newCatName','newCatNameEn',
    otherwise adding ONE section would silently hide the other three from the store. */
 const ADMIN_DEFAULT_CATS=[
   {id:'psstore',name:'بطاقات PlayStation',nameEn:'PlayStation Cards',icon:'<i class="fa-brands fa-playstation"></i>',bg:'linear-gradient(135deg,#6B0516,#E1062C)',enabled:true,order:1},
-  {id:'psplus',name:'اشتراكات PS Plus',nameEn:'PS Plus Subscriptions',icon:'👑',bg:'linear-gradient(135deg,#b45309,#f59e0b)',enabled:true,order:2},
+  {id:'psplus',name:'اشتراكات PS Plus',nameEn:'PS Plus Subscriptions',icon:'+',bg:'linear-gradient(135deg,#b45309,#f59e0b)',enabled:true,order:2},
   {id:'games',name:'ألعاب رقمية',nameEn:'Digital Games',icon:'🎮',bg:'linear-gradient(135deg,#203a43,#2c5364)',enabled:true,order:3}
 ];
 async function readCats(){
@@ -362,7 +387,7 @@ async function readCats(){
   const saved=d.exists&&Array.isArray(d.data().categories)?d.data().categories:null;
   return {cats:saved?saved:ADMIN_DEFAULT_CATS.map(c=>({...c})),saved:!!saved};
 }
-function catIco(i){const v=String(i||'');return /^<i class="fa-(solid|brands|regular) fa-[a-z0-9-]{1,40}"><\/i>$/.test(v)?v:esc(v||'📦');}
+function catIco(i,url){const u=safeUrl(url);if(u)return `<img src="${esc(u)}" alt="" style="width:26px;height:26px;object-fit:contain">`;const v=String(i||'')==='👑'?'+':String(i||'');return /^<i class="fa-(solid|brands|regular) fa-[a-z0-9-]{1,40}"><\/i>$/.test(v)?v:esc(v||'📦');}
 async function loadCats(){
   const el=document.getElementById('catsList');el.innerHTML=loading();initCatForm();
   try{
@@ -372,7 +397,7 @@ async function loadCats(){
     if(!rc.saved)el.innerHTML='<div class="pf-hint" style="margin-bottom:10px">هذه الأقسام الافتراضية التي يعرضها المتجر. أول تعديل أو إضافة تحفظها كلها معاً.</div>';
     allCats.forEach(cat=>{
       const card=document.createElement('div');card.className='adm-card';
-      card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:${esc(cat.bg||'#1c2a44')};font-size:20px">${catIco(cat.icon)}</div><div class="adm-card-info"><div class="adm-card-title">${san(cat.name)} | ${san(cat.nameEn||'')}</div><div class="adm-card-sub">ID: ${san(cat.id)} · ترتيب: ${esc(cat.order||0)}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${esc(cat.enabled?'checked':'')} onchange="toggleCat('${jsq(cat.id)}',this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="editCat('${jsq(cat.id)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-pen"></i> تعديل</button><button onclick="deleteCat('${jsq(cat.id)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
+      card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="background:${esc(cat.bg||'#1c2a44')};font-size:20px">${catIco(cat.icon,cat.iconUrl)}</div><div class="adm-card-info"><div class="adm-card-title">${san(cat.name)} | ${san(cat.nameEn||'')}</div><div class="adm-card-sub">ID: ${san(cat.id)} · ترتيب: ${esc(cat.order||0)}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${esc(cat.enabled?'checked':'')} onchange="toggleCat('${jsq(cat.id)}',this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="editCat('${jsq(cat.id)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-pen"></i> تعديل</button><button onclick="deleteCat('${jsq(cat.id)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
       el.appendChild(card);
     });
     const pf=document.getElementById('prodCatFilter');pf.innerHTML='<button class="filter-btn on" onclick="filterProds(\'all\',this)">الكل</button>';
@@ -381,7 +406,7 @@ async function loadCats(){
 }
 function editCat(id){
   const c=allCats.find(x=>x.id===id);if(!c)return;editingCat=id;
-  document.getElementById('newCatId').value=c.id;document.getElementById('newCatId').readOnly=true;document.getElementById('newCatName').value=c.name||'';document.getElementById('newCatNameEn').value=c.nameEn||'';document.getElementById('newCatIcon').value=c.icon||'';document.getElementById('newCatOrder').value=c.order||'';
+  document.getElementById('newCatId').value=c.id;document.getElementById('newCatId').readOnly=true;document.getElementById('newCatName').value=c.name||'';document.getElementById('newCatNameEn').value=c.nameEn||'';document.getElementById('newCatIcon').value=c.icon||'';document.getElementById('newCatIconUrl').value=c.iconUrl||'';document.getElementById('newCatOrder').value=c.order||'';
   const m=/^linear-gradient\(135deg,\s*(#[0-9a-f]{6}),\s*(#[0-9a-f]{6})\)$/i.exec(String(c.bg||''));
   document.getElementById('newCatC1').value=m?m[1]:'#203a43';document.getElementById('newCatC2').value=m?m[2]:'#2c5364';
   document.getElementById('catFormTitle').textContent='تعديل القسم: '+(c.name||id);document.getElementById('catSaveBtn').innerHTML='<i class="fa-solid fa-floppy-disk"></i> حفظ التعديل';catPrev();
@@ -399,7 +424,9 @@ async function addCat(){
       if(cats.find(c=>c.id===id)){aToast('المعرّف موجود مسبقاً','err');return;}
     }
     const order=parseInt(document.getElementById('newCatOrder').value)||(Math.max(0,...cats.map(c=>c.order||0))+1);
-    const rec={id:editingCat||id,name,nameEn:nameEn||name,icon:icon||'📦',bg:catGrad(),order};
+    const iconUrl=document.getElementById('newCatIconUrl').value.trim();
+    if(iconUrl&&!safeUrl(iconUrl)){aToast('رابط الصورة يجب أن يبدأ بـ https://','err');return;}
+    const rec={id:editingCat||id,name,nameEn:nameEn||name,icon:icon||'📦',iconUrl:iconUrl||'',bg:catGrad(),order};
     if(editingCat){const i=cats.findIndex(c=>c.id===editingCat);if(i<0){aToast('القسم لم يعد موجوداً','err');return;}cats[i]={...cats[i],...rec};}
     else cats.push({...rec,enabled:true});
     await db.collection('settings').doc('categories').set({categories:cats});
@@ -429,7 +456,7 @@ function renderProds(){
     const realIdx=allProds.indexOf(p);const card=document.createElement('div');card.className='adm-card';
     const valText=p.cur==='month'?`${p.val} شهر`:p.cur==='copy'?'نسخة':p.cur==='item'?(p.valText||'—'):`${p.val}${p.sym||''}`;
     const bgCls=p.img==='ps'?'prod-thumb-ps':p.img==='plus'?'prod-thumb-plus':'prod-thumb-game';
-    const ico=p.img==='ps'?'<i class="fa-brands fa-playstation"></i>':p.img==='plus'?'<i class="fa-solid fa-crown"></i>':'<i class="fa-solid fa-gamepad"></i>';
+    const ico=p.img==='ps'?'<i class="fa-brands fa-playstation"></i>':p.img==='plus'?'<b style="font-size:1.35em;line-height:1">+</b>':'<i class="fa-solid fa-gamepad"></i>';
     card.innerHTML=`<div class="adm-card-top"><div class="prod-thumb ${bgCls}">${p.imgUrl?`<img src="${esc(safeUrl(p.imgUrl))}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">`:ico}</div><div class="adm-card-info"><div class="adm-card-title">${san(p.name||'')} — ${esc(valText)}</div><div class="adm-card-sub">${san(p.sub||'')} · ${esc((p.priceDZD||0).toLocaleString())} دج</div><div class="adm-card-meta"><span>${esc(p.cat)}</span>${p.badge?`<span class="badge badge-info">${san(p.badge)}</span>`:''}</div></div><div class="toggle-wrap"><label class="toggle"><input type="checkbox" ${esc(p.stock!==false?'checked':'')} onchange="toggleStock(${esc(realIdx)},this.checked)"><span class="toggle-sl"></span></label></div></div><div class="adm-card-actions"><button onclick="editProd(${esc(realIdx)})" class="btn btn-o btn-sm"><i class="fa-solid fa-pen"></i> تعديل</button><button onclick="deleteProd(${esc(realIdx)})" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button></div>`;
     el.appendChild(card);
   });
@@ -937,19 +964,19 @@ async function deleteFAQ(idx){if(!confirm('حذف؟'))return;try{const d=await d
 
 /* ══ SEND CODE ══ */
 async function sendCodeManual(){
-  const orderId=document.getElementById('scOrderId').value.trim();const userId=document.getElementById('scUserId').value.trim();const product=document.getElementById('scProduct').value.trim();const code=document.getElementById('scCode').value.trim();const contact=document.getElementById('scContact').value.trim();
-  if(!code){aToast('أدخل الكود','err');return;}
-  const mp={code,product};
+  const orderId=document.getElementById('scOrderId').value.trim();const userId=document.getElementById('scUserId').value.trim();const product=document.getElementById('scProduct').value.trim();const codes=readCodes('scCode');const note=document.getElementById('scNote').value.trim().slice(0,200);const contact=document.getElementById('scContact').value.trim();
+  if(!codes)return;
+  const mp={codes,note,product};
   if(orderId)mp.orderId=orderId;else if(userId)mp.userId=userId;else if(contact.includes('@'))mp.to=contact;
   if(!mp.orderId&&!mp.userId&&!mp.to){aToast('أدخل رقم الطلب أو UID أو إيميل العميل','err');return;}
   try{
-    const notif=(userId||orderId)?{title:`${product||'طلبك جاهز'}`,code:`الكود: ${code}`,date:new Date().toLocaleDateString('ar'),until:codeUntil(),read:false}:null;
+    const notif=(userId||orderId)?{title:`${product||'طلبك جاهز'}`,code:codesNotice(codes,note),date:new Date().toLocaleDateString('ar'),until:codeUntil(),read:false}:null;
     if(orderId)await completeOrder(orderId,notif);
     else if(userId)await db.collection('users').doc(userId).update({notifications:firebase.firestore.FieldValue.arrayUnion(notif)});
     const m=await adminSendCode(mp);
-    await adminNotify(`✅ إرسال كود يدوي\n🎮 ${product}\n🔑 ${code}\n📧 ${contact}\n🆔 ${orderId||'—'}\n${m.ok?'✉️ أُرسل الإيميل إلى '+m.to:'⚠️ فشل الإيميل: '+m.error}`);
+    await adminNotify(`✅ إرسال كود يدوي\n🎮 ${product}\n🔑 ${codesTelegram(codes)}\n📧 ${contact}\n🆔 ${orderId||'—'}\n${m.ok?'✉️ أُرسل الإيميل إلى '+m.to:'⚠️ فشل الإيميل: '+m.error}`);
     if(!m.ok){aToast('تم تسجيل الكود لكن فشل الإيميل: '+m.error,'warn');return;}
-    aToast('تم الإرسال إلى '+m.to,'ok');['scOrderId','scUserId','scProduct','scCode','scContact'].forEach(i=>document.getElementById(i).value='');
+    aToast('تم الإرسال إلى '+m.to,'ok');['scOrderId','scUserId','scProduct','scCode','scNote','scContact'].forEach(i=>document.getElementById(i).value='');codeCount('scCode','scCount');
   }catch(e){aToast('خطأ: '+e.message,'err');}
 }
 
@@ -1010,9 +1037,15 @@ async function saveRegions(){
 
 /* ══ SETTINGS ══ */
 async function loadSettings2(){
-  try{const d=await db.collection('settings').doc('maintenance').get();if(d.exists)document.getElementById('maintenanceMode').checked=d.data().active||false;const t=await db.collection('settings').doc('ticker').get();if(t.exists)document.getElementById('tickerTxt').value=t.data().text||'';}catch(e){}
+  try{const d=await db.collection('settings').doc('maintenance').get();if(d.exists)document.getElementById('maintenanceMode').checked=d.data().active||false;document.getElementById('pointsOffMode').checked=d.data().pointsOff===true;const t=await db.collection('settings').doc('ticker').get();if(t.exists)document.getElementById('tickerTxt').value=t.data().text||'';}catch(e){}
 }
-async function toggleMaintenance(){const on=document.getElementById('maintenanceMode').checked;try{await db.collection('settings').doc('maintenance').set({active:on});aToast(on?'وضع الصيانة مفعّل':'الموقع متاح','ok');}catch(e){aToast('خطأ','err');}}
+async function togglePointsOff(){
+  const el=document.getElementById('pointsOffMode'),on=el.checked;
+  if(on&&!confirm('إيقاف نظام النقاط؟ لن تُمنح نقاط ولن يستبدل أحد مكافأة حتى تعيد تشغيله، والطلبات التي تُسلَّم أثناء الإيقاف لا تأخذ نقاطاً بأثر رجعي.')){el.checked=false;return;}
+  try{await db.collection('settings').doc('maintenance').set({pointsOff:on},{merge:true});aToast(on?'تم إيقاف نظام النقاط':'تم تشغيل نظام النقاط','ok');}
+  catch(e){el.checked=!on;aToast('تعذّر الحفظ: '+errCode(e),'err');}
+}
+async function toggleMaintenance(){const on=document.getElementById('maintenanceMode').checked;try{await db.collection('settings').doc('maintenance').set({active:on},{merge:true});aToast(on?'وضع الصيانة مفعّل':'الموقع متاح','ok');}catch(e){aToast('خطأ','err');}}
 async function resetVisitors(){if(!confirm('إعادة تعيين عداد الزيارات إلى صفر؟'))return;try{await db.collection('settings').doc('stats').set({visitors:0});aToast('تم إعادة التعيين','ok');}catch(e){aToast('خطأ','err');}}
 async function saveTicker(){const txt=document.getElementById('tickerTxt').value.trim();if(!txt){aToast('أدخل النص','err');return;}try{await db.collection('settings').doc('ticker').set({text:txt});aToast('تم حفظ النص','ok');}catch(e){aToast('خطأ','err');}}
 

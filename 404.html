@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
 <script>
 // Redirect Firebase auth action URLs (password reset, e-mail verification) to reset.html, everything else to index.html
 const p = new URLSearchParams(window.location.search);
