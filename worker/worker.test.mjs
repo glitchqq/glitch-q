@@ -76,7 +76,13 @@ globalThis.fetch = async (url, init = {}) => {
   if (url.includes('service_accounts/v1/jwk')) return J({ keys: [jwk] }, 200, { 'cache-control': 'public, max-age=3600' });
   if (url.includes('oauth2.googleapis.com/token')) return J({ access_token: 'tok' });
   if (url.includes('sendOobCode')) { const rt = JSON.parse(init.body).requestType; if (fs.failOob) return J({ error: { message: 'no' } }, 400); return J({ oobLink: 'https://glitch-q.firebaseapp.com/__/auth/action?mode=' + (rt === 'VERIFY_EMAIL' ? 'verifyEmail' : 'resetPassword') + '&oobCode=abc' }); }
-  if (url.includes('accounts:delete')) { if (fs.failAuthDel) return J({ error: { message: fs.failAuthDel } }, fs.failAuthDel === 'USER_NOT_FOUND' ? 400 : 403); fs.authDel.push(JSON.parse(init.body).localId); return J({}); }
+  if (url.includes('accounts:batchGet')) {
+    if (fs.failAuthList) return J({ error: { message: fs.failAuthList } }, 403);
+    const q = new URL(url).searchParams, max = Math.min(Number(q.get('maxResults')) || 100, fs.authPage || 1000), from = Number(q.get('nextPageToken')) || 0, all = fs.authUsers || [];
+    fs.batchGets = (fs.batchGets || 0) + 1;
+    return J({ users: all.slice(from, from + max), ...(from + max < all.length ? { nextPageToken: String(from + max) } : {}) });
+  }
+  if (url.includes('accounts:delete')) { if (fs.failAuthDel) return J({ error: { message: fs.failAuthDel } }, fs.failAuthDel === 'USER_NOT_FOUND' ? 400 : 403); const lid = JSON.parse(init.body).localId; fs.authDel.push(lid); if (fs.authUsers) fs.authUsers = fs.authUsers.filter(u => u.localId !== lid); return J({}); }
   if (url.includes('accounts:update')) return J({});
   if (url.includes('api.brevo.com')) { if (fs.failBrevo) return J({ message: 'no' }, 400); fs.brevo.push(JSON.parse(init.body)); return J({ messageId: 'm' }, 201); }
   if (url.includes('api.telegram.org')) {
@@ -181,7 +187,7 @@ function seed() {
 
 /* ───────── access control basics ───────── */
 seed();
-let [s, j] = await call('/health', null, { method: 'GET' }); ck('health ok', s === 200 && j.ok);
+let [s, j] = await call('/health', null, { method: 'GET' }); ck('health ok and reports Worker v13', s === 200 && j.ok && j.v === 13, JSON.stringify(j));
 [s] = await call('/health', null, { method: 'GET', origin: 'https://evil.example' }); ck('foreign Origin → 403', s === 403);
 [s] = await call('/health', null, { method: 'GET', origin: 'https://glitchqq.github.io.evil.com' }); ck('lookalike Origin (prefix attack) → 403', s === 403, s);
 [s] = await call('/health', null, { method: 'GET', origin: '' }); ck('no Origin → 403', s === 403, s);
@@ -304,6 +310,15 @@ for (const [i, u] of ['d', 'e'].entries()) put('users/' + u, { points: 600 - i, 
 ck('leaderboard: hidden user excluded, nick used', s === 200 && j.top.length === 5 && j.top[0].name === 'Zed' && !j.top.some(x => x.name.startsWith('Bob')), JSON.stringify(j));
 ck('leaderboard: reserved nickname ("Glitch Support") is replaced by the real first name + initial', j.top.some(x => x.name === 'Real P.') && !JSON.stringify(j).includes('Glitch'), JSON.stringify(j));
 ck('leaderboard: shows "First L." only; no email/uid/last name', j.top[1].name === 'Cara D.' && !JSON.stringify(j).includes('secret') && !JSON.stringify(j).includes('Doe'), JSON.stringify(j.top[1]));
+_bump();   // the board is cached for 60 s — move the Worker clock past it
+put('users/ghostA', { points: 5000, firstName: 'Ghost', lastName: 'Signup' });
+fs.authUsers = [{ localId: 'ghostA', email: 'ghost@x.com', emailVerified: false, createdAt: String(Date.now() - 5 * 3600000), providerUserInfo: [{ providerId: 'password' }] }];
+[s, j] = await call('/leaderboard', null, { method: 'GET' });
+ck('leaderboard: a sign-up that never clicked its activation link is NOT shown, even with the most points', s === 200 && !j.top.some(x => x.name.startsWith('Ghost')) && j.top[0].name === 'Zed', JSON.stringify(j.top));
+_bump(); fs.failAuthList = 'PERMISSION_DENIED';
+[s, j] = await call('/leaderboard', null, { method: 'GET' });
+ck('leaderboard: if Google refuses to list sign-ins the board still works (fail-open, as before)', s === 200 && j.top.length === 5, JSON.stringify([s, j.top && j.top.length]));
+fs.failAuthList = ''; fs.authUsers = []; fs.docs.delete('users/ghostA'); _bump();
 
 /* ───────── streak / spin / milestone ───────── */
 seed();
@@ -503,7 +518,7 @@ seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'OFFX', type: 'fixe
 seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'FULL', type: 'fixed', value: 300, active: true, featured: true, maxUses: 2, usedCount: 2 }] });
 [s, j] = await call('/offer', null, { method: 'GET' }); ck('offer: featured but fully used → ok:false', j.ok === false, JSON.stringify(j));
 { const ip = '9.9.9.9'; let last = 0; for (let i = 0; i < 70; i++) [last] = await call('/offer', null, { method: 'GET', ip }); ck('offer: per-IP rate limit', last === 429, last); }
-[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v12', j.v === 12, JSON.stringify(j));
+[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v13', j.v === 13, JSON.stringify(j));
 
 /* ───────── reset-password limiter, maintenance/ticker ───────── */
 seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { text: 'hello' });
@@ -891,6 +906,55 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
   [s, j] = await del({ uid: 'du3', confirm: 'du3@x.com' }); fs.failAuthDel = '';
   ck('delete user: a sign-in that is already gone counts as deleted', s === 200 && !get('users/du3'), JSON.stringify([s, j]));
   [s, j] = await del({ uid: 'nodoc1', confirm: 'nodoc1' }); ck('delete user: an orphan sign-in with no profile can be removed by typing its uid', s === 200 && fs.authDel.includes('nodoc1'), JSON.stringify([s, j]));
+
+  /* — sign-ups that were never activated: hide (list) and clean (purge) — */
+  seed(); fs.authDel = []; fs.tg = []; fs.failAuthList = ''; fs.failAuthDel = ''; fs.authPage = 0;
+  {
+    const H = 3600000, t0 = Date.now(), pw = [{ providerId: 'password' }];
+    const au = (id, email, o = {}) => ({ localId: id, email, emailVerified: false, createdAt: String(t0 - 48 * H), providerUserInfo: pw, ...o });
+    fs.authUsers = [
+      au('pv1', 'ok@x.com', { emailVerified: true }), au('pu1', 'old1@x.com'), au('pu2', 'old2@x.com', { createdAt: String(t0 - 30 * H) }),
+      au('pu3', 'fresh@x.com', { createdAt: String(t0 - 10 * 60000) }), au('pg1', 'g@x.com', { providerUserInfo: [{ providerId: 'google.com' }] }),
+      au('pd1', 'dis@x.com', { disabled: true }), au('padm', 'kadirom7k777@gmail.com'), au('pord', 'ord@x.com'),
+    ];
+    mkUser('pu1', 'old1@x.com'); mkUser('pord', 'ord@x.com', { orders: 2, totalSpend: 6000 }); mkUser('pv1', 'ok@x.com');
+    await reg('pu1', 'old1@x.com');
+    const un = async (o, t) => call('/admin/unverified', { idToken: t === undefined ? await adminTok() : t, ...o });
+    [s] = await un({ action: 'list' }, ''); ck('pending: no token → 401', s === 401, s);
+    [s] = await un({ action: 'list' }, await tok('u1')); ck('pending: an ordinary customer → 403', s === 403, s);
+    [s] = await un({ action: 'purge' }, await mk({ sub: 'adm', email: 'kadirom7k777@gmail.com', email_verified: true, firebase: { sign_in_provider: 'password' } })); ck('pending: the owner e-mail with a password login → 403 and nothing deleted', s === 403 && fs.authDel.length === 0, s);
+    [s] = await call('/admin/unverified', null, { method: 'GET' }); ck('pending: GET → 405 (or refused), never a listing', s === 405 || s === 403, s);
+    [s, j] = await un({ action: 'list' });
+    ck('pending list: only never-activated PASSWORD sign-ups are returned (not activated, Google, disabled, or the owner)', s === 200 && j.count === 4 && ['pu1', 'pu2', 'pu3', 'pord'].every(x => j.uids.includes(x)) && !['pv1', 'pg1', 'pd1', 'padm'].some(x => j.uids.includes(x)), JSON.stringify(j));
+    ck('pending list: counts the ones older than the retention (3 of 4; the 10-minute-old sign-up is still being activated) and masks addresses', j.old === 3 && j.sample.every(x => /^[a-z0-9]{1,2}\*+@|^.\*@/.test(x) && !x.includes('old1@')), JSON.stringify(j.sample));
+    [s, j] = await un({ action: 'purge', hours: 0 });
+    ck('purge: "0 hours" is raised to at least 1 hour — the fresh sign-up is never deleted', s === 200 && !fs.authDel.includes('pu3'), JSON.stringify([s, j, fs.authDel]));
+    const before = { pv1: !!get('users/pv1'), pord: !!get('users/pord') };
+    [s, j] = await un({ action: 'purge', hours: 24, except: [] });
+    ck('purge: deletes the stale sign-ups… ', fs.authDel.includes('pu2') && !get('users/pu1'), JSON.stringify([j, fs.authDel]));
+    ck('purge: …but never the fresh one, the activated one, Google, disabled, the owner, or a profile that has orders', !['pu3', 'pv1', 'pg1', 'pd1', 'padm', 'pord'].some(x => fs.authDel.includes(x)) && before.pord && !!get('users/pord') && before.pv1 && !!get('users/pv1'), JSON.stringify(fs.authDel));
+    ck('purge: the protected profile is reported (keptUids) so the panel does not retry it forever', j.kept === 1 && j.keptUids[0] === 'pord' && j.remaining === 0, JSON.stringify(j));
+    ck('purge: the inbox registry entry of the removed sign-up is freed (the real owner can register that address)', keys().every(k => get(k).uid !== 'pu1'), JSON.stringify(keys().map(k => get(k))));
+    ck('purge: an audit entry is written and the owner is told on Telegram', [...fs.docs.entries()].some(([k, d]) => k.startsWith('admin_log/') && D(d.fields.action) === 'purge-unverified') && fs.tg.some(x => x.text.includes('never-activated')), JSON.stringify(fs.tg.map(x => x.text)));
+    [s, j] = await un({ action: 'purge', hours: 24, except: ['pord'] });
+    ck('purge: calling again with the protected uid excluded finishes cleanly (nothing left to do)', s === 200 && j.deleted === 0 && j.remaining === 0, JSON.stringify(j));
+
+    /* batching: at most 8 per call, the panel repeats until remaining is 0; pages are followed */
+    fs.authDel = []; fs.authPage = 7;
+    fs.authUsers = Array.from({ length: 20 }, (_, i) => au('bulk' + i, 'b' + i + '@x.com')).concat([au('keepme', 'keep@x.com', { emailVerified: true })]);
+    [s, j] = await un({ action: 'purge', hours: 24 });
+    ck('purge: one call removes at most 8 and says how many remain (paged listing is followed)', s === 200 && j.deleted === 8 && j.remaining === 12 && fs.batchGets >= 3, JSON.stringify([j, fs.batchGets]));
+    let guard = 0; while (j.remaining > 0 && guard++ < 5) [s, j] = await un({ action: 'purge', hours: 24 });
+    ck('purge: repeating the call clears all 20 stale sign-ups and leaves the activated one', fs.authDel.length === 20 && fs.authUsers.length === 1 && fs.authUsers[0].localId === 'keepme', JSON.stringify([fs.authDel.length, fs.authUsers.length]));
+
+    /* failures are reported, never hidden */
+    fs.authPage = 0; fs.authUsers = [au('pf1', 'f1@x.com')]; mkUser('pf1', 'f1@x.com');
+    fs.failAuthList = 'PERMISSION_DENIED'; [s, j] = await un({ action: 'list' });
+    ck('pending: if Google refuses to list sign-ins → 502 auth_list_failed (the panel then shows everyone, as before)', s === 502 && j.error === 'auth_list_failed', JSON.stringify([s, j]));
+    fs.failAuthList = ''; fs.failAuthDel = 'PERMISSION_DENIED'; [s, j] = await un({ action: 'purge', hours: 24 });
+    ck('purge: if Google refuses to delete → 502 auth_delete_failed and the profile is kept', s === 502 && j.error === 'auth_delete_failed' && !!get('users/pf1'), JSON.stringify([s, j]));
+    fs.failAuthDel = ''; fs.authUsers = [];
+  }
 
   /* — notification e-mail — */
   seed(); fs.brevo = [];
