@@ -187,7 +187,7 @@ function seed() {
 
 /* ───────── access control basics ───────── */
 seed();
-let [s, j] = await call('/health', null, { method: 'GET' }); ck('health ok and reports Worker v13', s === 200 && j.ok && j.v === 13, JSON.stringify(j));
+let [s, j] = await call('/health', null, { method: 'GET' }); ck('health ok and reports Worker v14', s === 200 && j.ok && j.v === 14, JSON.stringify(j));
 [s] = await call('/health', null, { method: 'GET', origin: 'https://evil.example' }); ck('foreign Origin → 403', s === 403);
 [s] = await call('/health', null, { method: 'GET', origin: 'https://glitchqq.github.io.evil.com' }); ck('lookalike Origin (prefix attack) → 403', s === 403, s);
 [s] = await call('/health', null, { method: 'GET', origin: '' }); ck('no Origin → 403', s === 403, s);
@@ -319,6 +319,19 @@ _bump(); fs.failAuthList = 'PERMISSION_DENIED';
 [s, j] = await call('/leaderboard', null, { method: 'GET' });
 ck('leaderboard: if Google refuses to list sign-ins the board still works (fail-open, as before)', s === 200 && j.top.length === 5, JSON.stringify([s, j.top && j.top.length]));
 fs.failAuthList = ''; fs.authUsers = []; fs.docs.delete('users/ghostA'); _bump();
+/* a name the filter refuses is never shown publicly, whatever the browser wrote (the shop's own check can be bypassed from dev tools) */
+put('users/rude1', { points: 99999, nick: 'xXfuckXx', firstName: 'Ali', lastName: 'Ben' });
+put('users/rude2', { points: 99998, firstName: 'كسمك', lastName: 'Z' });
+put('users/rude3', { points: 99997, firstName: 'Samir', lastName: 'Trump' });
+put('users/fine1', { points: 99996, firstName: 'Monique', lastName: 'Dominique' });
+_bump();
+[s, j] = await call('/leaderboard', null, { method: 'GET' });
+ck('leaderboard: a refused nickname / first name / last name is replaced by "Player" (nothing rude is ever printed)', s === 200 && j.top.filter(x => x.name === 'Player').length === 3 && !/fuck|كسمك|Trump/i.test(JSON.stringify(j)), JSON.stringify(j.top));
+for (const u of ['rude1', 'rude2', 'rude3']) fs.docs.delete('users/' + u);
+_bump();
+[s, j] = await call('/leaderboard', null, { method: 'GET' });
+ck('leaderboard: an innocent name that only looks like a refused word (Monique) is shown normally', j.top.some(x => x.name === 'Monique D.'), JSON.stringify(j.top));
+fs.docs.delete('users/fine1'); _bump();
 
 /* ───────── streak / spin / milestone ───────── */
 seed();
@@ -518,7 +531,7 @@ seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'OFFX', type: 'fixe
 seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'FULL', type: 'fixed', value: 300, active: true, featured: true, maxUses: 2, usedCount: 2 }] });
 [s, j] = await call('/offer', null, { method: 'GET' }); ck('offer: featured but fully used → ok:false', j.ok === false, JSON.stringify(j));
 { const ip = '9.9.9.9'; let last = 0; for (let i = 0; i < 70; i++) [last] = await call('/offer', null, { method: 'GET', ip }); ck('offer: per-IP rate limit', last === 429, last); }
-[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v13', j.v === 13, JSON.stringify(j));
+[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v14', j.v === 14, JSON.stringify(j));
 
 /* ───────── reset-password limiter, maintenance/ticker ───────── */
 seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { text: 'hello' });
@@ -565,7 +578,8 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
 {
   const src = readFileSync(new URL('./worker.js', import.meta.url), 'utf8');
   const start = src.lastIndexOf('/* ═══', src.indexOf('function escHtml'));
-  const T = new Function(src.slice(start) + ';return {buildResetEmail,buildResetText,buildVerifyEmail,buildVerifyText,buildCodeEmail,buildCodeText,buildLoginAlertEmail,buildLoginAlertText,codeValidity,monthEndISO,arDays};')();
+  const nfBlock = src.match(/\/\* NAMEFILTER:BEGIN \*\/[\s\S]*?\/\* NAMEFILTER:END \*\//)[0] + "\nconst safeName = (s, fallback = '') => (NF.bad(s) ? fallback : s);\n";
+  const T = new Function(nfBlock + src.slice(start) + ';return {buildResetEmail,buildResetText,buildVerifyEmail,buildVerifyText,buildCodeEmail,buildCodeText,buildLoginAlertEmail,buildLoginAlertText,codeValidity,monthEndISO,arDays};')();
   const evil = '<img src=x onerror=alert(1)>"&';
   const link = 'https://glitchqq.github.io/glitch-q/reset.html?mode=resetPassword&oobCode=abc123';
   const reset = T.buildResetEmail(link), code = T.buildCodeEmail({ product: evil, code: 'AAAA-BBBB\n<b>CCCC</b>', orderId: evil });
@@ -591,6 +605,8 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
   ck('mail verify: link is in the button, the fallback and the text version', (verify.match(/href="https:\/\/glitchqq\.github\.io\/glitch-q\/reset\.html\?mode=verifyEmail&amp;oobCode=abc123"/g) || []).length === 2 && T.buildVerifyText(vlink, 'Ali').includes(vlink));
   ck('mail verify: Arabic copy — activate button, what happens next, "not you? ignore", never-ask-for-password promise', /تفعيل الحساب/.test(verify) && /ماذا بعد الضغط/.test(verify) && /لم تنشئ حساباً/.test(verify) && /لن نطلب منك كلمة المرور أبداً/.test(verify));
   ck('mail verify: the first name is escaped (no live markup)', !/<script>x/.test(verify) && /&lt;script&gt;x&lt;\/script&gt;Ali/.test(verify));
+  ck('mail verify: a refused name is not printed in the greeting (falls back to the plain greeting)', !/كسمك/.test(T.buildVerifyEmail(vlink, 'كسمك')) && !/fuck/i.test(T.buildVerifyEmail(vlink, 'fuck')) && !/أهلاً/.test(T.buildVerifyEmail(vlink, 'fuck')), 'greeting');
+  ck('mail verify: a normal name that merely resembles a refused word is still greeted', /Monique/.test(T.buildVerifyEmail(vlink, 'Monique')));
   ck('mail verify: works without a name too', /فعّل حسابك/.test(T.buildVerifyEmail(vlink, '')) && !/أهلاً/.test(T.buildVerifyEmail(vlink, '')));
   for (const [n, h] of Object.entries(all)) {
     ck(`mail ${n}: phone-safe card — fluid 100% width capped at 600px (a fixed width="600" table pushed the whole letter off-screen on Android)`, !/<table[^>]*width="600"/.test(h.replace(/<!--\[if mso\]>[\s\S]*?<!\[endif\]-->/g, '')) && /max-width:600px/.test(h) && /<!--\[if mso\]>/.test(h));
