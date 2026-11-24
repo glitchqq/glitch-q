@@ -398,7 +398,7 @@ async function confirmDelivery(){
   const rc=readCodes('cm');if(!rc)return;const{codes,vals,note}=rc;
   const{orderId,product,contact}=currentOrderForDelivery||{};if(!orderId)return;
   try{
-    const notif={title:`طلبك جاهز — ${product}`,code:codesNotice(codes,note,vals),date:new Date().toLocaleDateString('ar'),until:codeUntil(),read:false};
+    const notif={title:`طلبك جاهز — ${product} 🧾 فاتورتك متوفرة في حسابك`,code:codesNotice(codes,note,vals),date:new Date().toLocaleDateString('ar'),until:codeUntil(),read:false};
     await completeOrder(orderId,notif);
     allOrders=allOrders.map(o=>o.id===orderId?{...o,status:'done'}:o);renderOrders();
     const m=await adminSendCode({orderId,codes,note,product});
@@ -468,6 +468,41 @@ async function catIconPick(inp){
     if(!out)throw new Error('big');
     catIconData=out;document.getElementById('newCatIconUrl').value='';catIconShow();aToast('تم تجهيز الصورة — اضغط حفظ القسم','ok');
   }catch(e){aToast('تعذّر قراءة الصورة، جرّب صورة أخرى','err');inp.value='';}
+}
+/* ── Product picture: choose a file on the device → shrunk here → the Worker keeps it and answers with an https link (needs Worker v15), or paste a link ── */
+let pImgBusy=false;
+function prodImgShow(){
+  const box=document.getElementById('pfImgPrev');if(!box)return;
+  const u=safeUrl((document.getElementById('npImgUrl')||{value:''}).value.trim())||'';
+  box.innerHTML=u?`<img src="${esc(u)}" alt="" style="height:64px;width:64px;object-fit:cover;border-radius:10px"> <button type="button" class="btn btn-o" onclick="prodImgClear()">إزالة الصورة</button>`:'';
+}
+function prodImgClear(){document.getElementById('npImgUrl').value='';const f=document.getElementById('npImgFile');if(f)f.value='';prodImgShow();const st=document.getElementById('pfImgState');if(st)st.textContent='تمت إزالة الصورة — اضغط حفظ المنتج.';}
+async function prodImgPick(inp){
+  const f=inp.files&&inp.files[0];if(!f||pImgBusy)return;
+  const st=document.getElementById('pfImgState');
+  if(!/^image\/(png|jpeg|webp)$/.test(f.type)){aToast('اختر صورة PNG أو JPG أو WebP','err');inp.value='';return;}
+  if(f.size>12*1024*1024){aToast('الصورة كبيرة جداً (الحد 12 ميغابايت)','err');inp.value='';return;}
+  pImgBusy=true;if(st)st.textContent='جارٍ تجهيز الصورة ورفعها…';
+  try{
+    const bmp=await createImageBitmap(f);
+    let out='';
+    for(const [max,q] of [[720,.86],[640,.8],[560,.74],[480,.68],[400,.6],[320,.55]]){
+      const k=Math.min(1,max/Math.max(bmp.width,bmp.height)),w=Math.max(1,Math.round(bmp.width*k)),h=Math.max(1,Math.round(bmp.height*k));
+      const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(bmp,0,0,w,h);
+      let d=cv.toDataURL('image/webp',q);if(!d.startsWith('data:image/webp'))d=cv.toDataURL('image/jpeg',q);   // browsers without WebP encoding fall back to JPEG
+      if(d.length*0.75<=150*1024){out=d;break;}
+    }
+    if(!out)throw new Error('big');
+    const r=await adminWk('/admin/product-image',{data:out});
+    if(r.ok&&r.data&&typeof r.data.url==='string'&&/^https:\/\//.test(r.data.url)){
+      document.getElementById('npImgUrl').value=r.data.url;prodImgShow();
+      if(st)st.textContent='تم رفع الصورة ✓ — اضغط «حفظ المنتج» لتظهر في المتجر.';aToast('تم رفع الصورة — اضغط حفظ المنتج','ok');
+    }else{
+      const m=r.status===404||r.status===405?'الـWorker لا يدعم رفع الصور بعد — الصق نسخة v15 من worker.js في Cloudflare':r.status===403||r.status===401?'غير مصرّح — سجّل الدخول بحساب المالك':r.status===413?'الصورة ثقيلة حتى بعد التصغير — جرّب صورة أخرى':r.status===429?'محاولات كثيرة — انتظر قليلاً':'تعذّر رفع الصورة، حاول مرة أخرى';
+      if(st)st.textContent=m;aToast(m,'err');inp.value='';
+    }
+  }catch(e){if(st)st.textContent='تعذّر قراءة الصورة، جرّب صورة أخرى';aToast('تعذّر قراءة الصورة، جرّب صورة أخرى','err');inp.value='';}
+  finally{pImgBusy=false;}
 }
 async function loadCats(){
   const el=document.getElementById('catsList');el.innerHTML=loading();initCatForm();
@@ -595,7 +630,7 @@ function pfKind(k,keepValues){
   pfOpts($pf('npRegion'),PF_REGIONS.map(r=>[r,r]).concat([['__other','أخرى (اكتب)…']]),k==='game'?'— بدون —':'— اختر المنطقة —');
   $pf('pfNameLbl').textContent=k==='game'?'اسم اللعبة':k==='sub'?'اسم الاشتراك':k==='other'?'اسم المنتج':'اسم البطاقة';
   $pf('npName').placeholder=k==='game'?'EA SPORTS FC 26':k==='sub'?'PS Plus Essential':k==='other'?'مثال: بطاقة Netflix 15$':'PS Store Card';
-  $pf('pfImgLbl').textContent=k==='game'?'رابط غلاف اللعبة (مهم)':'رابط صورة مخصصة (اختياري)';
+  $pf('pfImgLbl').textContent=k==='game'?'غلاف اللعبة (مهم) — ارفع صورة أو ضع رابطاً':'صورة المنتج (اختياري)';
   $pf('pfPriceHint').textContent='';
   if(!keepValues){
     const want={card:'psstore',sub:'psplus',game:'games'}[k];if(want&&[...$pf('npCat').options].some(o=>o.value===want))$pf('npCat').value=want;pfCat();
@@ -629,7 +664,7 @@ function editProd(idx){
   pfKind(k,true);pf.editing=p.id;pf.idTouched=true;pf.nameTouched=true;pf.keepBadge=p.badge||'';
   pfFillCats();$pf('npCat').value=p.cat||$pf('npCat').value;
   $pf('npName').value=p.name||'';$pf('npId').value=p.id||'';$pf('npId').readOnly=true;
-  $pf('npDZD').value=p.priceDZD||'';$pf('npImgUrl').value=p.imgUrl||'';$pf('npDesc').value=p.desc||'';$pf('npDescEn').value=p.descEn||'';$pf('npStock').checked=p.stock!==false;
+  $pf('npDZD').value=p.priceDZD||'';$pf('npImgUrl').value=p.imgUrl||'';prodImgShow();$pf('npDesc').value=p.desc||'';$pf('npDescEn').value=p.descEn||'';$pf('npStock').checked=p.stock!==false;
   const setRegion=t=>{t=String(t||'');if(!t){$pf('npRegion').value='';}else if(PF_REGIONS.includes(t)){$pf('npRegion').value=t;}else{$pf('npRegion').value='__other';$pf('npRegionOther').value=t;}$pf('npRegionOther').classList.toggle('hidden',$pf('npRegion').value!=='__other');};
   if(k==='card'){setRegion(p.sub);$pf('npCur').value=PF_SYM[p.cur]?p.cur:'EUR';$pf('npSym').value=PF_SYM[$pf('npCur').value];$pf('npVal').value=p.val||'';}
   else if(k==='sub'){setRegion(p.sub);if(PF_TIERS.includes(p.badge))$pf('npTier').value=p.badge;if(PF_DURS.some(d=>d[0]===p.val))$pf('npDur').value=String(p.val);}
@@ -680,6 +715,7 @@ async function deleteProd(idx){if(!confirm('حذف هذا المنتج؟'))retur
 function clearProdForm(){
   pf={kind:null,editing:null,idTouched:false,nameTouched:false,keepBadge:''};
   ['npId','npName','npVal','npDZD','npImgUrl','npDesc','npDescEn','npRegionOther','npOtherVal','npOtherSub','npOtherBadge','npNewCatName','npNewCatNameEn','npNewCatIcon'].forEach(i=>{const e=$pf(i);if(e)e.value='';});
+  const _pif=$pf('npImgFile');if(_pif)_pif.value='';prodImgShow();
   $pf('npId').readOnly=false;$pf('npStock').checked=true;$pf('npRegion').value='';$pf('npRegionOther').classList.add('hidden');
   document.querySelectorAll('#pfKinds .pf-kind').forEach(b=>b.classList.remove('on'));$pf('pfBody').classList.add('hidden');
   $pf('pfTitle').textContent='إضافة منتج جديد';$pf('pfSaveBtn').innerHTML='<i class="fa-solid fa-floppy-disk"></i> حفظ المنتج';

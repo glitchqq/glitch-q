@@ -1293,3 +1293,17 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
   .lk-hdr{width:104px}
 }
 .b3-grid>*{min-width:0}                              /* a card must be allowed to shrink to a 280px (folded phone) screen instead of pushing past it */
+
+/* ═══ INVOICE (profile order list + invoice window) ═══ */
+.hi .hi-st{color:var(--mid);font-size:10.5px;white-space:nowrap}
+.hi .hi-inv{background:rgba(245,34,63,.14);border:1px solid var(--violet);color:var(--text);border-radius:3px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;margin-inline-start:8px}
+.hi .hi-inv:hover{background:rgba(245,34,63,.28)}
+.inv-box{max-width:520px;width:calc(100% - 24px);max-height:92vh;overflow-y:auto}
+.inv-prev{position:relative;margin:10px 0;border:1px solid var(--brd);border-radius:4px;overflow:hidden;background:#050507;min-height:120px}
+.inv-prev img{display:block;width:100%;height:auto}
+.inv-busy{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--mid);font-size:13px;pointer-events:none}
+.inv-acts{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.inv-acts .btn-p{flex:1;min-width:150px}
+.inv-lbl{display:block;font-size:12px;color:var(--mid);margin:10px 0 6px}
+.inv-msg{min-height:18px;margin-top:8px;font-size:12.5px;color:var(--text)}
+.inv-note{font-size:11px;color:var(--mid);margin:6px 0 0}
