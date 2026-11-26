@@ -15,7 +15,7 @@ else for (const f of ['points', 'rewardPool', 'refPoints', 'referrals', 'redeeme
 const create = /function validNewUser[\s\S]*?hasOnly\(\[([^\]]*)\]/.exec(rules);
 if (!create) bad.push('validNewUser not found');
 else for (const f of ['rewardPool', 'refPoints', 'redeemed', 'refRewarded']) if (create[1].includes(`'${f}'`)) bad.push(`a new account must not be able to start with "${f}"`);
-if (!/match \/\{document=\*\*\} \{\s*allow read, write: if isAdmin\(\);/.test(rules)) bad.push('catch-all must stay owner-only (order_econ, reward_claims rely on it)');
-for (const c of ['order_econ', 'reward_claims']) if (new RegExp(`match /${c}/`).test(rules)) bad.push(`${c} must not get its own (looser) rule`);
+if (!/match \/\{document=\*\*\} \{\s*allow read, write: if isAdmin\(\);/.test(rules)) bad.push('catch-all must stay owner-only (order_econ, reward_claims, admin_push (the push private key) rely on it)');
+for (const c of ['order_econ', 'reward_claims', 'admin_push']) if (new RegExp(`match /${c}/`).test(rules)) bad.push(`${c} must not get its own (looser) rule`);
 if (bad.length) { console.error('FAIL:\n - ' + bad.join('\n - ')); process.exit(1); }
-console.log('OK: economics, order_econ, reward_claims are owner-only; customers cannot create or edit points, reward pool, referral counters');
+console.log('OK: economics, order_econ, reward_claims, admin_push (push private key) are owner-only; customers cannot create or edit points, reward pool, referral counters');

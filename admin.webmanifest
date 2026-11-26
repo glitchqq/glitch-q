@@ -1,0 +1,17 @@
+{
+  "name": "Glitch Q — لوحة التحكم",
+  "short_name": "GQ Admin",
+  "description": "إشعارات الطلبات ولوحة تحكم المتجر",
+  "start_url": "admin.html#orders",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "lang": "ar",
+  "dir": "rtl",
+  "background_color": "#050507",
+  "theme_color": "#050507",
+  "icons": [
+    { "src": "assets/logo/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/logo/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

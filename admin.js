@@ -120,6 +120,7 @@ function switchTab(name){
   document.getElementById('topbarTitle').textContent=TAB_TITLES[name]||name;
   if(name==='dashboard')setTimeout(vzRedraw,30);
   if(name==='orders')loadOrders();
+  if(name==='settings')pushRefresh();
   if(name==='products'){loadCats();loadProds();}
   if(name==='coupons'){loadCoupons();loadDiscount();}
   if(name==='users')loadUsers();
@@ -140,6 +141,8 @@ setInterval(()=>{const t=document.getElementById('topbarTime');if(t)t.textConten
 async function initAdmin(){
   try{codesInit('sc');}catch(e){}
   await loadDashboard();
+  try{watchOrders();}catch(e){console.error(e);}
+  if(location.hash==='#orders')switchTab('orders');
   setInterval(()=>{if(document.visibilityState==='visible'&&document.getElementById('tab-dashboard').classList.contains('on'))loadDashboard();},300000);   /* the dashboard reads whole collections: refreshing every minute used up the free daily read quota */
 }
 async function refreshAll(){const on=document.querySelector('.tab-panel.on')?.id?.replace('tab-','');if(on)switchTab(on);else loadDashboard();aToast('تم التحديث','info');}
@@ -821,6 +824,146 @@ async function adminWk(path,payload){
     return{status:r.status,ok:r.ok&&j.ok!==false,data:j};
   }catch(e){return{status:0,ok:false,data:{}};}
 }
+/* ══ PHONE ALERTS (Web Push, needs Worker v16) + in-panel alarm ══
+   Phone: admin-sw.js shows the notification the Worker pushes for every new order (works with the panel closed).
+   Panel open: a database listener rings an alarm until it is silenced — it uses no push service and works on any browser. */
+const PUSH_OK='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+function pushBytes(s){s=String(s).replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return Uint8Array.from(atob(s),c=>c.charCodeAt(0));}
+function pushSame(a,b){if(!a||!b||a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(a[i]!==b[i])return false;return true;}
+function pushLabel(){const u=navigator.userAgent||'';const os=/iPhone|iPad|iPod/.test(u)?'iPhone':/Android/.test(u)?'Android':/Windows/.test(u)?'Windows':/Mac/.test(u)?'Mac':/Linux/.test(u)?'Linux':'';const br=/Edg\//.test(u)?'Edge':/Firefox\//.test(u)?'Firefox':/Chrome\//.test(u)?'Chrome':/Safari\//.test(u)?'Safari':'';return [os,br].filter(Boolean).join(' · ')||'جهاز';}
+async function pushSha(s){const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return Array.from(new Uint8Array(h)).map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,24);}   /* same id the Worker uses */
+async function pushReg(){
+  const reg=await navigator.serviceWorker.register('admin-sw.js',{scope:'./admin'});   /* "./admin" covers admin.html and /admin, and nothing of the store */
+  if(reg.active)return reg;
+  const sw=reg.installing||reg.waiting;
+  if(sw)await new Promise((res,rej)=>{const t=setTimeout(()=>rej(new Error('sw timeout')),15000);sw.addEventListener('statechange',()=>{if(sw.state==='activated'){clearTimeout(t);res();}else if(sw.state==='redundant'){clearTimeout(t);rej(new Error('sw redundant'));}});});
+  return reg;
+}
+async function pushLocalSub(){try{const reg=await navigator.serviceWorker.getRegistration('./admin');return reg?await reg.pushManager.getSubscription():null;}catch(e){return null;}}
+async function pushRefresh(){
+  const st=document.getElementById('pushState');if(!st)return;
+  const on=document.getElementById('pushOn'),off=document.getElementById('pushOff'),test=document.getElementById('pushTest'),devs=document.getElementById('pushDevs');
+  const btns=(a,b,c)=>{on.style.display=a?'':'none';off.style.display=b?'':'none';test.style.display=c?'':'none';};
+  try{document.getElementById('alarmOn').checked=localStorage.getItem('gq_alarm')!=='0';}catch(e){}
+  let here=null;
+  if(!PUSH_OK){
+    st.textContent=/iPhone|iPad|iPod/.test(navigator.userAgent)?'على iPhone يعمل فقط بعد «إضافة إلى الشاشة الرئيسية» (التعليمات أدناه) ثم فتح الأيقونة الجديدة.':'هذا المتصفح لا يدعم إشعارات الدفع. استخدم نسخة حديثة من Chrome أو Edge أو Firefox أو Safari.';
+    btns(false,false,false);devs.textContent='';return;
+  }
+  if(Notification.permission==='denied'){
+    st.textContent='الإشعارات محظورة لهذا الموقع في المتصفح: اضغط أيقونة القفل بجانب العنوان واسمح بالإشعارات ثم أعد تحميل الصفحة.';btns(false,false,false);
+  }else{
+    here=await pushLocalSub();
+    st.textContent=here?'مفعّلة على هذا الجهاز':'غير مفعّلة على هذا الجهاز';btns(!here,!!here,!!here);
+  }
+  const [r,k]=await Promise.all([adminWk('/admin/push',{action:'list'}),here?adminWk('/admin/push',{action:'key'}):Promise.resolve(null)]);
+  devs.textContent='';
+  if(!r.ok||!Array.isArray(r.data.devices)){if(r.status===404)st.textContent+=' — حدّث الـ Worker إلى v16 (ملف worker.js) ليعمل هذا الجزء.';return;}
+  const me=here?await pushSha(here.endpoint):'';
+  if(here){   /* this browser holds a subscription the server can no longer use: its key changed, or the server dropped it → offer to set it up again */
+    let stale=!r.data.devices.some(d=>d.id===me);
+    try{const cur=here.options&&here.options.applicationServerKey;if(k&&k.ok&&k.data.key&&cur&&!pushSame(new Uint8Array(cur),pushBytes(k.data.key)))stale=true;}catch(e){}
+    if(stale){st.textContent='هذا الجهاز بحاجة إلى إعادة التفعيل (لم يعد مسجّلاً عند الخادم) — اضغط «تفعيل».';btns(true,true,false);}
+  }
+  r.data.devices.forEach(d=>{
+    const row=document.createElement('div');row.className='push-dev';
+    const a=document.createElement('span');a.textContent=d.label||'جهاز';
+    const h=document.createElement('span');h.className='host';h.textContent=d.host||'';
+    row.appendChild(a);row.appendChild(h);
+    if(d.id===me){const m=document.createElement('span');m.className='me';m.textContent='هذا الجهاز';row.appendChild(m);}
+    devs.appendChild(row);
+  });
+}
+async function pushEnable(){
+  if(!PUSH_OK){pushRefresh();return;}
+  const b=document.getElementById('pushOn');b.disabled=true;
+  try{
+    const perm=await Notification.requestPermission();
+    if(perm!=='granted'){aToast('لم تسمح بالإشعارات','warn');return;}
+    const k=await adminWk('/admin/push',{action:'key'});
+    if(!k.ok||!k.data.key){aToast(k.status===404?'حدّث الـ Worker إلى v16 أولاً':'تعذّر تجهيز مفتاح الإشعارات','err');return;}
+    const key=pushBytes(k.data.key),reg=await pushReg();
+    let sub=await reg.pushManager.getSubscription();
+    if(sub){const cur=sub.options&&sub.options.applicationServerKey;if(!cur||!pushSame(new Uint8Array(cur),key)){await sub.unsubscribe();sub=null;}}   /* an old key (e.g. the Worker was reset) → start again */
+    if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
+    const j=sub.toJSON();
+    const r=await adminWk('/admin/push',{action:'subscribe',subscription:{endpoint:j.endpoint,keys:j.keys},label:pushLabel()});
+    if(!r.ok){try{await sub.unsubscribe();}catch(e){}aToast(r.status===409?'وصلت لحد 5 أجهزة، أوقف جهازاً قديماً أولاً':'تعذّر حفظ هذا الجهاز: '+(r.data.error||r.status),'err');return;}
+    aToast('تم التفعيل — جرّب الإشعار التجريبي','ok');
+  }catch(e){aToast('تعذّر التفعيل: '+errCode(e),'err');}
+  finally{b.disabled=false;pushRefresh();}
+}
+async function pushDisable(){
+  const sub=await pushLocalSub();
+  try{
+    if(sub){const r=await adminWk('/admin/push',{action:'unsubscribe',endpoint:sub.endpoint});if(!r.ok){aToast('تعذّر الإيقاف الآن، حاول مرة أخرى','err');return;}await sub.unsubscribe();}
+    aToast('أُوقفت الإشعارات على هذا الجهاز','info');
+  }catch(e){aToast('تعذّر الإيقاف: '+errCode(e),'err');}
+  pushRefresh();
+}
+async function pushTest(){
+  const b=document.getElementById('pushTest');b.disabled=true;
+  try{
+    const r=await adminWk('/admin/push',{action:'test'});
+    if(!r.ok){aToast(r.status===429?'محاولات كثيرة، انتظر قليلاً':'تعذّر إرسال التجربة','err');return;}
+    const d=r.data;
+    if(!d.devices)aToast('لا يوجد أي جهاز مفعّل','warn');
+    else if(d.sent===d.devices)aToast('أُرسل الإشعار إلى '+d.sent+' جهاز — يجب أن يصلك خلال ثوانٍ','ok');
+    else aToast('وصل '+d.sent+' من '+d.devices+' (الأكواد: '+(d.results||[]).map(x=>x.status).join('، ')+')','warn',6000);
+  }finally{b.disabled=false;pushRefresh();}
+}
+
+/* — alarm while the panel is open — */
+let _ac=null,_alTimer=null,_alN=0,_alTitle=null,_alFlash=null;const _alSeen=new Set();
+function alarmOn(){try{return localStorage.getItem('gq_alarm')!=='0';}catch(e){return true;}}
+function alarmPref(){try{localStorage.setItem('gq_alarm',document.getElementById('alarmOn').checked?'1':'0');}catch(e){}if(!alarmOn())alarmStop();}
+function alarmCtx(){try{if(!_ac){const C=window.AudioContext||window.webkitAudioContext;if(C)_ac=new C();}if(_ac&&_ac.state==='suspended')_ac.resume();}catch(e){}return _ac;}
+['click','keydown','touchstart'].forEach(ev=>document.addEventListener(ev,()=>alarmCtx(),{passive:true}));   /* browsers only allow sound after a tap: any tap on the panel unlocks it */
+function alarmBeep(ac,t0,f,d){const o=ac.createOscillator(),g=ac.createGain();o.type='sine';o.frequency.value=f;g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(0.4,t0+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t0+d);o.connect(g);g.connect(ac.destination);o.start(t0);o.stop(t0+d+0.05);}
+function alarmPlay(){const ac=alarmCtx();if(!ac||ac.state!=='running')return false;const t=ac.currentTime+0.05;[880,1175,880,1175,1568].forEach((f,i)=>alarmBeep(ac,t+i*0.22,f,0.18));return true;}
+function alarmTry(){if(!alarmPlay())aToast('اضغط أي مكان في الصفحة ثم أعد المحاولة (المتصفح يمنع الصوت قبل اللمس)','warn');}
+function alarmStart(text){
+  alarmStop();
+  document.getElementById('alarmTxt').textContent=text;document.getElementById('alarmBar').classList.add('on');
+  if(_alTitle===null)_alTitle=document.title;
+  let on=false;_alFlash=setInterval(()=>{on=!on;document.title=on?'🔔 طلب جديد!':_alTitle;},900);
+  if(!alarmOn())return;
+  _alN=0;const tick=()=>{alarmPlay();if(++_alN>=10)clearInterval(_alTimer);};   /* about 40 seconds, then it stays silent but the bar remains */
+  tick();_alTimer=setInterval(tick,4000);
+}
+function alarmStop(){
+  clearInterval(_alTimer);_alTimer=null;clearInterval(_alFlash);_alFlash=null;
+  if(_alTitle!==null){document.title=_alTitle;_alTitle=null;}
+  const b=document.getElementById('alarmBar');if(b)b.classList.remove('on');
+}
+function alarmOpen(){alarmStop();switchTab('orders');try{window.focus();}catch(e){}}
+function orderAlert(id,text,count){
+  if(id){if(_alSeen.has(id))return;_alSeen.add(id);}
+  const badge=document.getElementById('sbPendingBadge');if(badge)badge.textContent=(parseInt(badge.textContent,10)||0)+(count||1);
+  if(document.getElementById('tab-orders').classList.contains('on'))loadOrders();
+  alarmStart(text);aToast('طلب جديد: '+text,'info',6000);
+}
+let _ordUnsub=null,_ordSeen=null;
+function watchOrders(){
+  if(_ordUnsub)return;
+  _ordUnsub=db.collection('orders').orderBy('ts','desc').limit(8).onSnapshot(snap=>{
+    if(_ordSeen===null){_ordSeen=new Set(snap.docs.map(d=>d.id));return;}   /* the first snapshot is just "what is already there" */
+    const fresh=[];
+    snap.docChanges().forEach(c=>{
+      if(c.type!=='added'||_ordSeen.has(c.doc.id)||c.doc.metadata.hasPendingWrites)return;
+      const o=c.doc.data(),ms=o.ts&&o.ts.toMillis?o.ts.toMillis():0;
+      if(o.status==='pending'&&ms>Date.now()-600000)fresh.push({id:c.doc.id,o});   /* an old order sliding into view (after a delete) is not news */
+    });
+    snap.docs.forEach(d=>_ordSeen.add(d.id));
+    if(fresh.length){const f=fresh[0].o;orderAlert(fresh[0].id,(fresh.length>1?fresh.length+' طلبات جديدة — ':'')+String(f.product||'').slice(0,80)+' · '+(Number(f.totalDZD)||0).toLocaleString()+' دج',fresh.length);}
+  },e=>{console.error('orders watch',e);_ordUnsub=null;});
+}
+if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('message',ev=>{
+  const m=ev.data;if(!m||typeof m!=='object')return;
+  if(m.t==='push'&&m.kind==='order')orderAlert(String(m.oid||''),String(m.title||'طلب جديد').replace(/^🛒\s*/,'').slice(0,120),1);
+  if(m.t==='open-orders')alarmOpen();
+});
+
 /* ── Sign-ups that never clicked their activation link are not customers: kept out of the list and the counts (needs Worker v13) ── */
 let _pend=null,_pendAt=0;
 async function loadPendingAccounts(force){
