@@ -68,7 +68,7 @@ export default {
 
     try {
       const routes = {
-        '/health':                 () => json({ ok: true, v: 15 }, 200, cors),
+        '/health':                 () => json({ ok: true, v: 16 }, 200, cors),
         '/maintenance':            () => handleMaintenance(request, env, cors),
         '/ticker':                 () => handleTicker(request, env, cors),
         '/stats/visit':            () => handleVisit(request, env, cors),
@@ -77,7 +77,7 @@ export default {
         '/leaderboard':            () => handleLeaderboard(request, env, cors),
         '/coupon/validate':        () => handleCouponValidate(request, env, cors),
         '/offer':                  () => handleOffer(request, env, cors),
-        '/order/create':           () => handleOrderCreate(request, env, cors),
+        '/order/create':           () => handleOrderCreate(request, env, cors, ctx),
         '/order/track':            () => handleOrderTrack(request, env, cors),
         '/report/create':          () => handleReportCreate(request, env, cors),
         '/rating/create':          () => handleRatingCreate(request, env, cors),
@@ -99,6 +99,7 @@ export default {
         '/admin/unverified':       () => handleAdminUnverified(request, env, cors),
         '/admin/notify-email':     () => handleAdminNotifyEmail(request, env, cors),
         '/admin/product-image':    () => handleAdminProductImage(request, env, cors),
+        '/admin/push':             () => handleAdminPush(request, env, cors),
         '/account/invoice-email':  () => handleInvoiceEmail(request, env, cors),
         '/account/claim-email':    () => handleClaimEmail(request, env, cors),
         '/account/check-email':    () => handleCheckEmail(request, env, cors),
@@ -519,7 +520,7 @@ async function handleOffer(request, env, cors) {
    CREATE ORDER — price, coupon, receipt and notification are all handled here
 ═══════════════════════════════════════ */
 const RECEIPT_MAX_BYTES = 700 * 1024;   // Firestore documents are limited to 1 MiB
-async function handleOrderCreate(request, env, cors) {
+async function handleOrderCreate(request, env, cors, ctx) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
   const ip = clientIp(request);
   if (hit('ord:' + ip, 6, 600000)) return json({ error: 'Too many requests' }, 429, cors);
@@ -630,6 +631,15 @@ async function handleOrderCreate(request, env, cors) {
     await fsCommit(env, [fsWrite(env, `orders/${oid}`, { delete: true }), fsWrite(env, `order_receipts/${oid}`, { delete: true })]);
     await releaseCoupon(env, couponUsed);
     return json({ error: 'Could not notify the store, please try again' }, 502, cors);
+  }
+  // the owner's phone: sound + details (best effort, after the answer is on its way; the customer never waits for it or sees its failure)
+  if (ctx && typeof ctx.waitUntil === 'function') {
+    ctx.waitUntil(pushAdmin(env, {
+      t: 'order', oid,
+      title: `🛒 طلب جديد · ${total.toLocaleString('en-US')} دج`,
+      body: `${priced.label.slice(0, 140)}\n${pay === 'baridimob' ? '💳 BaridiMob' : '🤝 تسليم باليد'}${couponUsed ? ' · 🎟️ ' + couponUsed : ''}`,
+      tag: 'gq-order-' + oid,
+    }));
   }
   return json({ ok: true, orderId: oid, total, product: priced.label }, 200, cors);
 }
@@ -922,6 +932,155 @@ async function handleInvoiceEmail(request, env, cors) {
   const r = await sendBrevo(env, { to, subject: `فاتورة طلبك | Glitch Q`, html: buildInvoiceEmail(inv), text: buildInvoiceText(inv) });
   if (!r.ok) return json({ error: 'Could not send the e-mail' }, 502, cors);
   return json({ ok: true }, 200, cors);
+}
+
+/* ═══════════════════════════════════════
+   OWNER PHONE ALERTS — Web Push (RFC 8030 delivery, RFC 8292 VAPID, RFC 8291 message encryption)
+   A new order wakes the owner's phone with the system notification sound, even when the panel is closed.
+   · the VAPID key pair is made once by the Worker and kept in admin_push/_vapid (the database's catch-all rule = owner only)
+   · each phone/browser the owner enables is one document admin_push/<hash of its endpoint> (at most PUSH_MAX_DEVICES)
+   · the message is encrypted for that device only: the push service (Google / Apple / Mozilla / Microsoft) relays bytes it cannot read
+   · it carries the order id, product, total and payment method — never a customer's name, phone or e-mail
+   · it is best effort: an order never fails because a push failed (Telegram stays the guaranteed channel)
+═══════════════════════════════════════ */
+const PUSH_MAX_DEVICES = 5;
+// only the real push services — the Worker never POSTs to an address the caller chose freely
+const RE_PUSH_HOST = /^(?:fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|(?:[a-z0-9-]+\.)*push\.apple\.com|(?:[a-z0-9-]+\.)*notify\.windows\.com)$/;
+function pushEndpointOk(ep) {
+  if (typeof ep !== 'string' || ep.length > 800) return false;
+  let u; try { u = new URL(ep); } catch { return false; }
+  return u.protocol === 'https:' && !u.port && !u.username && !u.password && RE_PUSH_HOST.test(u.hostname);
+}
+const u8b64u = u8 => bytesToB64(u8).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+const u8cat = (...parts) => { const o = new Uint8Array(parts.reduce((n, p) => n + p.length, 0)); let i = 0; for (const p of parts) { o.set(p, i); i += p.length; } return o; };
+
+let _vapid = null;
+async function pushKeys(env, create) {
+  if (_vapid) return _vapid;
+  const d = await fsGet(env, 'admin_push/_vapid');
+  let rec = d.exists && d.data.d && d.data.x && d.data.y ? d.data : null;
+  if (!rec && create) {
+    const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+    const j = await crypto.subtle.exportKey('jwk', kp.privateKey);
+    const fresh = { d: j.d, x: j.x, y: j.y };
+    const w = await fsCommit(env, [fsWrite(env, 'admin_push/_vapid', { fields: fresh, transforms: { serverTime: ['ts'] }, precondition: { exists: false } })]);
+    if (w.ok) rec = fresh;
+    else { const again = await fsGet(env, 'admin_push/_vapid'); if (again.exists && again.data.d) rec = again.data; }   // another request made it first
+  }
+  if (!rec) return null;
+  const priv = await crypto.subtle.importKey('jwk', { kty: 'EC', crv: 'P-256', d: rec.d, x: rec.x, y: rec.y, ext: true }, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const pub = new Uint8Array(65); pub[0] = 4; pub.set(b64urlToBytes(rec.x), 1); pub.set(b64urlToBytes(rec.y), 33);
+  _vapid = { priv, pubB64: u8b64u(pub) };
+  return _vapid;
+}
+
+// RFC 8291 "aes128gcm": one record, no padding (the last-record delimiter 0x02 is the only extra byte)
+async function pushEncrypt(sub, payload) {
+  const uaPub = b64urlToBytes(sub.p256dh), auth = b64urlToBytes(sub.auth);
+  if (uaPub.length !== 65 || uaPub[0] !== 4 || auth.length !== 16) throw new Error('bad subscription keys');
+  const te = new TextEncoder();
+  const eph = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const asPub = new Uint8Array(await crypto.subtle.exportKey('raw', eph.publicKey));
+  const uaKey = await crypto.subtle.importKey('raw', uaPub, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const secret = await crypto.subtle.importKey('raw', await crypto.subtle.deriveBits({ name: 'ECDH', public: uaKey }, eph.privateKey, 256), 'HKDF', false, ['deriveBits']);
+  const ikm = await crypto.subtle.importKey('raw', await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: auth, info: u8cat(te.encode('WebPush: info\0'), uaPub, asPub) }, secret, 256), 'HKDF', false, ['deriveBits']);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const cek = await crypto.subtle.importKey('raw', await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info: te.encode('Content-Encoding: aes128gcm\0') }, ikm, 128), 'AES-GCM', false, ['encrypt']);
+  const nonce = await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info: te.encode('Content-Encoding: nonce\0') }, ikm, 96);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, cek, u8cat(payload, Uint8Array.of(2))));
+  const head = new Uint8Array(21); head.set(salt); new DataView(head.buffer).setUint32(16, 4096); head[20] = 65;
+  return u8cat(head, asPub, ct);
+}
+
+// RFC 8292: a short-lived signed token that names the push service, so it knows which server is calling
+async function vapidHeader(env, endpoint) {
+  const k = await pushKeys(env, true);
+  if (!k) throw new Error('no vapid key');
+  const h = b64url({ typ: 'JWT', alg: 'ES256' });
+  const c = b64url({ aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: 'mailto:' + ADMIN_EMAIL });
+  const sig = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, k.priv, new TextEncoder().encode(h + '.' + c)));   // raw r||s = what ES256 wants
+  return `vapid t=${h}.${c}.${u8b64u(sig)}, k=${k.pubB64}`;
+}
+
+async function pushSubs(env) {
+  const rows = await fsQuery(env, 'admin_push', { limit: PUSH_MAX_DEVICES + 5 });
+  return rows.filter(r => r.id !== '_vapid' && pushEndpointOk(r.data.endpoint) && r.data.p256dh && r.data.auth).slice(0, PUSH_MAX_DEVICES + 5)
+    .map(r => ({ id: r.id, endpoint: r.data.endpoint, p256dh: r.data.p256dh, auth: r.data.auth, label: String(r.data.label || ''), ts: r.data.ts || null }));
+}
+
+async function pushSendOne(env, sub, bytes, ttl) {
+  const host = new URL(sub.endpoint).hostname;
+  try {
+    const r = await fetch(sub.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', 'TTL': String(ttl), 'Urgency': 'high', 'Authorization': await vapidHeader(env, sub.endpoint) },
+      body: await pushEncrypt(sub, bytes),
+    });
+    if (r.status === 404 || r.status === 410) return { id: sub.id, host, status: r.status, ok: false, gone: true };   // the device unsubscribed or was uninstalled
+    if (!r.ok) console.error('PUSH_ERROR host=' + host + ' status=' + r.status);
+    return { id: sub.id, host, status: r.status, ok: r.ok, gone: false };
+  } catch (e) { console.error('PUSH_FAIL host=' + host + ' ' + e.message); return { id: sub.id, host, status: 0, ok: false, gone: false }; }
+}
+
+// msg: { t, title, body, oid?, tag? } → every enabled device. Never throws.
+async function pushAdmin(env, msg, ttl = 6 * 3600) {
+  try {
+    const subs = await pushSubs(env);
+    if (!subs.length) return { sent: 0, failed: 0, devices: 0, results: [] };
+    const bytes = new TextEncoder().encode(JSON.stringify(msg));
+    if (bytes.length > 3000) return { sent: 0, failed: subs.length, devices: subs.length, results: [] };
+    const results = await Promise.all(subs.map(s => pushSendOne(env, s, bytes, ttl)));
+    const dead = results.filter(r => r.gone);
+    if (dead.length) await fsCommit(env, dead.map(r => fsWrite(env, `admin_push/${r.id}`, { delete: true })));
+    return { sent: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, devices: subs.length, results };
+  } catch (e) { console.error('PUSH_ALL_FAIL ' + e.message); return { sent: 0, failed: 0, devices: 0, results: [], error: true }; }
+}
+
+// POST /admin/push { idToken, action: key | subscribe | unsubscribe | list | test }
+async function handleAdminPush(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  const body = await readJson(request, 4096);
+  if (!body) return json({ error: 'Invalid data' }, 400, cors);
+  const a = await who(body.idToken, env, cors, false);
+  if (a.err) return a.err;
+  if (!isAdminClaims(a.claims, env)) return json({ error: 'Forbidden' }, 403, cors);
+  if (hit('apush', 60, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+  const act = String(body.action || '');
+  try {
+    if (act === 'key') {
+      const k = await pushKeys(env, true);
+      if (!k) return json({ error: 'Could not prepare the key' }, 503, cors);
+      return json({ ok: true, key: k.pubB64 }, 200, cors);
+    }
+    if (act === 'list') {
+      const subs = await pushSubs(env);
+      return json({ ok: true, max: PUSH_MAX_DEVICES, devices: subs.map(s => ({ id: s.id, host: new URL(s.endpoint).hostname, label: s.label })) }, 200, cors);
+    }
+    if (act === 'subscribe' || act === 'unsubscribe') {
+      const s = body.subscription || {};
+      const endpoint = act === 'subscribe' ? s.endpoint : (body.endpoint || s.endpoint);
+      if (!pushEndpointOk(endpoint)) return json({ error: 'Unsupported push service' }, 400, cors);
+      const id = (await sha256Hex(endpoint)).slice(0, 24);
+      if (act === 'unsubscribe') {
+        const w = await fsCommit(env, [fsWrite(env, `admin_push/${id}`, { delete: true })]);
+        return w.ok ? json({ ok: true }, 200, cors) : json({ error: 'Could not remove it' }, 503, cors);
+      }
+      const keys = s.keys || {};
+      let okKeys = false;
+      try { okKeys = typeof keys.p256dh === 'string' && typeof keys.auth === 'string' && b64urlToBytes(keys.p256dh).length === 65 && b64urlToBytes(keys.auth).length === 16; } catch { okKeys = false; }
+      if (!okKeys) return json({ error: 'Invalid subscription' }, 400, cors);
+      const others = (await pushSubs(env)).filter(x => x.id !== id);
+      if (others.length >= PUSH_MAX_DEVICES) return json({ error: 'Too many devices — remove one first' }, 409, cors);
+      const w = await fsCommit(env, [fsWrite(env, `admin_push/${id}`, { fields: { endpoint, p256dh: keys.p256dh, auth: keys.auth, label: cleanText(body.label, 60) }, transforms: { serverTime: ['ts'] } })]);
+      return w.ok ? json({ ok: true, id }, 200, cors) : json({ error: 'Could not save it' }, 503, cors);
+    }
+    if (act === 'test') {
+      if (hit('apush-test', 12, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+      const r = await pushAdmin(env, { t: 'test', title: '✅ Glitch Q', body: 'الإشعارات تعمل — هكذا سيصلك كل طلب جديد.', tag: 'gq-test' }, 300);
+      return json({ ok: true, devices: r.devices, sent: r.sent, failed: r.failed, results: r.results.map(x => ({ host: x.host, status: x.status })) }, 200, cors);
+    }
+  } catch (e) { console.error('ADMIN_PUSH_FAIL ' + e.message); return json({ error: 'Internal error' }, 500, cors); }
+  return json({ error: 'Unknown action' }, 400, cors);
 }
 
 /* ═══════════════════════════════════════
