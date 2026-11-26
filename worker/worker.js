@@ -50,6 +50,8 @@ export default {
     // The "unsubscribe" link in a newsletter is opened by a mail app or the reader's browser, which carry no allowed Origin.
     // It is protected by a signed token (unsubToken) and its own limiter instead, and answers with a plain page.
     if (new URL(request.url).pathname === '/newsletter/unsubscribe') return handleUnsubscribe(request, env);
+    // Pictures of products are plain <img> loads (no Origin header): public, read-only, one id at a time, with its own limiter
+    if (new URL(request.url).pathname.startsWith('/img/')) return handleImage(request, env);
     // The Origin header only filters browsers (scripts can forge it), so it is never the
     // only protection: every route below validates its input and checks a verified token.
     if (!allowed) {
@@ -66,7 +68,7 @@ export default {
 
     try {
       const routes = {
-        '/health':                 () => json({ ok: true, v: 14 }, 200, cors),
+        '/health':                 () => json({ ok: true, v: 15 }, 200, cors),
         '/maintenance':            () => handleMaintenance(request, env, cors),
         '/ticker':                 () => handleTicker(request, env, cors),
         '/stats/visit':            () => handleVisit(request, env, cors),
@@ -96,6 +98,8 @@ export default {
         '/admin/delete-user':      () => handleAdminDeleteUser(request, env, cors),
         '/admin/unverified':       () => handleAdminUnverified(request, env, cors),
         '/admin/notify-email':     () => handleAdminNotifyEmail(request, env, cors),
+        '/admin/product-image':    () => handleAdminProductImage(request, env, cors),
+        '/account/invoice-email':  () => handleInvoiceEmail(request, env, cors),
         '/account/claim-email':    () => handleClaimEmail(request, env, cors),
         '/account/check-email':    () => handleCheckEmail(request, env, cors),
       };
@@ -773,6 +777,151 @@ async function handleLeaderboard(request, env, cors) {
   }
   _lb = top; _lbExp = Date.now() + 60000;
   return json({ ok: true, top }, 200, cors);
+}
+
+/* ═══════════════════════════════════════
+   PRODUCT PICTURES — the owner uploads a picture from his device; each one is kept in its own Firestore document
+   (product_images/<id>, owner/Worker only by the catch-all rule) and served from here at GET /img/<id> with a one-year cache.
+   The id is the hash of the bytes: the same picture is stored once, and an id can never be guessed to read anything else.
+═══════════════════════════════════════ */
+const IMG_MAX_BYTES = 190 * 1024;                       // the panel shrinks pictures before sending (≈ 60–150 KB); a Firestore document holds 1 MiB
+const RE_IMG_ID = /^[a-f0-9]{24}$/;
+const _imgCache = new Map();                            // id → {type, bytes, exp}: saves a database read per request inside one Worker instance
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+async function handleAdminProductImage(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  const body = await readJson(request, IMG_MAX_BYTES * 2);
+  if (!body) return json({ error: 'Invalid data or too large' }, 400, cors);
+  const a = await who(body.idToken, env, cors, false);
+  if (a.err) return a.err;
+  if (!isAdminClaims(a.claims, env)) return json({ error: 'Forbidden' }, 403, cors);
+  if (hit('pimg', 40, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+  const m = /^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(String(body.data || ''));
+  if (!m) return json({ error: 'Invalid picture' }, 400, cors);
+  let bytes;
+  try { bytes = b64ToBytes(m[1]); } catch { return json({ error: 'Invalid picture' }, 400, cors); }
+  if (bytes.length < 200 || bytes.length > IMG_MAX_BYTES) return json({ error: 'Picture too large (max 190 KB after shrinking)' }, 413, cors);
+  const type = sniffImage(bytes);                       // the real bytes decide, not the label the browser put on them
+  if (!type) return json({ error: 'Invalid picture' }, 400, cors);
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  const id = [...h.slice(0, 12)].map(x => x.toString(16).padStart(2, '0')).join('');
+  const w = await fsCommit(env, [fsWrite(env, `product_images/${id}`, { fields: { mime: type, size: bytes.length, b64: bytesToB64(bytes) }, transforms: { serverTime: ['ts'] } })]);
+  if (!w.ok) return json({ error: 'Could not save the picture' }, 503, cors);
+  return json({ ok: true, id, url: `${new URL(request.url).origin}/img/${id}`, size: bytes.length }, 200, cors);
+}
+// public: <img> tags send no Origin header, so this is answered before the Origin filter (like the unsubscribe link); nothing but one picture can be read
+async function handleImage(request, env) {
+  const base = { 'Access-Control-Allow-Origin': '*', 'Cross-Origin-Resource-Policy': 'cross-origin', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'" };
+  if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed', { status: 405, headers: base });
+  const id = new URL(request.url).pathname.slice(5);
+  if (!RE_IMG_ID.test(id)) return new Response('Not found', { status: 404, headers: base });
+  if (hit('img:' + clientIp(request), 240, 60000)) return new Response('Too many requests', { status: 429, headers: base });
+  let hitc = _imgCache.get(id);
+  if (!hitc || hitc.exp < Date.now()) {
+    let d;
+    try { d = await fsGet(env, `product_images/${id}`); } catch { return new Response('Try again', { status: 503, headers: base }); }
+    if (!d.exists || typeof d.data.b64 !== 'string') return new Response('Not found', { status: 404, headers: base });
+    const bytes = b64ToBytes(d.data.b64);
+    const type = sniffImage(bytes);
+    if (!type) return new Response('Not found', { status: 404, headers: base });
+    hitc = { type, bytes, exp: Date.now() + 600000 };
+    if (_imgCache.size >= 24) _imgCache.delete(_imgCache.keys().next().value);
+    _imgCache.set(id, hitc);
+  }
+  return new Response(request.method === 'HEAD' ? null : hitc.bytes, { status: 200, headers: { ...base, 'Content-Type': hitc.type, 'Content-Length': String(hitc.bytes.length), 'Cache-Control': 'public, max-age=31536000, immutable' } });
+}
+
+/* ═══════════════════════════════════════
+   INVOICES — for an order that has been delivered (status "done"). The page draws the invoice itself from the customer's own order
+   (invoice.js); this route is only the e-mail copy, built here from the stored order, never from anything the browser sends.
+   The delivered gift codes are NEVER printed on an invoice (anyone who sees a shared invoice could spend them).
+═══════════════════════════════════════ */
+const INVOICE_MAILS_PER_DAY = 60;                       // shared Brevo quota (~300/day): order codes and resets keep the rest
+const invMaskEmail = (e) => { const s = String(e || ''); const at = s.lastIndexOf('@'); return at < 1 ? '' : s.slice(0, Math.min(2, at)) + '***' + s.slice(at); };
+const maskPhone = (p) => { const d = String(p || '').replace(/\D/g, ''); return d.length < 4 ? '' : '*'.repeat(Math.max(3, d.length - 3)) + d.slice(-3); };
+const PAY_LABEL = { baridimob: 'BaridiMob', hand: 'Cash — hand delivery' };
+function buildInvoiceData(oid, o, u, cat, accountEmail) {
+  const prods = new Map((cat.products || []).map(p => [String(p.id), p]));
+  const lines = (Array.isArray(o.items) ? o.items : []).slice(0, 40).map(l => {
+    const p = prods.get(String(l.id)) || {};
+    const qty = Math.max(1, Math.floor(Number(l.qty) || 1)), unit = Math.max(0, Math.floor(Number(l.unitDZD) || 0));
+    return { name: cleanText(l.name, 80) || '—', region: cleanText(p.sub, 40) || '—', qty, unit, total: qty * unit };
+  });
+  const first = cleanText(u.firstName || '', 40), last = cleanText(u.lastName || '', 40);
+  let customer = [first, last].filter(Boolean).join(' ') || cleanText(u.name, 80);
+  if (!customer || NF.bad(customer)) customer = 'Customer';
+  const contact = cleanText(o.receiveContact, 254);
+  const email = o.receiveMethod === 'email';
+  return {
+    id: oid, date: cleanText(o.date, 10), customer, email: accountEmail || cleanText(o.accountEmail, 254) || cleanText(u.email, 254),
+    lines, subtotal: Math.max(0, Math.floor(Number(o.subtotalDZD) || 0)), discount: Math.max(0, Math.floor(Number(o.discountDZD) || 0)), coupon: cleanText(o.coupon, 40),
+    total: Math.max(0, Math.floor(Number(o.totalDZD) || 0)),
+    pay: PAY_LABEL[o.paymentMethod] || '—', status: o.status === 'done' ? 'PAID' : '—',
+    delivery: email ? `Email · ${invMaskEmail(contact)}` : (o.paymentMethod === 'hand' ? 'Hand delivery · Tlemcen' : `Phone · ${maskPhone(contact)}`),
+  };
+}
+const dzd = (n) => `${Number(n).toLocaleString('en-US')} دج`;
+function buildInvoiceEmail(inv) {
+  const t = MAIL_TONE.crimson;
+  const cell = (s, extra = '') => `<td dir="auto" valign="top" style="padding:10px 8px;border-bottom:1px solid ${MC.line};font-family:${MAIL_FONT};font-size:13px;line-height:1.6;color:${MC.h};${extra}">${s}</td>`;
+  const head = (s, extra = '') => `<td dir="auto" style="padding:10px 8px;background-color:#7A0A1E;font-family:${MAIL_FONT};font-size:12px;font-weight:700;color:#FFFFFF;${extra}">${s}</td>`;
+  const rows = inv.lines.map(l => `<tr>${cell(`<span dir="auto" style="unicode-bidi:isolate;">${escHtml(l.name)}</span><div style="font-size:11px;color:${MC.dim};">${escHtml(l.region)}</div>`)}${cell(String(l.qty), 'text-align:center;')}${cell(escHtml(dzd(l.unit)), 'text-align:center;white-space:nowrap;')}${cell(`<strong>${escHtml(dzd(l.total))}</strong>`, 'text-align:left;white-space:nowrap;')}</tr>`).join('');
+  const sum = (label, val, strong) => `<tr><td colspan="3" dir="rtl" style="padding:8px;font-family:${MAIL_FONT};font-size:${strong ? 15 : 13}px;color:${strong ? '#FFFFFF' : MC.dim};text-align:right;${strong ? 'font-weight:800;' : ''}">${label}</td><td style="padding:8px;font-family:${MAIL_FONT};font-size:${strong ? 16 : 13}px;font-weight:800;color:${strong ? t.ink : MC.h};text-align:left;white-space:nowrap;">${escHtml(val)}</td></tr>`;
+  const table = `<table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${MC.box}" style="background-color:${MC.box};border:1px solid ${MC.line};border-radius:12px;border-collapse:separate;overflow:hidden;">
+    <tr>${head('المنتج / Product')}${head('الكمية', 'text-align:center;')}${head('السعر', 'text-align:center;')}${head('المجموع', 'text-align:left;')}</tr>${rows}
+    ${inv.discount > 0 ? sum(`خصم${inv.coupon ? ` (${escHtml(inv.coupon)})` : ''}`, '− ' + dzd(inv.discount), false) : ''}${sum('الإجمالي / Total', dzd(inv.total), true)}</table>`;
+  const body = [
+    mH1('فاتورة طلبك'),
+    mP('هذه نسخة من فاتورة طلبك المُسلَّم. لن تجد فيها أكواد البطاقات (حفاظاً على أمانها).'),
+    mFacts([['رقم الطلب', `<span dir="ltr" style="font-family:${MAIL_MONO};">${escHtml(inv.id)}</span>`], ['التاريخ', escHtml(inv.date)], ['الزبون', escHtml(inv.customer)], ['الإيميل', `<span dir="ltr">${escHtml(inv.email)}</span>`]]),
+    mGap(16), table, mGap(16),
+    mFacts([['طريقة الدفع', escHtml(inv.pay)], ['حالة الدفع', escHtml(inv.status)], ['التسليم', escHtml(inv.delivery)]]),
+    mGap(18), mButton(escHtml(SITE_URL), 'فتح المتجر', t), mGap(18),
+  ].join('\n');
+  return mailShell({ tone: 'crimson', label: 'فاتورة', title: `فاتورة طلبك — Glitch Q`, preheader: `الإجمالي ${dzd(inv.total)} — الطلب ${inv.id}`, body, note: 'أُرسلت هذه الفاتورة بناءً على طلب صاحب الحساب في Glitch Q. للدعم: glitchq1q@gmail.com' });
+}
+function buildInvoiceText(inv) {
+  return [`فاتورة طلبك — Glitch Q`, `رقم الطلب: ${inv.id}`, `التاريخ: ${inv.date}`, `الزبون: ${inv.customer}`, '',
+    ...inv.lines.map(l => `${l.name} (${l.region}) × ${l.qty} = ${dzd(l.total)}`),
+    inv.discount > 0 ? `خصم${inv.coupon ? ' ' + inv.coupon : ''}: −${dzd(inv.discount)}` : '', `الإجمالي: ${dzd(inv.total)}`, '',
+    `الدفع: ${inv.pay} — ${inv.status}`, `التسليم: ${inv.delivery}`, '', 'للدعم: glitchq1q@gmail.com', '(أكواد البطاقات غير مطبوعة في الفاتورة حفاظاً على أمانها)'].filter(x => x !== '').join('\n');
+}
+async function handleInvoiceEmail(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  if (hit('invip:' + clientIp(request), 12, 3600000)) return json({ error: 'Too many requests' }, 429, cors);
+  const body = await readJson(request, 2048);
+  if (!body) return json({ error: 'Invalid data' }, 400, cors);
+  const a = await who(body.idToken, env, cors, true);
+  if (a.err) return a.err;
+  const claims = a.claims;
+  if (!claims || claims.email_verified !== true) return json({ error: 'Unauthorized' }, 401, cors);
+  const uid = claims.sub;
+  if (hit('invu:' + uid, 12, 3600000)) return json({ error: 'Too many requests' }, 429, cors);
+  const oid = String(body.orderId || '');
+  if (!RE_ID.test(oid)) return json({ error: 'Invalid order' }, 400, cors);
+  const to = String(body.email || '').trim().toLowerCase().slice(0, 254);
+  if (!RE_EMAIL.test(to)) return json({ error: 'Invalid email', code: 'bad_format' }, 400, cors);
+  if (await isBanned(env, uid)) return json({ error: 'Account suspended' }, 403, cors);
+  const o = await fsGet(env, `orders/${oid}`);
+  if (!o.exists || o.data.userId !== uid) return json({ error: 'Order not found' }, 404, cors);          // someone else's order looks exactly like a missing one
+  if (o.data.status !== 'done') return json({ error: 'The invoice is available after the order is delivered', code: 'not_delivered' }, 409, cors);
+  const chk = await checkEmailAddress(to);
+  if (!chk.ok) return json({ error: 'Invalid email', code: chk.code, suggest: chk.suggest }, 400, cors);
+  // durable limits (the in-memory ones above are per Worker instance): per customer, per destination address, and the shared mail quota
+  const day = dzDay();
+  if (await dHit(env, `invu_${uid}_${day}`, 10, 129600)) return json({ error: 'Too many requests' }, 429, cors);
+  if (await dHit(env, `invt_${await emailKeyId(to)}_${day}`, 3, 129600)) return json({ error: 'Too many requests' }, 429, cors);
+  if (await dHit(env, `invall_${day}`, INVOICE_MAILS_PER_DAY, 129600)) return json({ error: 'Daily e-mail limit reached, please download the invoice instead', code: 'quota' }, 503, cors);
+  const [u, cat] = await Promise.all([fsGet(env, `users/${uid}`), loadCatalog(env)]);
+  const inv = buildInvoiceData(oid, o.data, u.exists ? u.data : {}, cat, String(claims.email || '').toLowerCase());
+  const r = await sendBrevo(env, { to, subject: `فاتورة طلبك | Glitch Q`, html: buildInvoiceEmail(inv), text: buildInvoiceText(inv) });
+  if (!r.ok) return json({ error: 'Could not send the e-mail' }, 502, cors);
+  return json({ ok: true }, 200, cors);
 }
 
 /* ═══════════════════════════════════════

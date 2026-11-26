@@ -661,7 +661,14 @@ input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,se
             </div>
             <div class="pf-hint" id="pfPriceHint"></div>
             <div class="form-row">
-              <div style="flex:1"><label class="form-label" id="pfImgLbl">رابط صورة (اختياري)</label><input type="text" id="npImgUrl" class="adm-inp" placeholder="https://..." dir="ltr"></div>
+              <div style="flex:1"><label class="form-label" id="pfImgLbl">صورة المنتج (اختياري)</label>
+                <input type="file" id="npImgFile" accept="image/png,image/jpeg,image/webp" class="adm-inp" onchange="prodImgPick(this)">
+                <div class="pf-hint" id="pfImgState">اختر صورة من جهازك (PNG أو JPG أو WebP) — تُصغَّر تلقائياً وتُرفع وتُحفظ على سيرفرك.</div>
+                <div id="pfImgPrev" style="margin:8px 0;display:flex;align-items:center;gap:10px"></div>
+                <details class="pf-adv"><summary>أو رابط صورة جاهز (https)</summary>
+                  <input type="text" id="npImgUrl" class="adm-inp" placeholder="https://..." dir="ltr" oninput="prodImgShow()">
+                </details>
+              </div>
             </div>
             <div class="form-row">
               <div style="flex:1"><label class="form-label">وصف (عربي) — اختياري</label><input type="text" id="npDesc" class="adm-inp" placeholder="وصف المنتج..."></div>

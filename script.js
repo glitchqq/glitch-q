@@ -178,6 +178,7 @@ const T={
     loading_data:'تحميل البيانات...',loading_done:'أهلاً بك!',
     order_pend:'🆕 قيد المراجعة',order_proc:'قيد المعالجة',
     order_done:'تم التسليم',order_rej:'مرفوض',
+    inv_btn:'الفاتورة',inv_title:'فاتورة طلبك',inv_png:'تحميل صورة PNG',inv_pdf:'تحميل PDF',inv_mail_lbl:'أرسل نسخة إلى بريد إلكتروني',inv_send:'إرسال الفاتورة',inv_sent:'تم إرسال الفاتورة ✓ (تفقّد بريدك ومجلد الرسائل غير المرغوبة)',inv_busy:'جارٍ التحضير…',inv_err:'تعذّر تحضير الفاتورة، حاول مرة أخرى',inv_bad_mail:'أدخل بريداً إلكترونياً صحيحاً',inv_quota:'تعذّر الإرسال اليوم — حمّل الفاتورة بدلاً من ذلك',inv_note:'لا تتضمّن الفاتورة أكواد البطاقات حفاظاً على أمانها.',inv_mail_ph:'name@example.com',
     or_text:'أو',send_support_placeholder:'اكتب مشكلتك...',
     t_added_cart:'أضيف للسلة',t_oos:'المنتج نفذ مؤقتاً',
     t_login_first:'سجل دخولك أولاً',t_region_done:'ريجن',
@@ -318,6 +319,7 @@ const T={
     loading_data:'Loading data...',loading_done:'Welcome!',
     order_pend:'🆕 Under Review',order_proc:'Processing',
     order_done:'Delivered',order_rej:'Rejected',
+    inv_btn:'Invoice',inv_title:'Your invoice',inv_png:'Download PNG image',inv_pdf:'Download PDF',inv_mail_lbl:'Send a copy to an e-mail address',inv_send:'Send invoice',inv_sent:'Invoice sent ✓ (check your inbox and spam folder)',inv_busy:'Preparing…',inv_err:'Could not prepare the invoice, please try again',inv_bad_mail:'Enter a valid e-mail address',inv_quota:'Could not send today — download the invoice instead',inv_note:'The invoice does not include gift-card codes, to keep them safe.',inv_mail_ph:'name@example.com',
     or_text:'or',send_support_placeholder:'Type your issue...',
     t_added_cart:'Added to cart',t_oos:'Product is out of stock',
     t_login_first:'Please sign in first',t_region_done:'Region',
@@ -694,7 +696,7 @@ function toast(msg,type='tinfo'){
 }
 
 /* ══ MODALS ══ */
-const VALID_MODALS=['authModal','regionModal','trackModal','checkoutModal','ratingModal','spinModal','supportModal','reportModal','termsModal','privacyModal','faqModal','aboutModal','prodModal','cartModal','orderDoneModal','accountModal'];
+const VALID_MODALS=['invoiceModal','authModal','regionModal','trackModal','checkoutModal','ratingModal','spinModal','supportModal','reportModal','termsModal','privacyModal','faqModal','aboutModal','prodModal','cartModal','orderDoneModal','accountModal'];
 function openM(id){
   if(!VALID_MODALS.includes(id))return;
   clearInlineAlerts($(id));
@@ -1266,13 +1268,67 @@ async function onOrderSuccess(oid,total,prodName){
   loadHistory();
 }
 
+/* ══ INVOICE — for a delivered order: drawn on the customer's own device (invoice.js), download PNG / PDF, or e-mail a copy (Worker v15) ══ */
+const RE_OID=/^[A-Za-z0-9]{10,40}$/,ORDER_ST={pending:'order_pend',processing:'order_proc',done:'order_done',rejected:'order_rej'};
+let _inv=null;
+function ensureInvModal(){
+  if($('invoiceModal'))return;
+  const m=document.createElement('div');m.id='invoiceModal';m.className='modal-ov hidden';
+  m.innerHTML=`<div class="modal-box inv-box"><button class="modal-x" onclick="closeM('invoiceModal')">✕</button>
+    <div class="mico"><i class="fa-solid fa-file-invoice"></i></div><h2 class="mtitle" id="invTitle"></h2>
+    <div class="inv-prev"><img id="invImg" alt="Invoice"><div id="invBusy" class="inv-busy"></div></div>
+    <div class="inv-acts"><button type="button" class="btn-p" id="invPng"></button><button type="button" class="btn-p" id="invPdf"></button></div>
+    <label class="inv-lbl" id="invMailLbl" for="invMail"></label>
+    <div class="iw"><i class="fa-solid fa-envelope"></i><input type="email" id="invMail" dir="ltr" maxlength="254" autocomplete="email"></div>
+    <button type="button" class="btn-o w100 mt8" id="invSend"></button>
+    <div class="inv-msg" id="invMsg" role="status"></div><p class="inv-note" id="invNote"></p></div>`;
+  document.body.appendChild(m);
+  $('invPng').onclick=async()=>{if(!_inv)return;try{GQInv.save(await GQInv.png(_inv.cv),`GlitchQ-Invoice-${_inv.inv.id.slice(0,8)}.png`);}catch(e){$('invMsg').textContent=t('inv_err');}};
+  $('invPdf').onclick=async()=>{if(!_inv)return;try{GQInv.save(await GQInv.pdf(_inv.cv,'Invoice '+_inv.inv.id),`GlitchQ-Invoice-${_inv.inv.id.slice(0,8)}.pdf`);}catch(e){$('invMsg').textContent=t('inv_err');}};
+  $('invSend').onclick=sendInvoiceMail;
+}
+function invTexts(){
+  setText('invTitle',t('inv_title'));setText('invPng',t('inv_png'));setText('invPdf',t('inv_pdf'));setText('invMailLbl',t('inv_mail_lbl'));setText('invSend',t('inv_send'));setText('invNote',t('inv_note'));
+  const i=$('invMail');if(i)i.placeholder=t('inv_mail_ph');
+}
+async function openInvoice(oid){
+  const o=(S.orders||[]).find(x=>x._id===oid);
+  if(!o||o.status!=='done'||typeof GQInv==='undefined')return;
+  ensureInvModal();invTexts();_inv=null;
+  $('invImg').removeAttribute('src');$('invMsg').textContent='';$('invBusy').textContent=t('inv_busy');$('invMail').value=S.user?.email||'';
+  openM('invoiceModal');
+  try{
+    const u=S.udata||{},nm=[u.firstName,u.lastName].filter(Boolean).join(' ')||S.user?.displayName||u.name||'';
+    const inv=GQInv.data(oid,o,{products:PRODS,customer:nm,email:S.user?.email||''});
+    const cv=await GQInv.draw(inv);
+    _inv={inv,cv};
+    $('invImg').src=cv.toDataURL('image/jpeg',0.82);$('invBusy').textContent='';
+  }catch(e){$('invBusy').textContent='';$('invMsg').textContent=t('inv_err');}
+}
+async function sendInvoiceMail(){
+  if(!_inv)return;
+  const msg=$('invMsg'),btn=$('invSend'),to=String($('invMail').value||'').trim();
+  if(!/^[^\s@<>"']{1,64}@[^\s@<>"']{1,200}\.[^\s@<>"']{2,}$/.test(to)){msg.textContent=t('inv_bad_mail');return;}
+  btn.disabled=true;msg.textContent=t('inv_busy');
+  const r=await wkCall('/account/invoice-email',{orderId:_inv.inv.id,email:to});
+  btn.disabled=false;
+  if(r.ok&&r.data&&r.data.ok)msg.textContent=t('inv_sent');
+  else if(r.status===503)msg.textContent=t('inv_quota');
+  else if(r.status===429)msg.textContent=t('t_too_many');
+  else if(r.status===400&&r.data&&r.data.code){msg.textContent=(r.data.code==='typo'&&r.data.suggest?r.data.suggest+' ? ':'')+t('inv_bad_mail');}
+  else msg.textContent=t('inv_err');
+}
+$('profHistList')?.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('.hi-inv');if(b)openInvoice(b.getAttribute('data-inv'));});
+window.openInvoice=openInvoice;
+
 /* order history comes from the customer's own orders (read-only for them) */
 async function loadHistory(){
   if(!S.user)return;
   try{
     const snap=await db.collection('orders').where('userId','==',S.user.uid).limit(30).get();
-    const rows=snap.docs.map(d=>d.data()).sort((a,b)=>((b.ts&&b.ts.toMillis?b.ts.toMillis():0)-(a.ts&&a.ts.toMillis?a.ts.toMillis():0)));
+    const rows=snap.docs.map(d=>Object.assign({_id:d.id},d.data())).sort((a,b)=>((b.ts&&b.ts.toMillis?b.ts.toMillis():0)-(a.ts&&a.ts.toMillis?a.ts.toMillis():0)));
     S.history=rows.slice(0,20).map(o=>`${o.product||''} — ${o.date||''}`);
+    S.orders=rows.slice(0,20);
     updProfUI();
   }catch(e){}
 }
@@ -1350,7 +1406,7 @@ async function endSess(fbU){
   });
 }
 
-function resetSess(){S.user=null;S.udata=null;S.history=null;if(S.ready){updHeaderUI();updProfUI();}}
+function resetSess(){S.user=null;S.udata=null;S.history=null;S.orders=null;if(S.ready){updHeaderUI();updProfUI();}}
 async function bumpVisitor(){const k='vst_'+new Date().toDateString();if(SS.getItem(k))return;SS.setItem(k,'1');wkCall('/stats/visit',{},{auth:false});}
 
 $('loginForm')?.addEventListener('submit',async e=>{
@@ -1550,7 +1606,9 @@ function updProfUI(){
   setText('profPts',(S.udata.points||0).toLocaleString('en-US'));
   const rb=$('profRegBadge');if(rb)rb.textContent=S.region?`${S.region.toUpperCase()} (${S.sym})`:t('choose_region');
   const hl=$('profHistList');
-  if(hl){hl.innerHTML='';(S.history||S.udata.history||[]).slice(0,5).forEach(h=>{const d=document.createElement('div');d.className='hi';d.innerHTML=`<span>${san(h)}</span><i class="fa-solid fa-clock" style="color:var(--violet);font-size:11px"></i>`;hl.appendChild(d);});}
+  if(hl){hl.innerHTML='';
+    if(S.orders&&S.orders.length){S.orders.slice(0,5).forEach(o=>{const d=document.createElement('div');d.className='hi';const st=o.status==='done'&&RE_OID.test(String(o._id))?`<button type="button" class="hi-inv" data-inv="${o._id}"><i class="fa-solid fa-file-invoice"></i> ${t('inv_btn')}</button>`:`<small class="hi-st">${t(ORDER_ST[o.status]||'order_pend')}</small>`;d.innerHTML=`<span>${san(o.product||'')} — ${san(o.date||'')}</span>${st}`;hl.appendChild(d);});}
+    else(S.history||S.udata.history||[]).slice(0,5).forEach(h=>{const d=document.createElement('div');d.className='hi';d.innerHTML=`<span>${san(h)}</span><i class="fa-solid fa-clock" style="color:var(--violet);font-size:11px"></i>`;hl.appendChild(d);});}
 }
 
 /* ══ REWARDS PAGE ══ */

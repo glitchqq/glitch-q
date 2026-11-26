@@ -187,7 +187,7 @@ function seed() {
 
 /* ───────── access control basics ───────── */
 seed();
-let [s, j] = await call('/health', null, { method: 'GET' }); ck('health ok and reports Worker v14', s === 200 && j.ok && j.v === 14, JSON.stringify(j));
+let [s, j] = await call('/health', null, { method: 'GET' }); ck('health ok and reports Worker v15', s === 200 && j.ok && j.v === 15, JSON.stringify(j));
 [s] = await call('/health', null, { method: 'GET', origin: 'https://evil.example' }); ck('foreign Origin → 403', s === 403);
 [s] = await call('/health', null, { method: 'GET', origin: 'https://glitchqq.github.io.evil.com' }); ck('lookalike Origin (prefix attack) → 403', s === 403, s);
 [s] = await call('/health', null, { method: 'GET', origin: '' }); ck('no Origin → 403', s === 403, s);
@@ -531,7 +531,7 @@ seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'OFFX', type: 'fixe
 seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'FULL', type: 'fixed', value: 300, active: true, featured: true, maxUses: 2, usedCount: 2 }] });
 [s, j] = await call('/offer', null, { method: 'GET' }); ck('offer: featured but fully used → ok:false', j.ok === false, JSON.stringify(j));
 { const ip = '9.9.9.9'; let last = 0; for (let i = 0; i < 70; i++) [last] = await call('/offer', null, { method: 'GET', ip }); ck('offer: per-IP rate limit', last === 429, last); }
-[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v14', j.v === 14, JSON.stringify(j));
+[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v15', j.v === 15, JSON.stringify(j));
 
 /* ───────── reset-password limiter, maintenance/ticker ───────── */
 seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { text: 'hello' });
@@ -1211,6 +1211,102 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
   ck('fuzz: a customer token never modified another user\'s profile', !changed.some(k => k.startsWith('users/') && k !== 'users/u1'), JSON.stringify(changed.filter(k => k.startsWith('users/'))));
   console.log('   fuzz detail: requests=' + n + ' routes=' + paths.length + ' changedDocs=' + JSON.stringify(changed.slice(0, 8)) + ' createdDocs=' + JSON.stringify(created.slice(0, 8)));
 }
+
+/* ───────── round 11: product pictures uploaded by the owner + invoices (page-drawn; e-mail copy from the Worker) ───────── */
+{
+  const adminTok = () => mk({ sub: 'adm', email: 'kadirom7k777@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' } });
+  const dayK = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Algiers', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now()));
+  const jpgBytes = n => Buffer.concat([Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0, 16, 0x4A, 0x46, 0x49, 0x46, 0]), Buffer.alloc(n, 9)]);
+  const pngBytes = n => Buffer.concat([Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0]), Buffer.alloc(n, 7)]);
+  const webpBytes = n => Buffer.concat([Buffer.from('RIFF'), Buffer.from([0, 0, 0, 0]), Buffer.from('WEBPVP8 '), Buffer.alloc(n, 5)]);
+  const dataUrl = (b, mime) => `data:${mime};base64,${b.toString('base64')}`;
+  const up = async (data, t) => call('/admin/product-image', { idToken: t === undefined ? await adminTok() : t, data });
+  const getImg = async (id, { ip = fresh(), method = 'GET', origin } = {}) => { const h = { 'CF-Connecting-IP': ip }; if (origin) h.Origin = origin; const r = await worker.fetch(new Request('https://w.example/img/' + id, { method, headers: h }), env, { waitUntil() {} }); return r; };
+
+  /* — pictures — */
+  seed();
+  let [s, j] = await up(dataUrl(jpgBytes(3000), 'image/jpeg'), '');           ck('pictures: no token → 401', s === 401, s);
+  [s] = await up(dataUrl(jpgBytes(3000), 'image/jpeg'), await tok('u1'));      ck('pictures: an ordinary customer cannot upload → 403', s === 403 && ![...fs.docs.keys()].some(k => k.startsWith('product_images/')), s);
+  [s] = await up('data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='); ck('pictures: SVG (scriptable) is refused', s === 400, s);
+  [s] = await up('data:text/html;base64,PGgxPng8L2gxPg=='); ck('pictures: not an image label → 400', s === 400, s);
+  [s] = await up(dataUrl(Buffer.alloc(3000, 65), 'image/png')); ck('pictures: a file labelled PNG whose bytes are not a PNG → 400 (the bytes decide)', s === 400, s);
+  [s] = await up(dataUrl(jpgBytes(200 * 1024), 'image/jpeg')); ck('pictures: more than 190 KB → 413', s === 413, s);
+  [s] = await up('data:image/png;base64,@@@'); ck('pictures: broken base64 → 400', s === 400, s);
+  [s, j] = await up(dataUrl(jpgBytes(3000), 'image/jpeg'));
+  ck('pictures: the owner can upload a JPEG; the answer carries a short id and an https URL on the Worker', s === 200 && j.ok && /^[a-f0-9]{24}$/.test(j.id) && j.url === 'https://w.example/img/' + j.id, JSON.stringify([s, j]));
+  const id1 = j.id;
+  [s, j] = await up(dataUrl(jpgBytes(3000), 'image/jpeg'));
+  ck('pictures: the same picture again gets the same id (stored once)', s === 200 && j.id === id1 && [...fs.docs.keys()].filter(k => k.startsWith('product_images/')).length === 1, JSON.stringify(j));
+  [s, j] = await up(dataUrl(pngBytes(3000), 'image/png')); const idPng = j.id;
+  [s, j] = await up(dataUrl(webpBytes(3000), 'image/webp')); const idWebp = j.id;
+  ck('pictures: PNG and WebP are accepted too', !!idPng && !!idWebp && idPng !== id1 && idWebp !== idPng, JSON.stringify([idPng, idWebp]));
+  let r = await getImg(id1);
+  let buf = Buffer.from(await r.arrayBuffer());
+  ck('pictures: GET /img/<id> works WITHOUT an Origin header (a plain <img> tag) and returns exactly the bytes, as image/jpeg', r.status === 200 && r.headers.get('content-type') === 'image/jpeg' && buf.equals(jpgBytes(3000)), JSON.stringify([r.status, r.headers.get('content-type'), buf.length]));
+  ck('pictures: cached for a year (immutable), nosniff, locked-down CSP, readable from any page', /max-age=31536000/.test(r.headers.get('cache-control')) && /immutable/.test(r.headers.get('cache-control')) && r.headers.get('x-content-type-options') === 'nosniff' && /default-src 'none'/.test(r.headers.get('content-security-policy')) && r.headers.get('access-control-allow-origin') === '*', JSON.stringify([...r.headers]));
+  r = await getImg(id1, { origin: 'https://evil.example' }); ck('pictures: a picture is public by design (any page may show it)', r.status === 200, r.status);
+  r = await getImg(id1, { method: 'HEAD' }); ck('pictures: HEAD works', r.status === 200, r.status);
+  r = await getImg('..%2Fusers%2Fu1'); ck('pictures: a path-traversal id → 404', r.status === 404, r.status);
+  r = await getImg('0'.repeat(24)); ck('pictures: an unknown id → 404', r.status === 404, r.status);
+  r = await getImg('ABCDEF'.repeat(4)); ck('pictures: an id that is not lower-case hex → 404', r.status === 404, r.status);
+  r = await worker.fetch(new Request('https://w.example/img/' + id1, { method: 'POST', headers: { 'CF-Connecting-IP': fresh() }, body: 'x' }), env, { waitUntil() {} }); ck('pictures: POST /img → 405', r.status === 405, r.status);
+  const ipx = fresh(); let last = 0; for (let i = 0; i < 245; i++) last = (await getImg(id1, { ip: ipx })).status; ck('pictures: one visitor cannot hammer the picture route (429 after 240/min)', last === 429, last);
+  ck('pictures: three pictures stored (JPEG, PNG, WebP), nothing else was written — no profile or order was touched', [...fs.docs.keys()].filter(k => k.startsWith('product_images/')).length === 3 && ![...fs.docs.keys()].some(k => k.startsWith('orders/') || k.startsWith('banned_users/')), [...fs.docs.keys()].join());
+  [s] = await call('/admin/product-image', null, { method: 'GET' }); ck('pictures: GET on the upload route → 405', s === 405, s);
+
+  /* — invoice e-mail — */
+  seed(); fs.brevo = [];
+  put('settings/products', { products: [{ id: 'p1', cat: 'psn', name: 'PSN', val: 10, cur: 'EUR', sym: '€', sub: 'Europe', priceDZD: 3400 }, { id: 'p2', cat: 'psn', name: 'Plus', val: 3, cur: 'month', sub: 'USA', priceDZD: 4000 }] });
+  put('users/inv1', { email: 'cust@gmail.com', firstName: 'Ali', lastName: 'Ben', points: 5 });
+  put('users/inv2', { email: 'other@gmail.com', firstName: 'Omar', lastName: 'Z', points: 5 });
+  put('users/inv3', { email: 'rude@gmail.com', firstName: 'Fuck', lastName: 'Face', points: 5 });
+  const base = { userId: 'inv1', status: 'done', date: '2026-11-20', paymentMethod: 'baridimob', receiveMethod: 'email', receiveContact: 'delivery@gmail.com', accountEmail: 'cust@gmail.com', product: 'x', subtotalDZD: 10800, discountDZD: 1080, coupon: 'TEN', totalDZD: 9720, items: [{ id: 'p1', name: 'PSN 10€ <b>x</b>', qty: 2, unitDZD: 3400 }, { id: 'p2', name: 'Plus 3 أشهر', qty: 1, unitDZD: 4000 }], codes: ['SECRET-CODE-1234'] };
+  put('orders/OrdDoneAAAAAAAAAAAA', base);
+  put('orders/OrdPendAAAAAAAAAAAA', { ...base, status: 'pending' });
+  put('orders/OrdOtherAAAAAAAAAAA', { ...base, userId: 'inv2' });
+  put('orders/OrdRudeAAAAAAAAAAAA', { ...base, userId: 'inv3', accountEmail: 'rude@gmail.com' });
+  dnsTable['gmail.com'] = dnsTable['gmail.com'] || { records: [{ type: 15, data: '10 gmail-smtp-in.l.google.com.' }] };
+  const iv = async (o, t) => call('/account/invoice-email', { idToken: t === undefined ? await tok('inv1') : t, ...o });
+  [s] = await iv({ orderId: 'OrdDoneAAAAAAAAAAAA', email: 'me@gmail.com' }, ''); ck('invoice e-mail: no token → 401', s === 401, s);
+  [s, j] = await iv({ orderId: 'OrdDoneAAAAAAAAAAAA', email: 'me@gmail.com' }, await tok('nobody'));
+  ck('invoice e-mail: an unverified / unknown token never sends anything', s !== 200 && fs.brevo.length === 0, JSON.stringify([s, j]));
+  [s] = await iv({ orderId: 'OrdOtherAAAAAAAAAAA', email: 'me@gmail.com' }); ck('invoice e-mail: someone else\'s order looks exactly like a missing one (404) and sends nothing', s === 404 && fs.brevo.length === 0, s);
+  [s] = await iv({ orderId: 'NoSuchOrderAAAAAAAA', email: 'me@gmail.com' }); ck('invoice e-mail: a missing order → 404', s === 404, s);
+  [s, j] = await iv({ orderId: 'OrdPendAAAAAAAAAAAA', email: 'me@gmail.com' }); ck('invoice e-mail: an order not yet delivered has no invoice (409 not_delivered)', s === 409 && j.code === 'not_delivered' && fs.brevo.length === 0, JSON.stringify([s, j]));
+  [s] = await iv({ orderId: '../users/inv1', email: 'me@gmail.com' }); ck('invoice e-mail: path-traversal order id → 400', s === 400, s);
+  [s, j] = await iv({ orderId: 'OrdDoneAAAAAAAAAAAA', email: 'not-an-email' }); ck('invoice e-mail: a malformed address → 400', s === 400 && fs.brevo.length === 0, JSON.stringify([s, j]));
+  [s, j] = await iv({ orderId: 'OrdDoneAAAAAAAAAAAA', email: 'x@mailinator.com' }); ck('invoice e-mail: a throw-away inbox is refused (no spam relay)', s === 400 && j.code === 'disposable' && fs.brevo.length === 0, JSON.stringify([s, j]));
+  [s, j] = await iv({ orderId: 'OrdDoneAAAAAAAAAAAA', email: 'me@gmial.com' }); ck('invoice e-mail: a typo of Gmail is refused with the suggestion', s === 400 && j.code === 'typo' && fs.brevo.length === 0, JSON.stringify([s, j]));
+  [s, j] = await iv({ orderId: 'OrdDoneAAAAAAAAAAAA', email: 'me@gmail.com' });
+  ck('invoice e-mail: a delivered order of the signed-in customer is mailed to the address he typed', s === 200 && j.ok && fs.brevo.length === 1 && fs.brevo[0].to[0].email === 'me@gmail.com', JSON.stringify([s, j, fs.brevo.length]));
+  const mail = fs.brevo[0] || { htmlContent: '', textContent: '', subject: '' };
+  ck('invoice e-mail: subject, order id, customer name, both lines, discount and total are there', /فاتورة/.test(mail.subject) && mail.htmlContent.includes('OrdDoneAAAAAAAAAAAA') && mail.htmlContent.includes('Ali Ben') && mail.htmlContent.includes('Europe') && mail.htmlContent.includes('USA') && mail.htmlContent.includes('TEN') && mail.htmlContent.includes('9,720'), '');
+  ck('invoice e-mail: the DELIVERED CODES are never printed (HTML or text)', !mail.htmlContent.includes('SECRET-CODE') && !mail.textContent.includes('SECRET-CODE'), '');
+  ck('invoice e-mail: the delivery address is masked, not printed in full', mail.htmlContent.includes('de***@gmail.com') && !mail.htmlContent.includes('delivery@gmail.com'), '');
+  ck('invoice e-mail: product names from the order are escaped (no raw tag reaches the HTML)', !mail.htmlContent.includes('<b>x</b>') && mail.htmlContent.includes('&lt;b&gt;x&lt;/b&gt;'), '');
+  ck('invoice e-mail: the amounts come from the stored order, not from the request', !!mail.textContent && mail.textContent.includes('9,720'), mail.textContent.slice(0, 200));
+  [s, j] = await iv({ orderId: 'OrdRudeAAAAAAAAAAAA', email: 'me2@gmail.com' }, await tok('inv3'));
+  ck('invoice e-mail: a customer whose name the filter refuses is printed as "Customer"', s === 200 && !/Fuck/i.test(fs.brevo[1].htmlContent) && fs.brevo[1].htmlContent.includes('Customer'), JSON.stringify([s, j]));
+  const mkCust = (uid) => { put('users/' + uid, { email: uid + '@gmail.com', firstName: 'Ali', points: 5 }); put('orders/Ord' + uid + 'AAAAAAAAAAAAAAA'.slice(0, 20 - 3 - uid.length), { ...base, userId: uid, accountEmail: uid + '@gmail.com' }); return 'Ord' + uid + 'AAAAAAAAAAAAAAA'.slice(0, 20 - 3 - uid.length); };
+  fs.brevo = [];
+  const oidD = mkCust('invd'); let n3 = 0;
+  for (let i = 0; i < 4; i++) { [s] = await iv({ orderId: oidD, email: 'target@gmail.com' }, await tok('invd')); if (s === 200) n3++; }
+  ck('invoice e-mail: one destination address can receive at most 3 a day (no mail-bombing a third party)', n3 === 3 && s === 429, JSON.stringify([n3, s]));
+  const oidE = mkCust('inve'); fs.brevo = [];
+  put('rate_limits/invall_' + dayK, { n: 60, until: Date.now() + 3600000 });
+  [s, j] = await iv({ orderId: oidE, email: 'quota@gmail.com' }, await tok('inve'));
+  ck('invoice e-mail: when the shared daily quota is used up → 503 "quota" (the page tells him to download instead) and nothing is sent', s === 503 && j.code === 'quota' && fs.brevo.length === 0, JSON.stringify([s, j]));
+  fs.docs.delete('rate_limits/invall_' + dayK);
+  const oidF = mkCust('invf'); fs.failBrevo = true;
+  [s] = await iv({ orderId: oidF, email: 'fail@gmail.com' }, await tok('invf')); fs.failBrevo = false;
+  ck('invoice e-mail: the mail provider refusing → 502', s === 502, s);
+  const oidG = mkCust('invg'); put('banned_users/invg', { reason: 'x' });
+  [s] = await iv({ orderId: oidG, email: 'ban@gmail.com' }, await tok('invg')); ck('invoice e-mail: a suspended account cannot request one → 403', s === 403, s);
+  const oidH = mkCust('invh'); let tn = 0; for (let i = 0; i < 12; i++) { [s] = await iv({ orderId: oidH, email: 'a' + i + '@gmail.com' }, await tok('invh')); if (s === 200) tn++; }
+  ck('invoice e-mail: one customer can request at most 10 a day', tn === 10 && s === 429, JSON.stringify([tn, s]));
+  [s] = await call('/account/invoice-email', null, { method: 'GET' }); ck('invoice e-mail: GET → 405', s === 405, s);
+}
+
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
