@@ -409,7 +409,7 @@ async function confirmDelivery(){
 }
 
 /* ══ CATEGORIES ══ */
-let allCats=[],editingCat=null,catIconData='',catIconPicked=false;
+let allCats=[],editingCat=null,catIconData='',catIconPicked=false,catBgPicked=false;
 const CAT_EMOJIS=['🎮','🎴','👑','🕹️','💳','🎁','⭐','🔥','🛒','🎧','🏆','💎','🎟️','📦'];
 const CAT_SWATCHES=[['#203a43','#2c5364'],['#4c1d95','#c026d3'],['#1e3a8a','#0ea5e9'],['#065f46','#10b981'],['#7c2d12','#f59e0b'],['#7f1d1d','#ef4444'],['#831843','#ec4899'],['#1f2937','#6b7280']];
 const HEX6=/^#[0-9a-f]{6}$/i;
@@ -424,7 +424,7 @@ function initCatForm(){
   const idEl=document.getElementById('newCatId');if(idEl&&!idEl.dataset.bound){idEl.dataset.bound='1';idEl.addEventListener('input',()=>{idEl.dataset.touched='1';});}
   catPrev();
 }
-function clearCatForm(){editingCat=null;catIconData='';catIconPicked=false;catIconShow();['newCatId','newCatName','newCatNameEn','newCatIcon','newCatIconUrl','newCatOrder'].forEach(i=>{const e=document.getElementById(i);e.value='';delete e.dataset.touched;});
+function clearCatForm(){editingCat=null;catIconData='';catIconPicked=false;catBgPicked=false;catIconShow();['newCatId','newCatName','newCatNameEn','newCatIcon','newCatIconUrl','newCatOrder'].forEach(i=>{const e=document.getElementById(i);e.value='';delete e.dataset.touched;});
   document.getElementById('newCatId').readOnly=false;document.getElementById('newCatC1').value='#203a43';document.getElementById('newCatC2').value='#2c5364';
   document.getElementById('catFormTitle').textContent='إضافة قسم جديد';document.getElementById('catSaveBtn').innerHTML='<i class="fa-solid fa-plus"></i> إضافة قسم';catPrev();}
 /* The storefront shows these three sections when Firestore has no `settings/categories` document (same list as script.js).
@@ -490,7 +490,7 @@ function editCat(id){
   document.getElementById('newCatId').value=c.id;document.getElementById('newCatId').readOnly=true;document.getElementById('newCatName').value=c.name||'';document.getElementById('newCatNameEn').value=c.nameEn||'';document.getElementById('newCatIcon').value=(c.id==='psplus'&&!c.iconSet&&(!c.icon||c.icon==='👑'))?'+':(c.icon||'');catIconPicked=false;catIconData=/^data:/.test(c.iconUrl||'')?c.iconUrl:'';document.getElementById('newCatIconUrl').value=catIconData?'':(c.iconUrl||'');catIconShow();document.getElementById('newCatOrder').value=c.order||'';
   const m=/^linear-gradient\(135deg,\s*(#[0-9a-f]{6}),\s*(#[0-9a-f]{6})\)$/i.exec(String(c.bg||''));
   document.getElementById('newCatC1').value=m?m[1]:'#203a43';document.getElementById('newCatC2').value=m?m[2]:'#2c5364';
-  document.getElementById('catFormTitle').textContent='تعديل القسم: '+(c.name||id);document.getElementById('catSaveBtn').innerHTML='<i class="fa-solid fa-floppy-disk"></i> حفظ التعديل';catPrev();
+  catBgPicked=false;document.getElementById('catFormTitle').textContent='تعديل القسم: '+(c.name||id);document.getElementById('catSaveBtn').innerHTML='<i class="fa-solid fa-floppy-disk"></i> حفظ التعديل';catPrev();
   document.getElementById('newCatName').scrollIntoView({behavior:'smooth',block:'center'});
 }
 async function addCat(){
@@ -510,8 +510,8 @@ async function addCat(){
     const iconUrl=catIconData||typed;
     if(iconUrl&&!safeIcon(iconUrl)){aToast('الصورة غير صالحة أو كبيرة جداً','err');return;}
     const rec={id:editingCat||id,name,nameEn:nameEn||name,icon:icon||'📦',iconUrl:iconUrl||'',bg:catGrad(),order};
-    if(editingCat){const i=cats.findIndex(c=>c.id===editingCat);if(i<0){aToast('القسم لم يعد موجوداً','err');return;}cats[i]={...cats[i],...rec,iconSet:catIconPicked||!!cats[i].iconSet};}
-    else cats.push({...rec,iconSet:catIconPicked,enabled:true});
+    if(editingCat){const i=cats.findIndex(c=>c.id===editingCat);if(i<0){aToast('القسم لم يعد موجوداً','err');return;}cats[i]={...cats[i],...rec,iconSet:catIconPicked||!!cats[i].iconSet,bgSet:catBgPicked||!!cats[i].bgSet};}
+    else cats.push({...rec,iconSet:catIconPicked,bgSet:catBgPicked,enabled:true});
     await db.collection('settings').doc('categories').set({categories:cats});
     aToast(editingCat?'تم حفظ التعديل':'تم إضافة القسم','ok');clearCatForm();loadCats();
   }catch(e){aToast('خطأ: '+e.message,'err');}
@@ -766,7 +766,7 @@ function renderUsers(){
   filtered.slice(0,USERS_SHOWN).forEach(u=>{
     const owner=u.email===ADMIN_EMAIL,b=bannedMap[u.uid],banned=isBannedNow(b),dup=(groups[canonEmail(u.email)]||0)>1;
     const card=document.createElement('div');card.className='adm-card';
-    card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="color:${banned?'var(--red)':'var(--cyan)'}"><i class="fa-solid ${banned?'fa-user-slash':'fa-user'}"></i></div><div class="adm-card-info"><div class="adm-card-title">${san(u.name||u.email||'مستخدم')}${banned?` <span class="badge badge-rej">محظور · ${esc(banLeft(b))}</span>`:''}${dup?' <span class="badge badge-warn">إيميل مكرر</span>':''}</div><div class="adm-card-sub">${san(u.email||'')} · ${esc((u.points||0).toLocaleString())} نقطة</div><div class="adm-card-meta"><span>${esc(u.orders||0)} طلب</span>${u.region?`<span class="badge badge-info">${esc(String(u.region).toUpperCase())}</span>`:''}<span><i class="fa-solid fa-coins"></i>${esc((u.totalSpend||0).toLocaleString())} دج</span>${(u.referrals||0)>0?`<span><i class="fa-solid fa-user-group"></i>${esc(u.referrals)}</span>`:''}</div></div><span style="font-size:13px;color:var(--gold);font-weight:900">${esc((u.points||0).toLocaleString())}</span></div><div class="adm-card-actions"><button onclick="openUserModal('${jsq(u.uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-eye"></i> تفاصيل</button><button onclick="addPointsToUser('${jsq(u.uid)}','${jsq(u.name||'مستخدم')}')" class="btn btn-c btn-sm"><i class="fa-solid fa-plus"></i> نقاط</button><button onclick="sendNotifToUser('${jsq(u.uid)}','${jsq(u.name||u.email||'')}')" class="btn btn-p btn-sm"><i class="fa-solid fa-bell"></i> إشعار</button>${owner?'':banned?`<button onclick="unbanUser('${jsq(u.uid)}',true)" class="btn btn-g btn-sm"><i class="fa-solid fa-unlock"></i> فك الحظر</button>`:`<button onclick="openBanDialog('${jsq(u.uid)}','${jsq(u.name||u.email||'')}')" class="btn btn-r btn-sm"><i class="fa-solid fa-ban"></i> حظر</button>`}${owner?'':`<button onclick="openDeleteUser('${jsq(u.uid)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button>`}<button onclick="copyText('${jsq(u.uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> UID</button></div>`;
+    card.innerHTML=`<div class="adm-card-top"><div class="adm-card-ico" style="color:${banned?'var(--red)':'var(--cyan)'}"><i class="fa-solid ${banned?'fa-user-slash':'fa-user'}"></i></div><div class="adm-card-info"><div class="adm-card-title">${san(u.name||u.email||'مستخدم')}${banned?` <span class="badge badge-rej">محظور · ${esc(banLeft(b))}</span>`:''}${dup?' <span class="badge badge-warn">إيميل مكرر</span>':''}${typeof NF!=='undefined'&&(NF.bad(u.name)||NF.bad(u.nick)||NF.bad(u.firstName)||NF.bad(u.lastName))?' <span class="badge badge-warn" title="الاسم يحتوي كلمات غير مسموحة — لا يظهر للعامة">اسم مخالف</span>':''}</div><div class="adm-card-sub">${san(u.email||'')} · ${esc((u.points||0).toLocaleString())} نقطة</div><div class="adm-card-meta"><span>${esc(u.orders||0)} طلب</span>${u.region?`<span class="badge badge-info">${esc(String(u.region).toUpperCase())}</span>`:''}<span><i class="fa-solid fa-coins"></i>${esc((u.totalSpend||0).toLocaleString())} دج</span>${(u.referrals||0)>0?`<span><i class="fa-solid fa-user-group"></i>${esc(u.referrals)}</span>`:''}</div></div><span style="font-size:13px;color:var(--gold);font-weight:900">${esc((u.points||0).toLocaleString())}</span></div><div class="adm-card-actions"><button onclick="openUserModal('${jsq(u.uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-eye"></i> تفاصيل</button><button onclick="addPointsToUser('${jsq(u.uid)}','${jsq(u.name||'مستخدم')}')" class="btn btn-c btn-sm"><i class="fa-solid fa-plus"></i> نقاط</button><button onclick="sendNotifToUser('${jsq(u.uid)}','${jsq(u.name||u.email||'')}')" class="btn btn-p btn-sm"><i class="fa-solid fa-bell"></i> إشعار</button>${owner?'':banned?`<button onclick="unbanUser('${jsq(u.uid)}',true)" class="btn btn-g btn-sm"><i class="fa-solid fa-unlock"></i> فك الحظر</button>`:`<button onclick="openBanDialog('${jsq(u.uid)}','${jsq(u.name||u.email||'')}')" class="btn btn-r btn-sm"><i class="fa-solid fa-ban"></i> حظر</button>`}${owner?'':`<button onclick="openDeleteUser('${jsq(u.uid)}')" class="btn btn-r btn-sm"><i class="fa-solid fa-trash"></i> حذف</button>`}<button onclick="copyText('${jsq(u.uid)}')" class="btn btn-o btn-sm"><i class="fa-solid fa-copy"></i> UID</button></div>`;
     el.appendChild(card);
   });
   if(filtered.length>USERS_SHOWN){const n=document.createElement('p');n.style.cssText='font-size:12px;color:var(--dim);text-align:center;padding:10px';n.textContent=`عُرض أول ${USERS_SHOWN} من ${filtered.length} — اكتب في البحث للوصول لأي حساب`;el.appendChild(n);}

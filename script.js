@@ -188,7 +188,7 @@ const T={
     t_consent_ok:'شكراً على موافقتك! مرحباً بك في Glitch Q',
     t_subscribed:'تم الاشتراك!',t_email_invalid:'أدخل إيميلاً صحيحاً',
     t_terms_required:'يجب الموافقة على الشروط والأحكام',
-    t_name_required:'أدخل الاسم واللقب',t_pass_mismatch:'كلمة المرور غير متطابقة',
+    t_name_required:'أدخل الاسم واللقب',t_name_bad:'الاسم يحتوي كلمات غير مسموحة (سب أو ألفاظ مخلّة أو أسماء سياسية). اختر اسماً آخر',t_pass_mismatch:'كلمة المرور غير متطابقة',
     t_pass_short:'6 أحرف على الأقل',t_email_exists:'الإيميل مسجل مسبقاً',
     t_weak_pass:'كلمة مرور ضعيفة',t_login_error:'خطأ في البريد أو كلمة المرور',
     t_verify_first:'فعّل حسابك من إيميلك أولاً',t_verify_sent:'أرسلنا لك رابط التفعيل — تفقّد بريدك',t_acct_unverified:'حسابك مسجّل لكن غير مفعّل — أرسلنا لك رابط التفعيل من جديد',t_verify_fail:'تعذّر إرسال رسالة التفعيل الآن، اضغط «إعادة الإرسال» بعد قليل',t_already_verified:'حسابك مفعّل بالفعل، سجّل الدخول',
@@ -328,7 +328,7 @@ const T={
     t_consent_ok:'Thank you! Welcome to Glitch Q',
     t_subscribed:'Subscribed!',t_email_invalid:'Enter a valid email',
     t_terms_required:'You must agree to the terms',
-    t_name_required:'Enter first and last name',t_pass_mismatch:'Passwords do not match',
+    t_name_required:'Enter first and last name',t_name_bad:'This name contains words that are not allowed (insults, indecent or political). Please choose another name',t_pass_mismatch:'Passwords do not match',
     t_pass_short:'At least 6 characters',t_email_exists:'Email already registered',
     t_weak_pass:'Weak password',t_login_error:'Invalid email or password',
     t_verify_first:'Please verify your email first',t_verify_sent:'We sent you the activation link — check your inbox',t_acct_unverified:'Your account exists but is not activated — we sent the activation link again',t_verify_fail:'Could not send the activation e-mail right now, press Resend in a moment',t_already_verified:'Your account is already activated, please sign in',
@@ -920,6 +920,11 @@ function catGlyph(cat){
   if(cat.id==='games')return '<i class="fa-solid fa-gamepad"></i>';
   return /^<i class="[a-z0-9 -]+"><\/i>$/i.test(ic)?ic:(san(ic)||'<i class="fa-solid fa-layer-group"></i>');
 }
+/* A section's colours chosen in the owner's panel. The store used to ignore `bg` completely. A stored value counts as the owner's own when it is a strict
+   two-colour gradient (nothing else is ever put in a style) and is not one of the gradients the old built-in defaults used (unless he picked it: bgSet). */
+const CAT_BG_DEFAULTS=['linear-gradient(135deg,#203a43,#2c5364)','linear-gradient(135deg,#6B0516,#E1062C)','linear-gradient(135deg,#b45309,#f59e0b)','linear-gradient(135deg,#003087,#0066cc)'];
+const CAT_BG_RE=/^linear-gradient\(135deg,(#[0-9a-fA-F]{6}),(#[0-9a-fA-F]{6})\)$/;
+function catBg(cat){const v=String((cat&&cat.bg)||'').replace(/\s+/g,'');const m=CAT_BG_RE.exec(v);if(!m)return null;if(!cat.bgSet&&CAT_BG_DEFAULTS.some(d=>d.toLowerCase()===v.toLowerCase()))return null;return{c1:m[1],c2:m[2],css:v};}
 function renderHomeCats(){
   const g=$('homeCatsGrid');if(!g)return;g.innerHTML='';
   CATS.filter(c=>c.enabled).sort((a,b)=>(a.order||0)-(b.order||0)).forEach(cat=>{
@@ -928,6 +933,8 @@ function renderHomeCats(){
     const name=S.lang==='en'?(cat.nameEn||cat.name):(cat.name||cat.id);
     const prod_word=S.lang==='en'?'products':'منتج';
     el.innerHTML=`<div class="cat-ico">${catGlyph(cat)}</div><span>${san(name)}</span><small>${cnt} ${prod_word}</small>`;
+    const bg=catBg(cat);
+    if(bg){el.style.setProperty('--ac',bg.c2);const ico=el.querySelector('.cat-ico');if(ico){ico.style.setProperty('background',bg.css,'important');ico.style.setProperty('color','#fff','important');}}
     el.addEventListener('click',()=>{goPage('shop');filterByCat(cat.id);});
     g.appendChild(el);
   });
@@ -1324,7 +1331,7 @@ async function endSess(fbU){
       S.udata=snap.data();
       if(!S.region&&S.udata.region&&REG_CFG.enabled&&REG_CFG.available[S.udata.region]){S.region=S.udata.region;S.regAuto=false;S.cur=S.udata.currency||'EUR';S.sym=S.udata.symbol||'€';LS.setItem('gq_reg',S.region);LS.setItem('gq_cur',S.cur);LS.setItem('gq_sym',S.sym);}
     }else{
-      const dn=String(fbU.displayName||'').trim().slice(0,101),sp=dn.indexOf(' ');
+      const dn0=String(fbU.displayName||'').trim().slice(0,101),dn=nameRude(dn0)?'Player':dn0,sp=dn.indexOf(' ');   /* a name the filter refuses (e.g. an account made before the filter existed) never becomes the profile name */
       S.udata={firstName:(sp>0?dn.slice(0,sp):dn).slice(0,50),lastName:(sp>0?dn.slice(sp+1):'').slice(0,50),points:5,notifications:[],favorites:[],orders:0,ratings:0,spins:0,gifts:0,shares:0,streak:0,referrals:0,totalSpend:0,lastLogin:null,badges:['newcomer'],claimedMilestones:[],uid_short:fbU.uid.slice(0,12),email:fbU.email||'',name:dn,region:['eu','us','sa','ae'].includes(S.region)?S.region:null,created:new Date()};
       await db.collection('users').doc(fbU.uid).set(S.udata);
     }
@@ -1356,6 +1363,8 @@ $('loginForm')?.addEventListener('submit',async e=>{
   catch(e){toast(t('t_login_error'),'terr');}
 });
 
+/* insults / indecent / political words in a name (namefilter.js; the Worker applies the same list to everything shown publicly) */
+const nameRude=v=>typeof NF!=='undefined'&&NF.bad(v);
 $('regForm')?.addEventListener('submit',async e=>{
   e.preventDefault();
   if(!RL.ok('register',3,300000)){toast(t('t_too_many'),'twarn');return;}
@@ -1365,6 +1374,7 @@ $('regForm')?.addEventListener('submit',async e=>{
   const email=($('regEmail')?.value||'').trim().toLowerCase().slice(0,254);   /* Firebase stores addresses in lower case: the profile rules compare against that */
   const pass=$('regPass')?.value||'';const conf=$('regConf')?.value||'';
   if(!first||!last){toast(t('t_name_required'),'terr');return;}
+  if(nameRude($('regFirst')?.value)||nameRude($('regLast')?.value)||nameRude(first+' '+last)){toast(t('t_name_bad'),'terr');return;}
   if(!isValidEmail(email)){toast(t('t_email_invalid'),'terr');return;}
   if(email===ADMIN_EMAIL){toast(t('t_login_error'),'terr');return;}
   if(pass!==conf){toast(t('t_pass_mismatch'),'terr');return;}

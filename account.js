@@ -26,7 +26,7 @@ const TX={
     avL:'الصورة الرمزية',colL:'اللون',favL:'القسم المفضل عند فتح المتجر',favAll:'كل الأقسام',
     hideL:'إخفائي من لوحة المتصدرين',hideS:'لن يظهر اسمك للآخرين، وتبقى نقاطك محفوظة.',
     save:'حفظ التغييرات',saving:'جاري الحفظ...',saved:'تم حفظ التخصيص',
-    nickBad:'الاسم الظاهر: 2–20 حرفاً (حروف وأرقام ومسافة و _ . - فقط).',nickRes:'هذا الاسم غير متاح، اختر اسماً آخر.',
+    nickBad:'الاسم الظاهر: 2–20 حرفاً (حروف وأرقام ومسافة و _ . - فقط).',nickRes:'هذا الاسم غير متاح، اختر اسماً آخر.',nickRude:'الاسم يحتوي كلمات غير مسموحة (سب أو ألفاظ مخلّة أو أسماء سياسية). اختر اسماً آخر.',
     pwTitle:'تغيير كلمة المرور',pwCur:'كلمة المرور الحالية',pwNew:'كلمة المرور الجديدة (8 أحرف على الأقل)',pwNew2:'تأكيد كلمة المرور الجديدة',pwBtn:'تغيير كلمة المرور',
     pwDone:'تم تغيير كلمة المرور بنجاح.',pwWrong:'كلمة المرور الحالية غير صحيحة.',pwShort:'كلمة المرور الجديدة يجب ألا تقل عن 8 أحرف.',
     pwMismatch:'تأكيد كلمة المرور غير مطابق.',pwSame:'اختر كلمة مرور مختلفة عن الحالية.',pwFill:'املأ كل الحقول.',pwMany:'محاولات كثيرة، حاول لاحقاً.',
@@ -42,7 +42,7 @@ const TX={
     avL:'Avatar',colL:'Colour',favL:'Favourite category when opening the shop',favAll:'All categories',
     hideL:'Hide me from the leaderboard',hideS:'Your name will not be shown to others; your points stay safe.',
     save:'Save changes',saving:'Saving...',saved:'Customization saved',
-    nickBad:'Display name: 2–20 characters (letters, numbers, space, _ . - only).',nickRes:'This name is not available, choose another.',
+    nickBad:'Display name: 2–20 characters (letters, numbers, space, _ . - only).',nickRes:'This name is not available, choose another.',nickRude:'This name contains words that are not allowed (insults, indecent or political). Please choose another name.',
     pwTitle:'Change password',pwCur:'Current password',pwNew:'New password (at least 8 characters)',pwNew2:'Confirm new password',pwBtn:'Change password',
     pwDone:'Your password was changed.',pwWrong:'Current password is incorrect.',pwShort:'New password must be at least 8 characters.',
     pwMismatch:'Password confirmation does not match.',pwSame:'Choose a password different from the current one.',pwFill:'Fill in all fields.',pwMany:'Too many attempts, try again later.',
@@ -156,6 +156,7 @@ window.acctSaveProfile=async function(){
   const nick=($('accNick')?.value||'').trim().replace(/\s+/g,' ');
   if(nick&&!NICK_RE.test(nick)){toast(x.nickBad,'terr');return;}
   if(nick&&NICK_BLOCK.test(nick)){toast(x.nickRes,'terr');return;}
+  if(nick&&typeof NF!=='undefined'&&NF.bad(nick)){toast(x.nickRude,'terr');return;}
   const fav=$('accFavCat')?.value||'all';
   const hide=!!$('accHideLb')?.checked;
   btn.disabled=true;btn.textContent=x.saving;
