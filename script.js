@@ -206,7 +206,7 @@ const T={
     t_ref_copied:'تم نسخ رابط الدعوة!',
     t_ref_self:'لا يمكن الإحالة من نفس الجهاز',
     t_ref_done:'تم تسجيل دعوتك! سيحصل صاحبك على نقاط بعد أول عملية شراء لك',
-    t_ms_pts:'تحتاج نقاطاً أكثر للحصول على هذه المكافأة',t_rw_locked:'نقاطك مقفلة: تُفتح مع مشترياتك المُسلَّمة',t_rw_ok:'تم الاستبدال! سنرسل المكافأة خلال 24 ساعة',rw_bal:'رصيدك',rw_avail:'متاح للاستبدال',rw_lock:'مقفل (يُفتح بمشترياتك)',rw_need:'تحتاج',rw_more:'نقطة أخرى',rw_redeem:'🎁 استبدل',rw_locked_btn:'🔒 مقفلة',rw_cost:'تكلفتها',rw_loading:'جاري التحميل…',
+    t_ms_pts:'تحتاج نقاطاً أكثر للحصول على هذه المكافأة',t_rw_locked:'نقاطك مقفلة: تُفتح مع مشترياتك المُسلَّمة',t_rw_ok:'تم الاستبدال! سنرسل المكافأة خلال 24 ساعة',rw_bal:'رصيدك',tier_title:'مستواك',tier_pts:'نقاط ×{m}',tier_next:'للوصول إلى «{name}»: {o} طلب إضافي أو {s} دج من المشتريات (أيّهما أسبق)',tier_top:'أنت في أعلى مستوى — شكراً لأنك معنا',tier_perk:'كل مستوى أعلى يمنحك نسبة أكبر من النقاط على طلباتك',nr_next:'أقرب مكافأة: {name} — ينقصك {n} نقطة',boost_on:'⚡ نقاط ×{m} على طلبك القادم حتى {d}',exp_on:'نقاطك صالحة حتى {d} — أي طلب مُسلَّم يجدّد المدة',exp_soon:'⏳ نقاطك تنتهي خلال {n} يوماً (حتى {d}) — أي طلب مُسلَّم يجدّدها',mkt_label:'أرغب بتلقّي عروض وتذكيرات من Glitch Q (داخل حسابي وبالإيميل). يمكنني الإيقاف في أي وقت.',mkt_saved:'تم حفظ تفضيلك',mkt_off_saved:'تم إيقاف الرسائل التسويقية',mkt_err:'تعذّر حفظ التفضيل، حاول لاحقاً',reg_mkt:'أوافق على تلقّي عروض وتذكيرات من Glitch Q (اختياري، وأستطيع الإيقاف في أي وقت)',rw_avail:'متاح للاستبدال',rw_lock:'مقفل (يُفتح بمشترياتك)',rw_need:'تحتاج',rw_more:'نقطة أخرى',rw_redeem:'🎁 استبدل',rw_locked_btn:'🔒 مقفلة',rw_cost:'تكلفتها',rw_loading:'جاري التحميل…',
     t_ms_claimed:'استلمت هذه المكافأة مسبقاً',
     t_ms_spend:'يجب أن تصرف على الأقل',
     t_ms_notify:'يمكنك الآن استلام',t_ms_notify2:'اذهب لقسم المكافآت',
@@ -347,7 +347,7 @@ const T={
     t_ref_copied:'Referral link copied!',
     t_ref_self:'Cannot refer from same device',
     t_ref_done:'Referral registered! Your friend earns points after your first purchase',
-    t_ms_pts:'You need more points for this reward',t_rw_locked:'Your points are locked: they unlock with your delivered purchases',t_rw_ok:'Redeemed! We will send the reward within 24 hours',rw_bal:'Balance',rw_avail:'Redeemable',rw_lock:'Locked (unlocks with purchases)',rw_need:'Need',rw_more:'more points',rw_redeem:'🎁 Redeem',rw_locked_btn:'🔒 Locked',rw_cost:'Costs',rw_loading:'Loading…',
+    t_ms_pts:'You need more points for this reward',t_rw_locked:'Your points are locked: they unlock with your delivered purchases',t_rw_ok:'Redeemed! We will send the reward within 24 hours',rw_bal:'Balance',tier_title:'Your status',tier_pts:'Points ×{m}',tier_next:'To reach “{name}”: {o} more order(s) or {s} DZD in purchases (whichever comes first)',tier_top:'You are at the top status — thank you for being with us',tier_perk:'Each higher status earns you a bigger share of points on your orders',nr_next:'Next reward: {name} — {n} points to go',boost_on:'⚡ Points ×{m} on your next order until {d}',exp_on:'Your points are valid until {d} — any delivered order renews the period',exp_soon:'⏳ Your points expire in {n} day(s) (on {d}) — any delivered order renews them',mkt_label:'I would like offers and reminders from Glitch Q (in my account and by e-mail). I can stop at any time.',mkt_saved:'Preference saved',mkt_off_saved:'Marketing messages turned off',mkt_err:'Could not save your preference, please try later',reg_mkt:'I agree to receive offers and reminders from Glitch Q (optional, I can stop at any time)',rw_avail:'Redeemable',rw_lock:'Locked (unlocks with purchases)',rw_need:'Need',rw_more:'more points',rw_redeem:'🎁 Redeem',rw_locked_btn:'🔒 Locked',rw_cost:'Costs',rw_loading:'Loading…',
     t_ms_claimed:'Already claimed this reward',
     t_ms_spend:'You must spend at least',
     t_ms_notify:'You can now claim',t_ms_notify2:'Go to Rewards section',
@@ -393,6 +393,7 @@ function applyTranslations(){
   st('heroH1a',t('hero_h1a'));st('heroH1b',t('hero_h1b'));
   {const e=document.getElementById('heroH1b');if(e&&e.parentElement)e.parentElement.dataset.t=t('hero_h1b');}
   st('howTitle',t('sec_how'));
+  {const e=document.getElementById('regMktText');if(e)e.textContent=t('reg_mkt');}
   {const e=document.getElementById('regTermsText');if(e)e.innerHTML=`${t('terms_agree')} <button type="button" onclick="openM('termsModal')" class="consent-link">${t('terms_link')}</button> ${t('terms_and')} <button type="button" onclick="openM('privacyModal')" class="consent-link">${t('privacy_link')}</button>`;}
   [1,2,3].forEach(i=>{st('how'+i+'T',t('how'+i+'_t'));st('how'+i+'S',t('how'+i+'_s'));st('hs'+i+'T',t('how'+i+'_t'));st('hs'+i+'S',t('how'+i+'_s'));});
   ['nav_home','nav_shop','nav_points','nav_support','nav_account'].forEach((k,i)=>st('tb'+i,t(k)));
@@ -1039,7 +1040,7 @@ function openCheckoutForProd(prodId){
   if(ci)ci.innerHTML=`<div class="co-pname">${san(prod.name)}${valText?' — '+san(valText):''}</div><div class="co-pprice">${san(prod.sub||'')} · ${price.toLocaleString('en-US')} دج</div>`;
   setText('coTotal',price.toLocaleString('en-US')+' دج');
   const cr=$('cpnRes');if(cr)cr.textContent='';const ci2=$('cpnInp');if(ci2)ci2.value='';if(S._offerCode&&ci2)ci2.value=S._offerCode;
-  openM('checkoutModal');
+  openM('checkoutModal');cartPing();
 }
 window.openCheckoutForProd=openCheckoutForProd;
 
@@ -1124,7 +1125,7 @@ function goCheckout(){
   if(ci)ci.innerHTML=`<div class="co-pname">${S.cart.map(c=>`${san(c.name||'')} x${c.qty||1}`).join(' + ')}</div><div class="co-pprice">${tot.toLocaleString('en-US')} دج</div>`;
   setText('coTotal',tot.toLocaleString('en-US')+' دج');
   const cr=$('cpnRes');if(cr)cr.textContent='';const ci2=$('cpnInp');if(ci2)ci2.value='';if(S._offerCode&&ci2)ci2.value=S._offerCode;
-  openM('checkoutModal');
+  openM('checkoutModal');cartPing();
 }
 window.goCheckout=goCheckout;
 
@@ -1397,6 +1398,7 @@ async function endSess(fbU){
   try{window.acctOnLogin&&window.acctOnLogin();}catch(e){}                    /* optional new-device alert + saved preferences */
   loadHistory();
   checkAbuse();
+  syncMktIntent();
   const url=new URLSearchParams(window.location.search);if(url.get('ref'))processReferral();
   maybePromptRegion();
   /* older accounts fill the inbox registry the first time they sign in on a device (never blocks, never deletes) */
@@ -1437,6 +1439,8 @@ $('regForm')?.addEventListener('submit',async e=>{
   if(pass.length<6){toast(t('t_pass_short'),'terr');return;}
   if(_regBusy)return;
   _regBusy=true;
+  /* marketing consent is a SEPARATE, optional choice (unticked by default). The account is not active until the e-mail is confirmed, so the choice waits here and is sent to the server after his first verified sign-in. */
+  try{if($('regMktChk')?.checked)LS.setItem('gq_mkt_'+email,'1');else LS.removeItem('gq_mkt_'+email);}catch(e){}
   const chk0=await checkEmailLive(email);
   if(!chk0.ok){_regBusy=false;toast(emailBadMsg(chk0),'terr');return;}
   let cred;
@@ -1618,18 +1622,19 @@ function renderRewardsPage(){
   {const wrap=document.querySelector('#pg-rewards .rewards-wrap');let nb=$('ptsPausedTop');                     /* page-level notice while the owner has the points system paused */
    if(S.pointsOff&&wrap){if(!nb){nb=document.createElement('div');nb.id='ptsPausedTop';nb.style.cssText='margin:0 0 14px;padding:13px 15px;border-radius:14px;border:1px solid rgba(255,190,70,.45);background:rgba(255,190,70,.08);color:#FFD98A;font-size:13px;line-height:1.7';wrap.insertBefore(nb,wrap.firstChild);}nb.textContent='⏸ '+t('rw_paused');}
    else if(nb)nb.remove();}
-  const{lvl,progress}=getLevel(pts);
-  const lb=$('rwLvlBadge');if(lb){lb.textContent=`${lvl.icon} ${S.lang==='en'?lvl.nameEn:lvl.name}`;lb.className='lvl-badge '+lvl.cls;}
-  const pf=$('rwPtsBar');if(pf)pf.style.width=progress+'%';
+  renderLevelBadge();
   renderBadges();renderStreak();loadLbRw();initSpinTimerRw();
   renderMissions('missionsWrapRw');renderMilestones();initReferral();loadRewards();
 }
 
-function getLevel(pts){
-  const lvls=[{min:0,name:'مبتدئ',nameEn:'Beginner',icon:'🥉',cls:'lvl-br'},{min:30,name:'فضي',nameEn:'Silver',icon:'🥈',cls:'lvl-si'},{min:100,name:'ذهبي',nameEn:'Gold',icon:'🥇',cls:'lvl-go'},{min:250,name:'بلاتيني',nameEn:'Platinum',icon:'💎',cls:'lvl-pl'},{min:500,name:'ألماسي',nameEn:'Diamond',icon:'👑',cls:'lvl-di'}];
-  let lvl=lvls[0],idx=0;for(let i=lvls.length-1;i>=0;i--){if(pts>=lvls[i].min){lvl=lvls[i];idx=i;break;}}
-  const nxt=idx<lvls.length-1?lvls[idx+1].min:500;const progress=idx===lvls.length-1?100:Math.min(((pts-lvl.min)/(nxt-lvl.min))*100,100);
-  return{lvl,progress};
+/* The badge on the points card IS the status ladder (delivered orders / spend, from the Worker) — not a guess from the current balance, which fell every time he redeemed. */
+const TIER_CLS={rookie:'lvl-br',player:'lvl-si',pro:'lvl-go',legend:'lvl-di'};
+function renderLevelBadge(){
+  const lb=$('rwLvlBadge'),pf=$('rwPtsBar');if(!lb)return;
+  if(!RW||!RW.tier){lb.style.visibility='hidden';return;}                 /* never show a status that has not been confirmed by the server yet */
+  const en=S.lang==='en';lb.style.visibility='';
+  lb.textContent=`${RW.tier.icon||''} ${en?(RW.tier.nameEn||RW.tier.name):RW.tier.name}`;lb.className='lvl-badge '+(TIER_CLS[RW.tier.id]||'lvl-br');
+  if(pf)pf.style.width=(RW.nextTier?Math.max(2,Math.min(100,Math.round((Number(RW.nextTier.progress)||0)*100))):100)+'%';
 }
 
 function renderBadges(){
@@ -1700,7 +1705,7 @@ function loadNotifs(){
   const b=$('notifBadge');if(b){b.textContent=unread;b.classList.toggle('hidden',unread===0);}
   const list=$('notifList');if(!list)return;list.innerHTML='';
   if(!notifs.length){list.innerHTML=`<div class="ni-empty">${t('notif_empty')}</div>`;return;}
-  [...notifs].reverse().forEach(n=>{const d=document.createElement('div');d.className='ni'+(n.read?'':' unread');d.innerHTML=`<div class="ni-ttl">${san(n.title||'')}</div>${n.code?`<div class="ni-code">${san(n.code)}</div>`:''}${codeUntilHTML(n.until)}<div class="ni-date">${san(n.date||'')}</div>`;list.appendChild(d);});
+  [...notifs].reverse().forEach(n=>{const d=document.createElement('div');d.className='ni'+(n.read?'':' unread');d.innerHTML=`<div class="ni-ttl">${san(n.title||'')}</div>${n.msg?`<div class="ni-msg">${san(n.msg)}</div>`:''}${n.code?`<div class="ni-code">${san(n.code)}</div>`:''}${codeUntilHTML(n.until)}<div class="ni-date">${san(n.date||'')}</div>`;list.appendChild(d);});
 }
 /* Opening the panel = the customer has seen them: the badge clears at once and the "read" flag is saved to the account
    (a transaction, so a notification the store adds at the same moment is never overwritten). The new ones stay highlighted
@@ -1851,8 +1856,8 @@ async function loadRewards(force){
   const r=await wkCall('/account/rewards',{});
   const d=r.data;
   if(d&&d.ok&&d.paused===true)S.pointsOff=true;
-  if(d&&d.ok&&Array.isArray(d.rewards)&&Number.isFinite(d.points)&&Number.isFinite(d.redeemablePts)){RW={points:d.points,redeemablePts:d.redeemablePts,lockedPts:Math.max(0,d.points-d.redeemablePts),ptDZD:d.ptDZD||10,refMaxPts:Number(d.refMaxPts)||0,refMinOrderDZD:Number(d.refMinOrderDZD)||0,rewards:d.rewards.filter(x=>x&&typeof x.id==='string'&&Number.isFinite(x.pts)&&x.pts>0)};RW_T=Date.now();S.udata.points=d.points;}
-  renderMilestones();initReferral();renderMissions('missionsWrap');renderMissions('missionsWrapRw');
+  if(d&&d.ok&&Array.isArray(d.rewards)&&Number.isFinite(d.points)&&Number.isFinite(d.redeemablePts)){RW={points:d.points,redeemablePts:d.redeemablePts,lockedPts:Math.max(0,d.points-d.redeemablePts),ptDZD:d.ptDZD||10,refMaxPts:Number(d.refMaxPts)||0,refMinOrderDZD:Number(d.refMinOrderDZD)||0,rewards:d.rewards.filter(x=>x&&typeof x.id==='string'&&Number.isFinite(x.pts)&&x.pts>0),tier:d.tier&&typeof d.tier.id==='string'?d.tier:null,nextTier:d.nextTier&&typeof d.nextTier.id==='string'?d.nextTier:null,next:d.next&&typeof d.next.id==='string'?d.next:null,expiresAt:Number(d.expiresAt)||0,boost:d.boost&&Number(d.boost.until)>Date.now()?d.boost:null,mkt:d.mkt===true};RW_T=Date.now();S.udata.points=d.points;}
+  renderLevelBadge();renderMilestones();initReferral();renderMissions('missionsWrap');renderMissions('missionsWrapRw');
 }
 function renderMilestones(){
   const container=$('milestonesGrid');if(!container)return;
@@ -1861,6 +1866,7 @@ function renderMilestones(){
   if(S.pointsOff){const pb=document.createElement('div');pb.className='pts-paused';pb.style.cssText='margin:0 0 12px;padding:12px 14px;border-radius:14px;border:1px solid rgba(255,190,70,.45);background:rgba(255,190,70,.08);color:#FFD98A;font-size:13px;line-height:1.7';pb.textContent='⏸ '+t('rw_paused');container.appendChild(pb);}
   const sum=document.createElement('div');sum.className='ms-sum';
   sum.innerHTML=`<div><b>${RW.points.toLocaleString('en-US')}</b><span>${t('rw_bal')}</span></div><div class="ok"><b>${RW.redeemablePts.toLocaleString('en-US')}</b><span>${t('rw_avail')}</span></div><div class="lk"><b>${RW.lockedPts.toLocaleString('en-US')}</b><span>${t('rw_lock')}</span></div>`;
+  const tc=tierCardHTML();if(tc){const w=document.createElement('div');w.className='tier-card';w.innerHTML=tc;container.appendChild(w);}
   container.appendChild(sum);
   RW.rewards.forEach(rw=>{
     const can=!S.pointsOff&&RW.redeemablePts>=rw.pts,haveEnough=RW.points>=rw.pts;
@@ -1880,6 +1886,52 @@ function renderMilestones(){
     `;
     container.appendChild(el);
   });
+  const mk=document.createElement('label');mk.className='mkt-row';mk.innerHTML=`<input type="checkbox" id="mktChk" ${RW.mkt?'checked':''} onchange="setMkt(this)"><span>${san(t('mkt_label'))}</span>`;container.appendChild(mk);
+}
+
+/* status card: tier, what the next tier needs, the closest reward, a win-back boost, and when the points would lapse (all numbers come from the Worker) */
+function fmtDay(ms){const d=new Date(ms+3600000),en=S.lang==='en';return `${d.getUTCDate()} ${(en?DZ_MONTHS_EN:DZ_MONTHS_AR)[d.getUTCMonth()]} ${d.getUTCFullYear()}`;}
+function tierCardHTML(){
+  if(!RW||!RW.tier)return '';
+  const en=S.lang==='en',f=(k,o)=>{let x=t(k);for(const a in o)x=x.split('{'+a+'}').join(o[a]);return x;};
+  const nm=o=>en?(o.nameEn||o.name):o.name,mult=m=>String(Math.round((Number(m)||1)*100)/100);
+  let h=`<div class="tc-top"><span class="tc-ico">${san(RW.tier.icon||'🎮')}</span><div><div class="tc-lbl">${san(t('tier_title'))}</div><div class="tc-name">${san(nm(RW.tier))}</div></div>${Number(RW.tier.mult)>1?`<span class="tc-mult">${san(f('tier_pts',{m:mult(RW.tier.mult)}))}</span>`:''}</div>`;
+  const nt=RW.nextTier;
+  if(nt)h+=`<div class="mi-prog-bar tc-bar"><div class="mi-prog-fill" style="width:${Math.max(4,Math.min(100,Math.round((Number(nt.progress)||0)*100)))}%"></div></div><div class="tc-sub">${san(f('tier_next',{name:nm(nt),o:(Number(nt.ordersLeft)||0).toLocaleString('en-US'),s:(Number(nt.spendLeft)||0).toLocaleString('en-US')}))}</div><div class="tc-sub dim">${san(t('tier_perk'))}</div>`;
+  else h+=`<div class="tc-sub">${san(t('tier_top'))}</div>`;
+  if(RW.next)h+=`<div class="tc-line">🎁 ${san(f('nr_next',{name:nm(RW.next),n:(Number(RW.next.missing)||0).toLocaleString('en-US')}))}</div>`;
+  if(RW.boost)h+=`<div class="tc-line boost">${san(f('boost_on',{m:mult(RW.boost.mult),d:fmtDay(Number(RW.boost.until))}))}</div>`;
+  if(RW.expiresAt>0&&!S.pointsOff){const left=Math.ceil((RW.expiresAt-Date.now())/86400000);h+=left<=30?`<div class="tc-line warn">${san(f('exp_soon',{n:Math.max(0,left),d:fmtDay(RW.expiresAt)}))}</div>`:`<div class="tc-line dim">${san(f('exp_on',{d:fmtDay(RW.expiresAt)}))}</div>`;}
+  return h;
+}
+window.setMkt=async function(cb){
+  if(!S.user||!S.udata){cb.checked=!cb.checked;return;}
+  if(!RL.ok('mkt',6,60000)){cb.checked=!cb.checked;toast(t('t_too_many'),'twarn');return;}
+  const on=cb.checked;cb.disabled=true;
+  const r=await wkCall('/account/prefs',{marketing:on,src:'profile'});
+  cb.disabled=false;
+  if(r.data&&r.data.ok){S.udata.mktOn=on;if(RW)RW.mkt=on;toast(t(on?'mkt_saved':'mkt_off_saved'),'tok');}
+  else{cb.checked=!on;toast(t('mkt_err'),'terr');}
+};
+/* the choice made on the sign-up form is sent once he is signed in with a confirmed e-mail; it stays queued if the call fails */
+async function syncMktIntent(){
+  try{
+    if(!S.user||!S.udata)return;
+    const k='gq_mkt_'+String(S.user.email||'').toLowerCase();
+    if(LS.getItem(k)!=='1')return;
+    if(S.udata.mktOn===true){LS.removeItem(k);return;}
+    const r=await wkCall('/account/prefs',{marketing:true,src:'signup'});
+    if(r.data&&r.data.ok){LS.removeItem(k);S.udata.mktOn=true;if(RW)RW.mkt=true;}
+  }catch(e){}
+}
+/* a customer who opens the checkout and leaves: the server remembers what he was buying (his own cart, in his own account) for one gentle reminder */
+function cartPing(){
+  try{
+    if(!S.user||!S.udata)return;
+    const items=S.selProd?[{id:S.selProd.id,qty:1}]:S.cart.map(c=>({id:c.id,qty:c.qty||1}));
+    if(!items.length||!RL.ok('cartping',4,600000))return;
+    wkCall('/account/cart-ping',{items});
+  }catch(e){}
 }
 
 window.claimMilestone=async function(rwId){

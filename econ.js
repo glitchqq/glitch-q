@@ -22,6 +22,7 @@
     refMaxPts: 80,         // hard cap of points per invited friend (must stay well below the cheapest reward)
     refMinOrderDZD: 2000,  // the friend's first order must be at least this to count
     ptDZD: 10,             // 1 point = 10 DZD of retail value
+    expiryMonths: 12,      // points (and the reward pool behind them) lapse after this many months WITHOUT a delivered purchase; 0 = never
     rewards: [
       { id: 'r5', name: 'بطاقة PS Store 5€', nameEn: 'PS Store 5€ card', priceDZD: 1600 },
       { id: 'r15', name: 'بطاقة PS Store 15€', nameEn: 'PS Store 15€ card', priceDZD: 4500 },
@@ -42,7 +43,8 @@
       refPct: Math.floor(num(r.refPct, DEFAULTS.refPct, 0, 70)),
       refMaxPts: Math.floor(num(r.refMaxPts, DEFAULTS.refMaxPts, 0, 5000)),
       refMinOrderDZD: Math.floor(num(r.refMinOrderDZD, DEFAULTS.refMinOrderDZD, 0, 1e6)),
-      ptDZD: Math.floor(num(r.ptDZD, DEFAULTS.ptDZD, 1, 1000))
+      ptDZD: Math.floor(num(r.ptDZD, DEFAULTS.ptDZD, 1, 1000)),
+      expiryMonths: Math.floor(num(r.expiryMonths, DEFAULTS.expiryMonths, 0, 36))
     };
     if (e.earnPct + e.refPct > 90) e.refPct = Math.max(0, 90 - e.earnPct);   // the store always keeps at least 10% of the profit
     var list = Array.isArray(r.rewards) ? r.rewards : DEFAULTS.rewards;
@@ -99,8 +101,39 @@
     return { revenue: revenue, cost: cost, profit: revenue - cost, estimated: estimated };
   }
 
-  /* Points the buyer earns on a delivered order (never from a loss-making order). */
-  function earnPts(profit, e) { return Math.floor(Math.max(0, profit) * e.earnPct / 100 / e.ptDZD); }
+  /* ── Status ladder ──────────────────────────────────────────────────────────────────────────────────────────────
+     A tier is reached by DELIVERED orders OR lifetime spend (whichever comes first). Its only money perk is a few extra
+     percentage points of the order's PROFIT paid as points — and the total share (base + tier + any campaign boost)
+     can never pass 90% minus the referral share, so the store always keeps at least 10% of every order's profit. */
+  var TIERS = [
+    { id: 'rookie', orders: 0, spend: 0, boost: 0, icon: '🎮', name: 'مبتدئ', nameEn: 'Rookie' },
+    { id: 'player', orders: 2, spend: 10000, boost: 3, icon: '⚡', name: 'لاعب', nameEn: 'Player' },
+    { id: 'pro', orders: 6, spend: 40000, boost: 6, icon: '🔥', name: 'محترف', nameEn: 'Pro' },
+    { id: 'legend', orders: 15, spend: 120000, boost: 10, icon: '👑', name: 'أسطورة', nameEn: 'Legend' }
+  ];
+  function tierIndex(u) {
+    var o = Math.max(0, Math.floor(Number(u && u.orders) || 0)), sp = Math.max(0, Number(u && u.totalSpend) || 0), idx = 0;
+    TIERS.forEach(function (t, i) { if (i > 0 && (o >= t.orders || sp >= t.spend)) idx = i; });
+    return idx;
+  }
+  function tierOf(u) { return TIERS[tierIndex(u)]; }
+  /* What is still missing for the next tier (null at the top). */
+  function nextTier(u) {
+    var i = tierIndex(u); if (i >= TIERS.length - 1) return null;
+    var t = TIERS[i + 1], o = Math.max(0, Math.floor(Number(u && u.orders) || 0)), sp = Math.max(0, Number(u && u.totalSpend) || 0);
+    var needO = Math.max(0, t.orders - o), needS = Math.max(0, t.spend - sp);
+    var fracO = t.orders ? Math.min(1, o / t.orders) : 1, fracS = t.spend ? Math.min(1, sp / t.spend) : 1;
+    return { tier: t, ordersLeft: needO, spendLeft: needS, progress: Math.max(fracO, fracS) };
+  }
+
+  /* Share of an order's profit paid as points: base + extra (tier / campaign), never above 90% − the referral share. */
+  function effEarnPct(e, extra) {
+    var cap = Math.max(e.earnPct, 90 - e.refPct);
+    return Math.min(e.earnPct + Math.max(0, Math.floor(Number(extra) || 0)), cap);
+  }
+
+  /* Points the buyer earns on a delivered order (never from a loss-making order). `extra` = tier / campaign percentage points. */
+  function earnPts(profit, e, extra) { return Math.floor(Math.max(0, profit) * effEarnPct(e, extra) / 100 / e.ptDZD); }
 
   /* Points the referrer earns when the invited friend's first order is delivered, capped per friend. */
   function refPts(profit, e) { return Math.min(e.refMaxPts, Math.floor(Math.max(0, profit) * e.refPct / 100 / e.ptDZD)); }
@@ -111,6 +144,30 @@
   function redeemablePts(u, e) {
     var pts = Math.max(0, Math.floor(Number(u && u.points) || 0)), pool = Math.max(0, Number(u && u.rewardPool) || 0);
     return Math.min(pts, Math.floor(pool / e.ptDZD));
+  }
+
+  /* When this customer's points lapse (ms since epoch; 0 = never / unknown). The clock restarts with every delivered purchase. */
+  var DAY = 86400000;
+  function expiryAt(u, e) {
+    if (!e || !e.expiryMonths) return 0;
+    var a = Number(u && u.lastPurchaseAt) || Number(u && u.firstSeenAt) || 0;
+    return a > 0 ? Math.round(a + e.expiryMonths * 30.4375 * DAY) : 0;
+  }
+
+  /* Closest reward the customer has not reached yet: how many points are still missing and how far along he is. */
+  function nextReward(redeemable, rewards, e) {
+    var list = (rewards || []).map(function (r) { return { id: r.id, name: r.name, nameEn: r.nameEn, pts: rewardPts(r, e) }; }).sort(function (a, b) { return a.pts - b.pts; });
+    for (var i = 0; i < list.length; i++) if (redeemable < list[i].pts) return { reward: list[i], missing: list[i].pts - redeemable, progress: Math.max(0, Math.min(1, redeemable / list[i].pts)) };
+    return null;
+  }
+
+  /* The store's exposure to rewards, for the owner's dashboard. `users` = array of user documents' data.
+     exposureDZD = retail value of everything customers could redeem TODAY (bounded by points AND pool) — the most a
+     redemption wave could take out, valued at retail (the real cost is lower). lockedDZD = points still locked. */
+  function liability(users, e) {
+    var pts = 0, pool = 0, red = 0;
+    (users || []).forEach(function (u) { var p = Math.max(0, Math.floor(Number(u && u.points) || 0)); pts += p; pool += Math.max(0, Number(u && u.rewardPool) || 0); red += redeemablePts(u, e); });
+    return { points: pts, poolDZD: Math.round(pool), exposureDZD: red * e.ptDZD, lockedDZD: Math.max(0, pts - red) * e.ptDZD };
   }
 
   /* One row per product for the "what do I really earn" table. */
@@ -139,6 +196,7 @@
     return out;
   }
 
-  return { DEFAULTS: DEFAULTS, normEcon: normEcon, listPrice: listPrice, unitCost: unitCost, orderProfit: orderProfit,
+  return { TIERS: TIERS, tierIndex: tierIndex, tierOf: tierOf, nextTier: nextTier, effEarnPct: effEarnPct, expiryAt: expiryAt, nextReward: nextReward, liability: liability,
+           DEFAULTS: DEFAULTS, normEcon: normEcon, listPrice: listPrice, unitCost: unitCost, orderProfit: orderProfit,
            earnPts: earnPts, refPts: refPts, rewardPts: rewardPts, redeemablePts: redeemablePts, simulate: simulate, audit: audit };
 });

@@ -373,13 +373,23 @@ async function completeOrder(orderId,notif){
       if(!paused&&u&&u.referredBy&&u.referredBy!==uid&&!u.refRewarded&&(Number(o.totalDZD)||0)>=e.refMinOrderDZD){rref=db.collection('users').doc(u.referredBy);rs=await tx.get(rref);}
     }
     /* the deadline is fixed the first time the order is delivered; a later re-send never extends it */
-    const upd0=o.awarded===false?{status:'done',awarded:true}:{status:'done'};if(!o.codeValidUntil)upd0.codeValidUntil=(notif&&notif.until)||codeUntil();
+    const upd0=o.awarded===false?{status:'done',awarded:true}:{status:'done'};if(!o.doneAt)upd0.doneAt=Date.now();   /* doneAt: the 2-day thank-you message counts from the FIRST delivery */
+    if(!o.codeValidUntil)upd0.codeValidUntil=(notif&&notif.until)||codeUntil();
     tx.update(oref,upd0);
     if(us&&us.exists){
       const total=Math.max(0,Number(o.totalDZD)||0);
       const pr=GQEcon.orderProfit(o,allProds,e,ECO_RATES);
-      const pts=paused?0:GQEcon.earnPts(pr.profit,e);
-      const upd={orders:FV.increment(1),totalSpend:FV.increment(total)};
+      /* status ladder + win-back boost (econ.js): the customer's tier is judged on his orders BEFORE this one; a boost promised in a retention
+         message counts if the order was PLACED inside its window. The two never add up (the larger one applies), and effEarnPct() caps the total. */
+      const ots=o.ts&&o.ts.toMillis?o.ts.toMillis():(Date.parse(o.ts)||Date.now());
+      const ud=us.data()||{};
+      const tier=GQEcon.tierOf(ud);
+      const bPP=(Number(ud.boostUntil)||0)>=ots?Math.max(0,Math.floor(Number(ud.boostPP)||0)):0;
+      const extra=Math.max(tier.boost,bPP);
+      const pts=paused?0:GQEcon.earnPts(pr.profit,e,extra);
+      const upd={orders:FV.increment(1),totalSpend:FV.increment(total),lastPurchaseAt:Date.now(),cartAt:0};   /* lastPurchaseAt restarts the 12-month expiry clock and the win-back timer; cartAt:0 ends any "abandoned order" reminder */
+      const boostUsed=bPP>tier.boost;   /* it counts as used only if it actually paid more than his tier would have */
+      if(boostUsed){upd.boostPP=0;upd.boostUntil=0;}   /* a win-back boost is used once */
       if(!paused){upd.points=FV.increment(pts);upd.rewardPool=FV.increment(pts*e.ptDZD);}
       if(notif)upd.notifications=FV.arrayUnion(notif);
       let rp=0;
@@ -389,9 +399,9 @@ async function completeOrder(orderId,notif){
         tx.update(rref,{points:FV.increment(rp),rewardPool:FV.increment(rp*e.ptDZD),referrals:FV.increment(1),refPoints:FV.increment(rp)});
       }
       tx.update(uref,upd);
-      tx.set(db.collection('order_econ').doc(orderId),{orderId,userId:uid,revenue:pr.revenue,cost:pr.cost,profit:pr.profit,estimated:pr.estimated,pts,refPts:rp,paused,refUserId:(rs&&rs.exists)?u_ref(us):null,ptDZD:e.ptDZD,earnPct:e.earnPct,refPct:e.refPct,ts:FV.serverTimestamp()});
+      tx.set(db.collection('order_econ').doc(orderId),{orderId,userId:uid,revenue:pr.revenue,cost:pr.cost,profit:pr.profit,estimated:pr.estimated,pts,refPts:rp,paused,tier:tier.id,extraPP:extra,effPct:GQEcon.effEarnPct(e,extra),boostUsed,refUserId:(rs&&rs.exists)?u_ref(us):null,ptDZD:e.ptDZD,earnPct:e.earnPct,refPct:e.refPct,ts:FV.serverTimestamp()});
     }else if(notif&&uid&&uid!=='guest'){
-      tx.update(db.collection('users').doc(uid),{notifications:FV.arrayUnion(notif)});
+      tx.update(db.collection('users').doc(uid),{notifications:FV.arrayUnion(notif),lastPurchaseAt:Date.now(),cartAt:0});
     }
   });
 }

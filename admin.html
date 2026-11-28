@@ -741,6 +741,11 @@ input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,se
             <div style="flex:1"><label class="form-label">هامش ربح افتراضي للمنتجات بلا تكلفة (%)</label><input type="number" id="ecMargin" class="adm-inp" min="0" max="60" step="0.5" oninput="ecoDirty()"></div>
             <div style="flex:1"><label class="form-label">قيمة النقطة الواحدة (دج)</label><input type="number" id="ecPt" class="adm-inp" min="1" max="1000" oninput="ecoDirty()"></div>
           </div>
+          <div class="form-row">
+            <div style="flex:1"><label class="form-label">انتهاء صلاحية النقاط بعد (أشهر بلا شراء مُسلَّم) — 0 = لا تنتهي أبداً</label><input type="number" id="ecExpiry" class="adm-inp" min="0" max="36" oninput="ecoDirty()"></div>
+            <div style="flex:1"></div>
+          </div>
+          <p class="pf-hint" style="margin-top:6px">كل طلب يُسلَّم يعيد العدّاد من جديد. الانتهاء يُصفّر النقاط وحصّتها من «صندوق المكافآت» معاً، فلا يبقى على المتجر أي التزام. تُخبَر الزبائن قبل الانتهاء برسالة (إن فعّلتَ الرسائل أدناه).</p>
         </div>
 
         <div class="sec">
@@ -759,6 +764,44 @@ input:-webkit-autofill,input:-webkit-autofill:focus,textarea:-webkit-autofill,se
           <button class="btn btn-c" id="ecoSaveBtn" onclick="ecoSave()"><i class="fa-solid fa-floppy-disk"></i> حفظ الاقتصاد</button>
           <button class="btn btn-o" onclick="ecoLiabilities()"><i class="fa-solid fa-calculator"></i> احسب التزامات النقاط الآن</button>
           <span class="pf-hint" id="ecoMsg"></span>
+        </div>
+
+        <div class="sec" id="retCard">
+          <div class="sec-title"><i class="fa-solid fa-envelope-open-text"></i> رسائل الاحتفاظ بالزبائن (طلب متروك · عودة · قرب انتهاء النقاط · شكر)</div>
+          <p class="pf-hint" style="margin-bottom:12px">تُرسَل <b>فقط</b> لمن وافق عليها صراحةً (خانة غير مفعّلة مسبقاً) وتصل داخل حسابه، وبالإيميل أيضاً مع رابط إيقاف بنقرة واحدة. لا أكثر من رسالة واحدة كل يومين لكل زبون، ولا أكثر من إيميل كل 3 أيام، وتحترم ساعات الهدوء. <b>الافتراضي: متوقفة.</b> لا تفعّلها قبل أن تراجع صفحة الشروط والخصوصية.</p>
+          <div class="toggle-wrap" style="margin-bottom:12px">
+            <label class="toggle"><input type="checkbox" id="retOn" onchange="retDirty()"><span class="toggle-sl"></span></label>
+            <span class="toggle-lbl">تفعيل رسائل الزبائن</span>
+          </div>
+          <div class="toggle-wrap" style="margin-bottom:12px">
+            <label class="toggle"><input type="checkbox" id="retOwn" onchange="retDirty()"><span class="toggle-sl"></span></label>
+            <span class="toggle-lbl">تذكيري أنا (تيليغرام + الهاتف) إذا بقي طلب بلا ردّ — يعمل حتى لو كانت رسائل الزبائن متوقفة</span>
+          </div>
+          <div class="form-row">
+            <div style="flex:1"><label class="form-label">تذكير الطلب المنتظر بعد (دقيقة)</label><input type="number" id="retRemind" class="adm-inp" min="5" max="120" oninput="retDirty()"></div>
+            <div style="flex:1"><label class="form-label">طلب متروك: بعد كم ساعة</label><input type="number" id="retAband" class="adm-inp" min="1" max="48" oninput="retDirty()"></div>
+          </div>
+          <div class="form-row">
+            <div style="flex:1"><label class="form-label">زبون غائب: بعد كم يوماً بلا شراء</label><input type="number" id="retWin" class="adm-inp" min="7" max="180" oninput="retDirty()"></div>
+            <div style="flex:1"><label class="form-label">مدة «ضعف النقاط» للعائد (أيام)</label><input type="number" id="retBoost" class="adm-inp" min="1" max="30" oninput="retDirty()"></div>
+          </div>
+          <div class="form-row">
+            <div style="flex:1"><label class="form-label">تنبيه قرب انتهاء النقاط (قبل كم يوماً)</label><input type="number" id="retExpW" class="adm-inp" min="7" max="90" oninput="retDirty()"></div>
+            <div style="flex:1"><label class="form-label">شكراً بعد التسليم بـ (أيام)</label><input type="number" id="retThanks" class="adm-inp" min="1" max="14" oninput="retDirty()"></div>
+          </div>
+          <div class="form-row">
+            <div style="flex:1"><label class="form-label">سقف الإيميلات التسويقية يومياً (0 = لا إيميل، الرسائل داخل الحساب فقط)</label><input type="number" id="retDay" class="adm-inp" min="0" max="150" oninput="retDirty()"></div>
+            <div style="flex:1"><label class="form-label">ساعات الهدوء بتوقيت الجزائر: من → إلى</label>
+              <div style="display:flex;gap:8px"><input type="number" id="retQF" class="adm-inp" min="0" max="23" oninput="retDirty()"><input type="number" id="retQT" class="adm-inp" min="0" max="23" oninput="retDirty()"></div></div>
+          </div>
+          <p class="pf-hint" id="retStat" style="margin:6px 0 10px"></p>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-c" id="retSaveBtn" onclick="retSave()"><i class="fa-solid fa-floppy-disk"></i> حفظ الإعدادات</button>
+            <button class="btn btn-o" onclick="retRun(true)"><i class="fa-solid fa-eye"></i> معاينة (لا يُرسَل شيء)</button>
+            <button class="btn btn-o" onclick="retRun(false)"><i class="fa-solid fa-paper-plane"></i> شغّل الآن فعلياً</button>
+            <span class="pf-hint" id="retMsg"></span>
+          </div>
+          <div id="retOut" class="pf-hint" style="margin-top:10px;line-height:1.9"></div>
         </div>
       </div>
 

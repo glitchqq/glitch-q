@@ -1307,3 +1307,19 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 .inv-lbl{display:block;font-size:12px;color:var(--mid);margin:10px 0 6px}
 .inv-msg{min-height:18px;margin-top:8px;font-size:12.5px;color:var(--text)}
 .inv-note{font-size:11px;color:var(--mid);margin:6px 0 0}
+
+/* status card, marketing toggle, free-text notifications (round 13) */
+.tier-card{grid-column:1/-1;background:linear-gradient(135deg,rgba(245,34,63,.14),rgba(255,107,127,.04));border:1px solid var(--brd2);border-radius:14px;padding:14px 16px;margin-bottom:10px}
+.tc-top{display:flex;align-items:center;gap:12px}
+.tc-ico{font-size:30px;line-height:1}
+.tc-lbl{font-size:11px;color:var(--mid)}
+.tc-name{font-family:var(--fl);font-size:20px;font-weight:700;color:#fff;line-height:1.2}
+.tc-mult{margin-inline-start:auto;background:rgba(40,200,138,.14);border:1px solid rgba(40,200,138,.5);color:var(--green);font-weight:700;font-size:12px;padding:4px 10px;border-radius:999px;white-space:nowrap}
+.tc-bar{margin:12px 0 6px;max-width:none}
+.tc-sub{font-size:12px;color:var(--text);line-height:1.7}.tc-sub.dim,.tc-line.dim{color:var(--dim)}
+.tc-line{font-size:12.5px;line-height:1.7;margin-top:6px;color:var(--text)}
+.tc-line.boost{color:#3DDC9F;font-weight:700}.tc-line.warn{color:#FFD98A;font-weight:700}
+.mkt-row{grid-column:1/-1;display:flex;align-items:flex-start;gap:10px;margin-top:12px;font-size:12px;line-height:1.7;color:var(--mid);cursor:pointer}
+.mkt-row input{width:17px;height:17px;accent-color:var(--violet);flex-shrink:0;margin-top:2px;cursor:pointer}
+.reg-mkt-check{background:transparent;font-size:12.5px}
+.ni-msg{color:var(--mid);white-space:pre-line;margin-top:2px}

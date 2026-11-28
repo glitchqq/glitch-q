@@ -74,11 +74,12 @@ function ecoVal(id){return document.getElementById(id).value;}
 function ecoRaw(){
   const costs={};document.querySelectorAll('.eco-cost').forEach(i=>{const v=Math.floor(Number(i.value));if(v>0)costs[i.dataset.id]=v;});
   const rewards=[...document.querySelectorAll('.eco-rw')].map(r=>({id:r.dataset.id,name:r.querySelector('.rw-n').value,nameEn:r.querySelector('.rw-e').value,priceDZD:r.querySelector('.rw-p').value,prodId:r.querySelector('.rw-l').value}));
-  return {marginPct:ecoVal('ecMargin'),earnPct:ecoVal('ecEarn'),refPct:ecoVal('ecRef'),refMaxPts:ecoVal('ecRefMax'),refMinOrderDZD:ecoVal('ecRefMin'),ptDZD:ecoVal('ecPt'),costs,rewards};
+  return {marginPct:ecoVal('ecMargin'),earnPct:ecoVal('ecEarn'),refPct:ecoVal('ecRef'),refMaxPts:ecoVal('ecRefMax'),refMinOrderDZD:ecoVal('ecRefMin'),ptDZD:ecoVal('ecPt'),expiryMonths:ecoVal('ecExpiry'),costs,rewards};
 }
 function ecoFill(e){
   document.getElementById('ecEarn').value=e.earnPct;document.getElementById('ecRef').value=e.refPct;document.getElementById('ecRefMax').value=e.refMaxPts;
   document.getElementById('ecRefMin').value=e.refMinOrderDZD;document.getElementById('ecMargin').value=e.marginPct;document.getElementById('ecPt').value=e.ptDZD;
+  document.getElementById('ecExpiry').value=e.expiryMonths;
 }
 function prodLabel(p){return `${p.name||p.id} ${p.cur==='month'?p.val+' شهر':p.cur==='copy'?'':(p.val||'')+(p.sym||'')} ${p.sub?'· '+p.sub:''}`.trim();}
 function ecoRenderCosts(){
@@ -140,6 +141,7 @@ async function loadEconomy(){
   ecoFill(e);ecoRenderCosts();ecoRenderRewards(e.rewards);ecoRenderAudit(e);
   document.getElementById('ecoMsg').textContent='';
   ecoLoadLedger();ecoLoadClaims();
+  retLoad();
   ecoProbeRules().then(res=>{
     const bad=res.filter(x=>x.open===true);
     if(!bad.length)return;
@@ -473,3 +475,62 @@ async function nlSend(){
   nlGate();
 }
 window.nlDirty=nlDirty;window.nlPreview=nlPreview;window.nlTest=nlTest;window.nlSend=nlSend;
+
+/* ══ RETENTION MESSAGES (settings/retention is owner-only; the engine itself runs in the Worker) ══ */
+const RET_DEF={on:false,ownerRemind:true,abandonedHrs:3,winbackDays:30,expiryWarnDays:30,thanksDays:2,remindMin:10,perDay:40,quietFrom:22,quietTo:9,boostDays:7};
+function retRead(){
+  const n=(id,lo,hi,d)=>{const v=Math.floor(Number(document.getElementById(id).value));return Number.isFinite(v)?Math.min(hi,Math.max(lo,v)):d;};
+  return {on:document.getElementById('retOn').checked,ownerRemind:document.getElementById('retOwn').checked,
+    remindMin:n('retRemind',5,120,10),abandonedHrs:n('retAband',1,48,3),winbackDays:n('retWin',7,180,30),boostDays:n('retBoost',1,30,7),
+    expiryWarnDays:n('retExpW',7,90,30),thanksDays:n('retThanks',1,14,2),perDay:n('retDay',0,150,40),quietFrom:n('retQF',0,23,22),quietTo:n('retQT',0,23,9)};
+}
+function retFill(r){
+  r=Object.assign({},RET_DEF,r||{});
+  document.getElementById('retOn').checked=r.on===true;document.getElementById('retOwn').checked=r.ownerRemind!==false;
+  [['retRemind','remindMin'],['retAband','abandonedHrs'],['retWin','winbackDays'],['retBoost','boostDays'],['retExpW','expiryWarnDays'],['retThanks','thanksDays'],['retDay','perDay'],['retQF','quietFrom'],['retQT','quietTo']].forEach(([id,k])=>{document.getElementById(id).value=r[k];});
+}
+function retDirty(){const m=document.getElementById('retMsg');if(m)m.textContent='تغييرات غير محفوظة';}
+async function retPost(body){
+  try{
+    const tok=await auth.currentUser.getIdToken();
+    const r=await fetch(WORKER+'/admin/retention',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({idToken:tok},body))});
+    const j=await r.json().catch(()=>({}));
+    return Object.assign({status:r.status,ok:!!(r.ok&&j.ok)},j);
+  }catch(e){return{ok:false,status:0};}
+}
+async function retLoad(){
+  try{
+    const d=await db.collection('settings').doc('retention').get();
+    retFill(d.exists?d.data():null);
+    document.getElementById('retMsg').textContent='';
+  }catch(e){document.getElementById('retMsg').textContent='تعذّر قراءة الإعدادات';}
+  const st=document.getElementById('retStat');if(!st)return;
+  const j=await retPost({action:'status'});
+  st.innerHTML=j.ok?`المشتركون بالموافقة على الرسائل التسويقية: <b>${esc(String(j.consenting>=500?'500+':j.consenting))}</b> · الساعة الآن بالجزائر: <b>${esc(String(j.hour))}</b>:00 ${j.quiet?'(ساعات هدوء: لا تُرسَل رسائل الآن)':''}`
+    :'<span style="color:var(--amber)">تعذّر قراءة حالة المحرّك من الخادم (هل نُشر الـWorker الجديد؟)</span>';
+}
+async function retSave(){
+  const r=retRead();
+  if(r.on&&!document.getElementById('retOn').dataset.ok){
+    if(!confirm('ستبدأ رسائل الاحتفاظ بالوصول إلى الزبائن الذين وافقوا عليها. هل راجعتَ صفحة الشروط والخصوصية وأنت مطمئن لصياغتها؟'))return;
+    document.getElementById('retOn').dataset.ok='1';
+  }
+  if(!RL.ok('ret-save',6,60000)){aToast('انتظر قليلاً','warn');return;}
+  const btn=document.getElementById('retSaveBtn');btn.disabled=true;
+  try{
+    await db.collection('settings').doc('retention').set(r);
+    document.getElementById('retMsg').textContent='تم الحفظ';aToast('تم حفظ إعدادات رسائل الاحتفاظ','ok');retFill(r);retLoad();
+  }catch(err){aToast('خطأ: '+err.message,'err');}
+  finally{btn.disabled=false;}
+}
+const RET_LABELS={owner:'تذكيرات لك',abandoned:'طلبات متروكة',winback:'عودة زبائن غائبين',expiry:'تنبيه قرب الانتهاء',thanks:'رسائل شكر',swept:'حسابات انتهت نقاطها وصُفِّرت',mails:'إيميلات أُرسلت'};
+async function retRun(dry){
+  if(!dry&&!confirm('سيُنفَّذ المحرّك الآن فعلياً: قد تصل رسائل لزبائن مؤهلين (حسب الحدود أعلاه). متابعة؟'))return;
+  if(!RL.ok('ret-run',6,60000)){aToast('انتظر قليلاً','warn');return;}
+  const out=document.getElementById('retOut');out.textContent='...';
+  const j=await retPost({action:'run',dry});
+  if(!j.ok){out.innerHTML=j.status===429?'طلبات كثيرة — انتظر 10 دقائق':'تعذّر التشغيل (تحقق من نشر الـWorker الجديد)';return;}
+  const r=j.result||{};
+  const parts=Object.keys(RET_LABELS).filter(k=>Number(r[k])>0).map(k=>`${RET_LABELS[k]}: <b>${Number(r[k])}</b>`);
+  out.innerHTML=(dry?'<b>معاينة</b> — لم يُرسَل شيء. ':'<b>تم التنفيذ.</b> ')+(r.skipped?`<span style="color:var(--amber)">تخطّى: ${esc(String(r.skipped))}</span> `:'')+(parts.length?parts.join(' · '):'لا يوجد ما يستحق الإرسال الآن');
+}

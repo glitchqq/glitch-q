@@ -50,6 +50,7 @@ export default {
     // The "unsubscribe" link in a newsletter is opened by a mail app or the reader's browser, which carry no allowed Origin.
     // It is protected by a signed token (unsubToken) and its own limiter instead, and answers with a plain page.
     if (new URL(request.url).pathname === '/newsletter/unsubscribe') return handleUnsubscribe(request, env);
+    if (new URL(request.url).pathname === '/mkt/unsubscribe') return handleMktUnsubscribe(request, env);
     // Pictures of products are plain <img> loads (no Origin header): public, read-only, one id at a time, with its own limiter
     if (new URL(request.url).pathname.startsWith('/img/')) return handleImage(request, env);
     // The Origin header only filters browsers (scripts can forge it), so it is never the
@@ -68,10 +69,10 @@ export default {
 
     try {
       const routes = {
-        '/health':                 () => json({ ok: true, v: 16 }, 200, cors),
+        '/health':                 () => json({ ok: true, v: 17 }, 200, cors),
         '/maintenance':            () => handleMaintenance(request, env, cors),
         '/ticker':                 () => handleTicker(request, env, cors),
-        '/stats/visit':            () => handleVisit(request, env, cors),
+        '/stats/visit':            () => handleVisit(request, env, cors, ctx),
         '/reset-password':         () => handleResetPassword(request, env, cors),
         '/account/send-verification': () => handleSendVerification(request, env, cors),
         '/leaderboard':            () => handleLeaderboard(request, env, cors),
@@ -85,6 +86,8 @@ export default {
         '/account/streak':         () => handleStreak(request, env, cors),
         '/account/spin':           () => handleSpin(request, env, cors),
         '/account/rewards':        () => handleRewards(request, env, cors),
+        '/account/prefs':          () => handleAccountPrefs(request, env, cors),
+        '/account/cart-ping':      () => handleCartPing(request, env, cors),
         '/account/redeem':         () => handleRedeem(request, env, cors),
         '/account/milestone':      () => handleRedeem(request, env, cors),   // old name, same handler
         '/account/referral':       () => handleReferral(request, env, cors),
@@ -100,6 +103,7 @@ export default {
         '/admin/notify-email':     () => handleAdminNotifyEmail(request, env, cors),
         '/admin/product-image':    () => handleAdminProductImage(request, env, cors),
         '/admin/push':             () => handleAdminPush(request, env, cors),
+        '/admin/retention':        () => handleAdminRetention(request, env, cors),
         '/account/invoice-email':  () => handleInvoiceEmail(request, env, cors),
         '/account/claim-email':    () => handleClaimEmail(request, env, cors),
         '/account/check-email':    () => handleCheckEmail(request, env, cors),
@@ -111,7 +115,11 @@ export default {
       console.error('Worker error:', err && err.message);
       return json({ error: 'Internal error' }, 500, cors);
     }
-  }
+  },
+  // Cloudflare cron trigger (optional: the engine also runs from visitors, at most once per 10 minutes)
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(retentionTick(env, {}));
+  },
 };
 
 /* ═══════════════════════════════════════
@@ -634,6 +642,8 @@ async function handleOrderCreate(request, env, cors, ctx) {
   }
   // the owner's phone: sound + details (best effort, after the answer is on its way; the customer never waits for it or sees its failure)
   if (ctx && typeof ctx.waitUntil === 'function') {
+    if (uid && uid !== 'guest') ctx.waitUntil(fsCommit(env, [fsWrite(env, `users/${uid}`, { fields: { cartAt: 0 }, precondition: { exists: true } })]).catch(() => {}));
+    ctx.waitUntil(maybeTick(env).catch(() => {}));
     ctx.waitUntil(pushAdmin(env, {
       t: 'order', oid,
       title: `🛒 طلب جديد · ${total.toLocaleString('en-US')} دج`,
@@ -1084,10 +1094,351 @@ async function handleAdminPush(request, env, cors) {
 }
 
 /* ═══════════════════════════════════════
+   RETENTION — status ladder, point expiry, marketing consent, and the few well-timed messages that bring a customer back
+   The rule that never bends: a message may only promise what the store really gives, and what it gives is paid from the profit
+   of orders that were delivered (see "Profit-funded rewards"). Nothing here creates a cost the store has not already earned.
+   · TIERS / expiry / progress are the same pure functions as econ.js (worker.test.mjs runs both on the same inputs)
+   · consent: promotional e-mail goes ONLY to customers who ticked "send me offers" (users.mktOn, set through /account/prefs,
+     logged with time + version in consent_log); every mail carries a one-click unsubscribe (/mkt/unsubscribe, signed link)
+   · caps: ≥3 days between promotional mails per customer, 1 message per kind per cooldown, a daily mail budget (settings/retention.perDay),
+     no sending at night (Algiers time), nothing at all until the owner switches settings/retention.on on
+   · engine: retentionTick() runs from the Cloudflare cron (scheduled) AND from a visitor-driven heartbeat (once per 10 minutes at most),
+     so it works even if the owner never adds a cron trigger
+═══════════════════════════════════════ */
+const CONSENT_VER = 'terms-2026-11';
+const TIERS = [
+  { id: 'rookie', orders: 0, spend: 0, boost: 0, icon: '🎮', name: 'مبتدئ', nameEn: 'Rookie' },
+  { id: 'player', orders: 2, spend: 10000, boost: 3, icon: '⚡', name: 'لاعب', nameEn: 'Player' },
+  { id: 'pro', orders: 6, spend: 40000, boost: 6, icon: '🔥', name: 'محترف', nameEn: 'Pro' },
+  { id: 'legend', orders: 15, spend: 120000, boost: 10, icon: '👑', name: 'أسطورة', nameEn: 'Legend' },
+];
+function tierIndex(u) {
+  const o = Math.max(0, Math.floor(Number(u && u.orders) || 0)), sp = Math.max(0, Number(u && u.totalSpend) || 0);
+  let idx = 0;
+  TIERS.forEach((t, i) => { if (i > 0 && (o >= t.orders || sp >= t.spend)) idx = i; });
+  return idx;
+}
+function nextTier(u) {
+  const i = tierIndex(u); if (i >= TIERS.length - 1) return null;
+  const t = TIERS[i + 1], o = Math.max(0, Math.floor(Number(u && u.orders) || 0)), sp = Math.max(0, Number(u && u.totalSpend) || 0);
+  const fracO = t.orders ? Math.min(1, o / t.orders) : 1, fracS = t.spend ? Math.min(1, sp / t.spend) : 1;
+  return { tier: t, ordersLeft: Math.max(0, t.orders - o), spendLeft: Math.max(0, t.spend - sp), progress: Math.max(fracO, fracS) };
+}
+function effEarnPct(e, extra) { return Math.min(e.earnPct + Math.max(0, Math.floor(Number(extra) || 0)), Math.max(e.earnPct, 90 - e.refPct)); }
+const DAY_MS = 86400000;
+function expiryAt(u, e) {
+  if (!e || !e.expiryMonths) return 0;
+  const a = Number(u && u.lastPurchaseAt) || Number(u && u.firstSeenAt) || 0;
+  return a > 0 ? Math.round(a + e.expiryMonths * 30.4375 * DAY_MS) : 0;
+}
+function nextReward(redeemable, rewards, e) {
+  const list = (rewards || []).map(r => ({ id: r.id, name: r.name, nameEn: r.nameEn, pts: rewardPts(r, e) })).sort((a, b) => a.pts - b.pts);
+  for (const r of list) if (redeemable < r.pts) return { reward: r, missing: r.pts - redeemable, progress: Math.max(0, Math.min(1, redeemable / r.pts)) };
+  return null;
+}
+const hasExpired = (u, e, now) => { const at = expiryAt(u, e); return at > 0 && now > at && ((Number(u.points) || 0) > 0 || (Number(u.rewardPool) || 0) > 0); };
+
+/* ── the owner's switches: settings/retention (owner-only document) ── */
+const RET_DEFAULTS = { on: false, ownerRemind: true, abandonedHrs: 3, winbackDays: 30, expiryWarnDays: 30, thanksDays: 2, remindMin: 10, perDay: 40, quietFrom: 22, quietTo: 9, boostDays: 7 };
+function normRet(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {}, D = RET_DEFAULTS;
+  return {
+    on: r.on === true, ownerRemind: r.ownerRemind !== false,
+    abandonedHrs: Math.floor(econNum(r.abandonedHrs, D.abandonedHrs, 1, 48)), winbackDays: Math.floor(econNum(r.winbackDays, D.winbackDays, 7, 180)),
+    expiryWarnDays: Math.floor(econNum(r.expiryWarnDays, D.expiryWarnDays, 7, 90)), thanksDays: Math.floor(econNum(r.thanksDays, D.thanksDays, 1, 14)),
+    remindMin: Math.floor(econNum(r.remindMin, D.remindMin, 5, 120)), perDay: Math.floor(econNum(r.perDay, D.perDay, 0, 150)),
+    quietFrom: Math.floor(econNum(r.quietFrom, D.quietFrom, 0, 23)), quietTo: Math.floor(econNum(r.quietTo, D.quietTo, 0, 23)), boostDays: Math.floor(econNum(r.boostDays, D.boostDays, 1, 30)),
+  };
+}
+async function loadRet(env) {
+  try { const d = await fsGet(env, 'settings/retention'); return normRet(d.exists ? d.data : null); } catch { return normRet(null); }
+}
+const algHour = () => new Date(Date.now() + 3600000).getUTCHours();   // Algeria is UTC+1 all year
+const inQuiet = (h, from, to) => from === to ? false : (from > to ? (h >= from || h < to) : (h >= from && h < to));
+
+/* ── consent: /account/prefs  { marketing: true|false, src } ── */
+async function logConsent(env, request, g, on, src) {
+  try {
+    const ip = clientIp(request);
+    await fsCommit(env, [fsWrite(env, `consent_log/${randomId(20)}`, { fields: { uid: g.uid, email: cleanText(g.claims.email || '', 120), type: 'marketing', on, ver: CONSENT_VER, src: cleanText(src, 16), ip: (await sha256Hex('ip|' + ip)).slice(0, 16), ua: cleanText(request.headers.get('User-Agent') || '', 120) }, transforms: { serverTime: ['ts'] } })]);
+  } catch (e) { console.error('CONSENT_LOG_FAIL ' + e.message); }
+}
+async function handleAccountPrefs(request, env, cors) {
+  const g = await account(request, env, cors); if (g.err) return g.err;
+  if (typeof g.body.marketing !== 'boolean') return json({ error: 'Invalid data' }, 400, cors);
+  const on = g.body.marketing, src = ['signup', 'profile', 'prompt'].includes(g.body.src) ? g.body.src : 'profile';
+  const res = await fsUpdate(env, `users/${g.uid}`, cur => {
+    if (!cur.exists) return { abort: 'nouser' };
+    if ((cur.data.mktOn === true) === on && cur.data.mktVer === CONSENT_VER) return { abort: 'same' };
+    return { fields: { mktOn: on, mktVer: CONSENT_VER, mktSrc: src }, transforms: { serverTime: ['mktAt'] } };
+  });
+  if (res.aborted && res.abort === 'nouser') return json({ ok: false, reason: 'nouser' }, 404, cors);
+  if (!res.ok && !res.aborted) return json({ error: 'Please try again' }, 503, cors);
+  if (!res.aborted) await logConsent(env, request, g, on, src);
+  return json({ ok: true, marketing: on }, 200, cors);
+}
+
+/* ── the one-click unsubscribe from a retention mail: /mkt/unsubscribe?u=<uid>&t=<signed> (no Origin: a mail app opens it) ── */
+const mktToken = async (env, uid) => { const s = unsubSecret(env); return s ? (await hmacHex(s, 'mkt|' + uid)).slice(0, 32) : ''; };
+const mktLink = async (env, origin, uid) => `${origin}/mkt/unsubscribe?u=${encodeURIComponent(uid)}&t=${await mktToken(env, uid)}`;
+async function handleMktUnsubscribe(request, env) {
+  const H = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" };
+  const page = (kind, status, action) => new Response(unsubPage(kind, action, 'mkt'), { status, headers: H });
+  if (request.method !== 'GET' && request.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, POST' } });
+  if (hit('munsub:' + clientIp(request), 30, 600000)) return page('busy', 429);
+  const u = new URL(request.url);
+  const uid = String(u.searchParams.get('u') || ''), tok = String(u.searchParams.get('t') || '');
+  if (!RE_UID.test(uid) || !sameStr(tok, await mktToken(env, uid))) return page('bad', 400);
+  if (request.method === 'GET') return page('ask', 200, `${u.pathname}?u=${encodeURIComponent(uid)}&t=${tok}`);
+  const r = await fsCommit(env, [fsWrite(env, `users/${uid}`, { fields: { mktOn: false, mktSrc: 'unsub-link' }, transforms: { serverTime: ['mktAt'] }, precondition: { exists: true } })]);
+  if (!r.ok && r.code !== 'NOT_FOUND') return new Response('Try again', { status: 503, headers: { 'Cache-Control': 'no-store' } });
+  await fsCommit(env, [fsWrite(env, `consent_log/${randomId(20)}`, { fields: { uid, type: 'marketing', on: false, ver: CONSENT_VER, src: 'unsub-link', ip: (await sha256Hex('ip|' + clientIp(request))).slice(0, 16) }, transforms: { serverTime: ['ts'] } })]);
+  return page('done', 200);
+}
+
+/* ── the abandoned-order signal: /account/cart-ping { items:[{id,qty}] } — the Worker prices it itself, the browser's numbers are never trusted ── */
+async function handleCartPing(request, env, cors) {
+  const g = await account(request, env, cors, { maxBody: 2048 }); if (g.err) return g.err;
+  if (hit('cart:' + g.uid, 8, 3600000)) return json({ ok: true }, 200, cors);
+  const priced = priceItems(g.body.items, await loadCatalog(env));
+  if (priced.err) return json({ ok: false }, 200, cors);
+  const res = await fsUpdate(env, `users/${g.uid}`, cur => {
+    if (!cur.exists) return { abort: 'nouser' };
+    return { fields: { cartAt: Date.now(), cartName: priced.label.slice(0, 120), cartTotal: priced.subtotal } };
+  });
+  return json({ ok: !!res.ok }, 200, cors);
+}
+
+/* ── what the customer sees: copy. Short, specific, warm, and never a claim the store cannot keep. ── */
+function retName(u) { const n = cleanText(u && u.firstName, 24); return n && !NF.bad(n) ? n : 'صديقي'; }
+function fmtDZD(n) { return Math.round(Number(n) || 0).toLocaleString('en-US') + ' دج'; }
+function retCopy(kind, c) {
+  const n = c.name;
+  if (kind === 'abandoned') return {
+    title: 'طلبك ينتظرك 🎮',
+    msg: `يا ${n}، تركتَ «${c.product}» (${fmtDZD(c.total)}) في سلتك. ما زال متاحاً — أكمل طلبك بضغطة، وبعد تأكيد الدفع يصلك الكود خلال دقائق.${c.mult ? ` وكل طلب مُسلَّم يمنحك نقاطاً${c.mult >= 1.1 ? ` (×${c.mult} بمستواك الحالي)` : ''}.` : ''}`,
+    subject: `${n}، «${c.product}» ما زال ينتظرك`, preheader: 'أكمل طلبك بضغطة — والكود يصلك خلال دقائق من تأكيد الدفع.', label: 'طلبك ينتظرك',
+    lines: [`أهلاً ${n}،`, `لاحظنا أنك تركتَ «${c.product}» (${fmtDZD(c.total)}) في سلتك قبل إتمام الطلب.`, 'لم نحجز لك شيئاً ولا نضغط عليك: هو ببساطة ما زال متاحاً إن أردته. والطلب بضغطة واحدة، وبعد تأكيد الدفع يصلك الكود خلال دقائق.'],
+    ctaLabel: 'إكمال طلبي',
+  };
+  if (kind === 'winback') return {
+    title: `اشتقنا لك يا ${n} 👋`,
+    msg: `مرّ ${c.days} يوماً على آخر طلب لك. رصيدك ${c.points.toLocaleString('en-US')} نقطة بانتظارك${c.rewardName ? ` — تحتاج ${c.missing.toLocaleString('en-US')} نقطة فقط للمكافأة «${c.rewardName}»` : ''}.${c.mult >= 1.1 ? ` اطلب خلال ${c.boostDays} أيام فتكسب ×${c.mult} نقاط على طلبك.` : ''}`,
+    subject: `اشتقنا لك يا ${n} — رصيدك ينتظرك`, preheader: c.mult >= 1.1 ? `اطلب خلال ${c.boostDays} أيام واكسب ×${c.mult} نقاط.` : `رصيدك ${c.points} نقطة بانتظارك.`, label: 'اشتقنا لك',
+    lines: [`أهلاً ${n}،`, `مرّ ${c.days} يوماً على طلبك الأخير ويسعدنا أن نراك من جديد.`, c.rewardName ? `رصيدك ${c.points.toLocaleString('en-US')} نقطة، وتحتاج ${c.missing.toLocaleString('en-US')} نقطة فقط للمكافأة «${c.rewardName}».` : `رصيدك ${c.points.toLocaleString('en-US')} نقطة محفوظ لك.`, c.mult >= 1.1 ? `هديتنا لعودتك: اطلب خلال ${c.boostDays} أيام فتحصل على ×${c.mult} نقاط على طلبك (تُضاف بعد التسليم).` : ''],
+    facts: [['رصيد نقاطك', c.points.toLocaleString('en-US')]], ctaLabel: 'تصفّح المتجر',
+  };
+  if (kind === 'expiry') return {
+    title: `⏳ نقاطك تنتهي بعد ${c.expDays} يوماً`,
+    msg: `يا ${n}، رصيدك ${c.points.toLocaleString('en-US')} نقطة سينتهي بعد ${c.expDays} يوماً لأنك لم تطلب منذ فترة. أي طلب مُسلَّم يجدّد صلاحيته ${c.expMonths} شهراً كاملة.`,
+    subject: `${n}، نقاطك (${c.points.toLocaleString('en-US')}) تنتهي بعد ${c.expDays} يوماً`, preheader: `أي طلب مُسلَّم يجدّد صلاحية نقاطك ${c.expMonths} شهراً.`, label: 'تذكير بنقاطك',
+    lines: [`أهلاً ${n}،`, `نقاط المتجر تبقى صالحة ${c.expMonths} شهراً من آخر طلب مُسلَّم لك، وقد اقترب موعد انتهاء رصيدك.`, 'أي طلب جديد يُسلَّم لك يجدّد الصلاحية من جديد، فلا تضيع نقاطك.'],
+    facts: [['النقاط', c.points.toLocaleString('en-US')], ['تنتهي بعد', `${c.expDays} يوماً`]], ctaLabel: 'جدّد نقاطي بطلب',
+  };
+  return {   // thanks
+    title: `شكراً يا ${n} 💙`,
+    msg: `نأمل أن «${c.product}» وصلك كما تتمنى. رأيك يصنع فرقاً — قيّم تجربتك من الموقع.${c.rewardName ? ` ورصيدك الآن ${c.points.toLocaleString('en-US')} نقطة، وبقي ${c.missing.toLocaleString('en-US')} للمكافأة «${c.rewardName}».` : ''}`,
+    subject: `شكراً ${n} — كيف كانت تجربتك؟`, preheader: 'رأيك يساعدنا ويساعد غيرك من اللاعبين.', label: 'شكراً لك',
+    lines: [`أهلاً ${n}،`, `شكراً لثقتك بنا في «${c.product}». نأمل أن كل شيء وصلك كما تتمنى.`, 'إن كان لديك دقيقة، قيّم تجربتك من الموقع — رأيك يساعدنا على التحسّن ويساعد غيرك من اللاعبين.', c.rewardName ? `وبالمناسبة: رصيدك ${c.points.toLocaleString('en-US')} نقطة، وبقي ${c.missing.toLocaleString('en-US')} نقطة للمكافأة «${c.rewardName}».` : ''],
+    ctaLabel: 'قيّم تجربتك',
+  };
+}
+function buildRetentionEmail(copy, unsubUrl) {
+  const t = MAIL_TONE.crimson;
+  const body = [
+    mH1(copy.title.replace(/[\u{1F300}-\u{1FAFF}☀-➿]/gu, '').trim() || copy.title),
+    ...copy.lines.filter(Boolean).map(l => mP(escHtml(l))),
+    copy.facts ? `${mGap(6)}\n${mFacts(copy.facts.map(([k, v]) => [escHtml(k), escHtml(v)]))}` : '',
+    `${mGap(14)}\n${mButton(MAIL_SITE, escHtml(copy.ctaLabel), t)}`,
+    mGap(10),
+  ].join('\n');
+  return mailShell({
+    tone: 'crimson', label: copy.label, title: copy.title, preheader: copy.preheader, body,
+    note: 'وصلتك هذه الرسالة لأنك وافقت على تلقّي رسائل العروض والتذكيرات من المتجر، ويمكنك إيقافها في أي وقت.',
+    extraFoot: `<p dir="rtl" style="margin:0 0 14px;${MB}font-size:12.5px;line-height:1.8;color:${MC.dim};">لا تريد هذه الرسائل؟ <a href="${escHtml(unsubUrl)}" target="_blank" style="color:${MC.p};text-decoration:underline;">إيقاف رسائل العروض</a></p>`,
+  });
+}
+function buildRetentionText(copy, unsubUrl) {
+  return `${copy.title}\n\n${copy.lines.filter(Boolean).join('\n\n')}\n\n${copy.ctaLabel}: ${SITE_URL}\n\n—\nلإيقاف رسائل العروض: ${unsubUrl}\nGlitch Q`;
+}
+
+/* ── delivering one message: the in-account note always (once the owner has switched retention on), the e-mail only with consent ── */
+const RET_MAIL_GAP_MS = 3 * DAY_MS, RET_NOTE_GAP_MS = 2 * DAY_MS;
+const RET_COOL = { abandoned: 5 * DAY_MS, winback: 21 * DAY_MS };
+async function retDeliver(env, origin, ret, uid, kind, c, extraFields = {}) {
+  const now = Date.now(), copy = retCopy(kind, c);
+  let mailWanted = false, u0 = null;
+  const claim = await fsUpdate(env, `users/${uid}`, cur => {
+    if (!cur.exists) return { abort: 'nouser' };
+    const d = cur.data;
+    if (now - (Number(d.retLastAt) || 0) < RET_NOTE_GAP_MS) return { abort: 'gap' };                       // never two messages within 2 days
+    if (RET_COOL[kind] && now - (Number(d['ret_' + kind + '_at']) || 0) < RET_COOL[kind]) return { abort: 'cool' };
+    mailWanted = d.mktOn === true && RE_EMAIL.test(String(d.email || '')) && now - (Number(d.mktLastAt) || 0) >= RET_MAIL_GAP_MS;
+    u0 = d;
+    const note = { title: copy.title, msg: copy.msg, date: dzDate(), read: false, kind: 'msg' };
+    return { fields: { retLastAt: now, ['ret_' + kind + '_at']: now, ...extraFields, ...(mailWanted ? { mktLastAt: now } : {}) }, transforms: { arrayUnion: { notifications: [note] } } };
+  });
+  if (!claim.ok) return { sent: false, why: claim.aborted ? claim.abort : 'error' };
+  let mailed = false;
+  if (mailWanted && env.BREVO_API_KEY && unsubSecret(env)) {
+    if (!(await dHit(env, 'mkt_' + dzDay(), ret.perDay, 36 * 3600))) {
+      const link = await mktLink(env, origin, uid);
+      const r = await sendBrevo(env, { to: String(u0.email).toLowerCase(), subject: copy.subject, html: buildRetentionEmail(copy, link), text: buildRetentionText(copy, link),
+        headers: { 'List-Unsubscribe': `<${link}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } });
+      mailed = r.ok;
+    }
+  }
+  return { sent: true, mailed };
+}
+
+/* ── the engine ── */
+const RET_ORIGIN = 'https://glitchq-proxy.kadirom7k777.workers.dev';
+const tsMs = v => { const n = typeof v === 'number' ? v : Date.parse(String(v || '')); return Number.isFinite(n) ? n : 0; };
+async function retentionTick(env, { force = false, dry = false, origin = RET_ORIGIN } = {}) {
+  const out = { owner: 0, abandoned: 0, winback: 0, expiry: 0, thanks: 0, swept: 0, mails: 0, dry, skipped: '' };
+  const now = Date.now(), hour = algHour();
+  let budget = 40;                                                    // sub-requests we allow ourselves in one run (the free plan gives 50)
+  const spend = n => { if (budget < n) return false; budget -= n; return true; };
+  try {
+    const [ret, e] = await Promise.all([loadRet(env), loadEcon(env)]);
+    budget -= 3;
+    const quiet = inQuiet(hour, ret.quietFrom, ret.quietTo);
+
+    /* 1) the owner: an order that is still pending → remind him (10 min, 45 min, 2 h), push + Telegram; no repeats at night */
+    if (ret.ownerRemind && (!quiet || force) && spend(2)) {
+      const rows = await fsQuery(env, 'orders', { filters: [['status', 'EQUAL', 'pending']], limit: 12 });
+      const due = rows.filter(r => { const n = Number(r.data.remindN) || 0, at = tsMs(r.data.ts), gap = [ret.remindMin, 45, 120][n]; return n < 3 && at > 0 && now - at >= gap * 60000 && now - at < 3 * DAY_MS; });
+      out.owner = due.length;
+      for (const r of due.slice(0, 3)) {
+        if (dry || !spend(10)) continue;
+        const mins = Math.floor((now - tsMs(r.data.ts)) / 60000), label = cleanText(r.data.product || '', 100), total = Number(r.data.totalDZD) || 0;
+        const w = await fsCommit(env, [fsWrite(env, `orders/${r.id}`, { fields: { remindN: (Number(r.data.remindN) || 0) + 1, remindAt: now }, precondition: { exists: true } })]);
+        if (!w.ok) continue;
+        await pushAdmin(env, { t: 'order', oid: r.id, title: `⏰ طلب ينتظرك منذ ${mins} دقيقة`, body: `${label}\n${total.toLocaleString('en-US')} دج`, tag: 'gq-remind-' + r.id });
+        await tgSend(env, `⏰ تذكير: طلب ما زال ينتظر التنفيذ منذ ${mins} دقيقة\n🛒 ${label}\n💰 ${total.toLocaleString('en-US')} دج\n🆔 ${r.id}`).catch(() => {});
+      }
+    }
+
+    /* 2) points whose clock ran out are removed (a program rule, not a message) */
+    const paused = await pointsPaused(env); budget -= 1;
+    if (e.expiryMonths > 0 && !paused && spend(2)) {
+      const cutoff = now - Math.round(e.expiryMonths * 30.4375 * DAY_MS);
+      const rows = await fsQuery(env, 'users', { filters: [['lastPurchaseAt', 'GREATER_THAN', 0], ['lastPurchaseAt', 'LESS_THAN', cutoff]], limit: 10 });
+      const gone = rows.filter(r => hasExpired(r.data, e, now));
+      out.swept = gone.length;
+      for (const r of gone.slice(0, 4)) { if (dry || !spend(3)) continue; await expireUser(env, r.id, e, now); }
+    }
+
+    if (!ret.on || quiet) { out.skipped = !ret.on ? 'retention is off' : 'quiet hours'; return out; }
+
+    /* 3) abandoned order → one nudge */
+    if (spend(2)) {
+      const rows = await fsQuery(env, 'users', { filters: [['cartAt', 'GREATER_THAN', now - 48 * 3600000], ['cartAt', 'LESS_THAN', now - ret.abandonedHrs * 3600000]], limit: 8 });
+      const cand = rows.filter(r => r.data.cartName && now - (Number(r.data.ret_abandoned_at) || 0) >= RET_COOL.abandoned);
+      out.abandoned = cand.length;
+      for (const r of cand.slice(0, 3)) {
+        if (dry || !spend(8)) continue;
+        if (await isBanned(env, r.id)) continue;
+        const d = r.data, extra = TIERS[tierIndex(d)].boost, mult = Math.round(effEarnPct(e, extra) / e.earnPct * 100) / 100;
+        const x = await retDeliver(env, origin, ret, r.id, 'abandoned', { name: retName(d), product: cleanText(d.cartName, 100), total: Number(d.cartTotal) || 0, mult: mult > 1 ? mult : 0 }, { cartAt: 0 });
+        if (x.sent && x.mailed) out.mails++;
+      }
+    }
+    /* 4) win-back: a customer who has gone quiet, with his balance, the next reward, and (honestly) a one-week points boost */
+    if (spend(2)) {
+      const rows = await fsQuery(env, 'users', { filters: [['lastPurchaseAt', 'GREATER_THAN', now - 180 * DAY_MS], ['lastPurchaseAt', 'LESS_THAN', now - ret.winbackDays * DAY_MS]], limit: 8 });
+      const cand = rows.filter(r => now - (Number(r.data.ret_winback_at) || 0) >= RET_COOL.winback);
+      out.winback = cand.length;
+      for (const r of cand.slice(0, 3)) {
+        if (dry || !spend(8)) continue;
+        if (await isBanned(env, r.id)) continue;
+        const d = r.data, red = redeemablePts(d, e), nr = nextReward(red, e.rewards, e);
+        const room = Math.max(0, effEarnPct(e, 10) - e.earnPct), boostPP = Math.min(10, room), mult = Math.round(effEarnPct(e, boostPP) / e.earnPct * 100) / 100;
+        const x = await retDeliver(env, origin, ret, r.id, 'winback', { name: retName(d), days: Math.floor((now - Number(d.lastPurchaseAt)) / DAY_MS), points: Math.max(0, Math.floor(Number(d.points) || 0)), rewardName: nr ? nr.reward.name : '', missing: nr ? nr.missing : 0, mult, boostDays: ret.boostDays },
+          mult >= 1.1 ? { boostPP, boostUntil: now + ret.boostDays * DAY_MS } : {});
+        if (x.sent && x.mailed) out.mails++;
+      }
+    }
+    /* 5) points about to lapse → a warning with the way to renew them */
+    if (e.expiryMonths > 0 && !paused && spend(2)) {
+      const lo = now - Math.round(e.expiryMonths * 30.4375 * DAY_MS), hi = now - Math.round((e.expiryMonths * 30.4375 - ret.expiryWarnDays) * DAY_MS);
+      const rows = await fsQuery(env, 'users', { filters: [['lastPurchaseAt', 'GREATER_THAN', lo], ['lastPurchaseAt', 'LESS_THAN', hi]], limit: 8 });
+      const cand = rows.filter(r => (Number(r.data.points) || 0) > 0 && Number(r.data.ret_expiry_for) !== Number(r.data.lastPurchaseAt));
+      out.expiry = cand.length;
+      for (const r of cand.slice(0, 3)) {
+        if (dry || !spend(8)) continue;
+        if (await isBanned(env, r.id)) continue;
+        const d = r.data, left = Math.max(1, Math.ceil((expiryAt(d, e) - now) / DAY_MS));
+        const x = await retDeliver(env, origin, ret, r.id, 'expiry', { name: retName(d), points: Math.floor(Number(d.points) || 0), expDays: left, expMonths: e.expiryMonths }, { ret_expiry_for: Number(d.lastPurchaseAt) });
+        if (x.sent && x.mailed) out.mails++;
+      }
+    }
+    /* 6) a thank-you two days after delivery, with the rating link and the next goal */
+    if (spend(2)) {
+      const rows = await fsQuery(env, 'orders', { filters: [['doneAt', 'GREATER_THAN', now - 6 * DAY_MS], ['doneAt', 'LESS_THAN', now - ret.thanksDays * DAY_MS]], limit: 8 });
+      const cand = rows.filter(r => r.data.thanksSent !== true && r.data.userId && r.data.userId !== 'guest');
+      out.thanks = cand.length;
+      for (const r of cand.slice(0, 3)) {
+        if (dry || !spend(10)) continue;
+        const mark = await fsCommit(env, [fsWrite(env, `orders/${r.id}`, { fields: { thanksSent: true }, precondition: { exists: true } })]);
+        if (!mark.ok) continue;
+        const u = await fsGet(env, `users/${r.data.userId}`);
+        if (!u.exists || await isBanned(env, r.data.userId)) continue;
+        const d = u.data, red = redeemablePts(d, e), nr = nextReward(red, e.rewards, e);
+        const x = await retDeliver(env, origin, ret, r.data.userId, 'thanks', { name: retName(d), product: cleanText(r.data.product || '', 100), points: Math.max(0, Math.floor(Number(d.points) || 0)), rewardName: nr ? nr.reward.name : '', missing: nr ? nr.missing : 0 });
+        if (x.sent && x.mailed) out.mails++;
+      }
+    }
+  } catch (err) { console.error('RETENTION_FAIL ' + (err && err.message)); out.error = true; }
+  return out;
+}
+async function expireUser(env, uid, e, now) {
+  return fsUpdate(env, `users/${uid}`, cur => {
+    if (!cur.exists || !hasExpired(cur.data, e, now)) return { abort: 'no' };
+    const pts = Math.max(0, Math.floor(Number(cur.data.points) || 0));
+    const note = { title: '⌛ انتهت صلاحية نقاطك', msg: `انتهت صلاحية ${pts.toLocaleString('en-US')} نقطة لأنه مرّ أكثر من ${e.expiryMonths} شهراً على آخر طلب مُسلَّم لك. أي طلب جديد يبدأ رصيداً جديداً.`, date: dzDate(), read: false, kind: 'msg' };
+    return { fields: { points: 0, rewardPool: 0, expiredPts: (Number(cur.data.expiredPts) || 0) + pts }, transforms: { arrayUnion: { notifications: [note] } } };
+  });
+}
+// visitors keep the engine alive without a cron: at most one run per 10 minutes for the whole store
+let _tickAt = 0;
+async function maybeTick(env) {
+  const now = Date.now();
+  if (now - _tickAt < 5 * 60000) return;
+  _tickAt = now;
+  if (await dHit(env, 'rettick', 1, 600)) return;
+  await retentionTick(env, {});
+}
+
+// POST /admin/retention { idToken, action: status | run, dry }
+async function handleAdminRetention(request, env, cors) {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  const body = await readJson(request, 2048);
+  if (!body) return json({ error: 'Invalid data' }, 400, cors);
+  const a = await who(body.idToken, env, cors, false);
+  if (a.err) return a.err;
+  if (!isAdminClaims(a.claims, env)) return json({ error: 'Forbidden' }, 403, cors);
+  if (hit('aret', Number(env.RET_CALL_MAX) || 40, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+  const act = String(body.action || '');
+  if (act === 'status') {
+    const [ret, rows] = await Promise.all([loadRet(env), fsQuery(env, 'users', { filters: [['mktOn', 'EQUAL', true]], limit: 500 })]);
+    return json({ ok: true, ret, consenting: rows.length, consentVer: CONSENT_VER, hour: algHour(), quiet: inQuiet(algHour(), ret.quietFrom, ret.quietTo) }, 200, cors);
+  }
+  if (act === 'run') {
+    if (hit('aret-run', Number(env.RET_RUN_MAX) || 6, 600000)) return json({ error: 'Too many requests' }, 429, cors);
+    const r = await retentionTick(env, { force: true, dry: body.dry !== false, origin: new URL(request.url).origin });
+    return json({ ok: true, result: r }, 200, cors);
+  }
+  return json({ error: 'Unknown action' }, 400, cors);
+}
+
+/* ═══════════════════════════════════════
    VISITS / NEWSLETTER / RATING / REPORT
 ═══════════════════════════════════════ */
-async function handleVisit(request, env, cors) {
+async function handleVisit(request, env, cors, ctx) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
+  if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(maybeTick(env).catch(() => {}));
   if (hit('vis:' + clientIp(request), 10, 3600000)) return json({ ok: true }, 200, cors);
   await fsCommit(env, [fsWrite(env, 'settings/stats', { fields: {}, transforms: { inc: { visitors: 1 } } })]);
   return json({ ok: true }, 200, cors);
@@ -1138,13 +1489,18 @@ async function unsubLink(env, origin, id) {
   return `${origin}/newsletter/unsubscribe?i=${encodeURIComponent(id)}&t=${await unsubToken(env, id)}`;
 }
 
-function unsubPage(kind, action) {
-  const T = {
+function unsubPage(kind, action, topic = 'nl') {
+  const T = (topic === 'mkt' ? {
+    ask:  ['إيقاف رسائل العروض', 'هل تريد التوقف عن استلام رسائل العروض والتذكيرات؟ تبقى رسائل طلباتك وأكوادك تصلك، وإشعارات حسابك داخل الموقع كما هي.', ''],
+    done: ['تم إيقاف رسائل العروض', 'لن تصلك رسائل العروض والتذكيرات على بريدك بعد الآن. يمكنك إعادة تفعيلها في أي وقت من حسابك ← الملف الشخصي.'],
+    bad:  ['الرابط غير صالح', 'هذا الرابط غير صحيح أو انتهت صلاحيته. لإيقاف الرسائل افتح حسابك ← الملف الشخصي ← رسائل العروض.'],
+    busy: ['محاولات كثيرة', 'انتظر بضع دقائق ثم حاول مرة أخرى.'],
+  } : {
     ask:  ['إلغاء الاشتراك من النشرة', 'هل تريد التوقف عن استلام النشرة البريدية؟ لن تصلك رسائل ترويجية بعد ذلك، أما رسائل طلباتك وأكوادك فتبقى تصلك كالمعتاد.'],
     done: ['تم إلغاء اشتراكك', 'لن تصلك النشرة البريدية بعد الآن. يمكنك الاشتراك من جديد في أي وقت من المتجر.'],
     bad:  ['الرابط غير صالح', 'هذا الرابط غير صحيح أو انتهت صلاحيته. لإلغاء الاشتراك استخدم الرابط الموجود في آخر رسالة وصلتك.'],
     busy: ['محاولات كثيرة', 'انتظر بضع دقائق ثم حاول مرة أخرى.'],
-  }[kind];
+  })[kind];
   return `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${escHtml(T[0])}</title>
 <style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:#050507;color:#F4F4F7;font-family:${MAIL_FONT};direction:rtl}
 .c{width:min(420px,100%);background:#0F0F14;border:1px solid #24242E;border-radius:20px;overflow:hidden}.s{height:4px;background:linear-gradient(90deg,#F5223F 88%,#FF5C6C 88% 94%,#35E0F2 94%)}
@@ -1152,7 +1508,7 @@ function unsubPage(kind, action) {
 button,a.l{display:block;width:100%;padding:14px;border:0;border-radius:12px;background:#D4062A;color:#fff;font:700 16px ${MAIL_FONT};text-align:center;text-decoration:none;cursor:pointer}
 .w{font-family:Arial,Helvetica,sans-serif;font-weight:800;letter-spacing:3px;font-size:13px;color:#9A9AA8;margin-bottom:14px;direction:ltr;text-align:right}</style></head>
 <body><div class="c"><div class="s"></div><div class="b"><div class="w">GLITCH Q</div><h1>${escHtml(T[0])}</h1><p>${escHtml(T[1])}</p>
-${kind === 'ask' ? `<form method="post" action="${escHtml(action)}"><button type="submit">نعم، ألغِ اشتراكي</button></form>` : `<a class="l" href="${SITE_URL}">العودة إلى المتجر</a>`}</div></div></body></html>`;
+${kind === 'ask' ? `<form method="post" action="${escHtml(action)}"><button type="submit">${topic === 'mkt' ? 'نعم، أوقف الرسائل' : 'نعم، ألغِ اشتراكي'}</button></form>` : `<a class="l" href="${SITE_URL}">العودة إلى المتجر</a>`}</div></div></body></html>`;
 }
 
 // GET  → a confirmation page (so a mail scanner that merely opens the link cannot unsubscribe anyone)
@@ -1309,7 +1665,7 @@ const SPIN_SEGMENTS = [
    so what a customer has cost the store in free cards can never exceed what the store earned from that customer.
    Keep ECON_DEFAULTS / normEcon identical to econ.js (worker.test.mjs checks that they agree). */
 const ECON_DEFAULTS = {
-  marginPct: 5, earnPct: 40, refPct: 40, refMaxPts: 80, refMinOrderDZD: 2000, ptDZD: 10,
+  marginPct: 5, earnPct: 40, refPct: 40, refMaxPts: 80, refMinOrderDZD: 2000, ptDZD: 10, expiryMonths: 12,
   rewards: [
     { id: 'r5', name: 'بطاقة PS Store 5€', nameEn: 'PS Store 5€ card', priceDZD: 1600 },
     { id: 'r15', name: 'بطاقة PS Store 15€', nameEn: 'PS Store 15€ card', priceDZD: 4500 },
@@ -1328,6 +1684,7 @@ function normEcon(raw) {
     refMaxPts: Math.floor(econNum(r.refMaxPts, D.refMaxPts, 0, 5000)),
     refMinOrderDZD: Math.floor(econNum(r.refMinOrderDZD, D.refMinOrderDZD, 0, 1e6)),
     ptDZD: Math.floor(econNum(r.ptDZD, D.ptDZD, 1, 1000)),
+    expiryMonths: Math.floor(econNum(r.expiryMonths, D.expiryMonths, 0, 36)),
   };
   if (e.earnPct + e.refPct > 90) e.refPct = Math.max(0, 90 - e.earnPct);            // the store always keeps at least 10% of the profit
   const list = Array.isArray(r.rewards) ? r.rewards : D.rewards;
@@ -1412,15 +1769,29 @@ async function handleSpin(request, env, cors) {
   return json({ ok: true, index: idx, pts: prize.pts, points: (Number(res.cur.data.points) || 0) + prize.pts, spins: (Number(res.cur.data.spins) || 0) + 1 }, 200, cors);
 }
 
-// What the customer may redeem right now. Nothing here reveals cost prices or margins.
+// What the customer may redeem right now. Nothing here reveals cost prices or margins (only a multiplier like ×1.25, never a percentage of profit).
 async function handleRewards(request, env, cors) {
   const g = await account(request, env, cors); if (g.err) return g.err;
   const [e, u, paused] = await Promise.all([loadEcon(env), fsGet(env, `users/${g.uid}`), pointsPaused(env)]);
   if (!u.exists) return json({ ok: false, reason: 'nouser' }, 404, cors);
-  const points = Math.max(0, Math.floor(Number(u.data.points) || 0)), red = redeemablePts(u.data, e);
+  const now = Date.now();
+  let d = u.data;
+  if (!d.firstSeenAt) {                                   // the expiry clock of a customer with no delivered order starts the first time we see him
+    const w = await fsCommit(env, [fsWrite(env, `users/${g.uid}`, { fields: { firstSeenAt: now }, precondition: { exists: true } })]);
+    if (w.ok) d = { ...d, firstSeenAt: now };
+  }
+  if (!paused && hasExpired(d, e, now)) { const x = await expireUser(env, g.uid, e, now); if (x.ok) d = { ...d, points: 0, rewardPool: 0 }; }
+  const points = Math.max(0, Math.floor(Number(d.points) || 0)), red = redeemablePts(d, e);
+  const tier = TIERS[tierIndex(d)], nt = nextTier(d), nr = nextReward(red, e.rewards, e), exp = expiryAt(d, e);
+  const mult = x => Math.round(effEarnPct(e, x) / Math.max(1, e.earnPct) * 100) / 100;
   return json({
     ok: true, paused, points, redeemablePts: red, lockedPts: points - red, ptDZD: e.ptDZD, refMaxPts: e.refMaxPts, refMinOrderDZD: e.refMinOrderDZD,
     rewards: e.rewards.map(r => ({ id: r.id, name: r.name, nameEn: r.nameEn, pts: rewardPts(r, e) })),
+    tier: { id: tier.id, name: tier.name, nameEn: tier.nameEn, icon: tier.icon, mult: mult(tier.boost) },
+    nextTier: nt ? { id: nt.tier.id, name: nt.tier.name, nameEn: nt.tier.nameEn, icon: nt.tier.icon, mult: mult(nt.tier.boost), ordersLeft: nt.ordersLeft, spendLeft: nt.spendLeft, progress: Math.round(nt.progress * 100) / 100 } : null,
+    next: nr ? { id: nr.reward.id, name: nr.reward.name, nameEn: nr.reward.nameEn, pts: nr.reward.pts, missing: nr.missing, progress: Math.round(nr.progress * 100) / 100 } : null,
+    expiresAt: points > 0 && exp ? exp : 0, expiryMonths: e.expiryMonths, mkt: d.mktOn === true,
+    boost: Number(d.boostUntil) > now ? { until: Number(d.boostUntil), mult: mult(Math.max(tier.boost, Number(d.boostPP) || 0)) } : null,
   }, 200, cors);
 }
 
@@ -1433,6 +1804,7 @@ async function handleRedeem(request, env, cors) {
   const need = rewardPts(rw, e), worth = need * e.ptDZD;
   const res = await fsUpdate(env, `users/${g.uid}`, cur => {
     if (!cur.exists) return { abort: 'nouser' };
+    if (hasExpired(cur.data, e, Date.now())) return { abort: 'expired' };
     if (Math.floor(Number(cur.data.points) || 0) < need) return { abort: 'points' };
     if ((Number(cur.data.rewardPool) || 0) < worth) return { abort: 'locked' };            // enough points, but the store has not earned enough from this customer yet
     const notif = { title: `🎁 ${rw.name}`, code: 'سيتم إرسال المكافأة لك خلال 24 ساعة.', date: dzDate(), read: false };
@@ -1520,12 +1892,12 @@ function maskEmail(e) {
   const [u, d] = String(e).split('@');
   return (u.length <= 2 ? u[0] + '*' : u.slice(0, 2) + '***') + '@' + d;
 }
-async function sendBrevo(env, { to, subject, html, text }) {
+async function sendBrevo(env, { to, subject, html, text, headers }) {
   if (!env.BREVO_API_KEY) return { ok: false, why: 'Email not configured' };
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: { 'api-key': env.BREVO_API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sender: { name: 'Glitch Q', email: 'glitchq1q@gmail.com' }, to: [{ email: to }], subject, htmlContent: html, textContent: text }),
+    body: JSON.stringify({ sender: { name: 'Glitch Q', email: 'glitchq1q@gmail.com' }, to: [{ email: to }], subject, htmlContent: html, textContent: text, ...(headers ? { headers } : {}) }),
   });
   if (!res.ok) {
     const eb = await res.json().catch(() => ({}));

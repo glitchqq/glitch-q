@@ -172,6 +172,50 @@ const econCost = { costs: { p15: 4000, p5: 1500 }, marginPct: 5 };
   try { await ctx2.f('x'); } catch (e) { failedLoad = /تعذّر/.test(e.message); }
   ck('economics document unreadable → delivery refused with a clear message (no silent zero-point delivery)', failedLoad); }
 
+/* ───────── status ladder, expiry, boost (round 13) ───────── */
+const DAY = 86400000;
+ck('ladder: rookie → player at 2 orders OR 10 000 DZD; pro at 6 / 40 000; legend at 15 / 120 000 (whichever comes first)',
+  E.tierOf({}).id === 'rookie' && E.tierOf({ orders: 1, totalSpend: 9999 }).id === 'rookie' && E.tierOf({ orders: 2 }).id === 'player' && E.tierOf({ totalSpend: 10000 }).id === 'player' &&
+  E.tierOf({ orders: 6 }).id === 'pro' && E.tierOf({ totalSpend: 40000 }).id === 'pro' && E.tierOf({ orders: 15 }).id === 'legend' && E.tierOf({ totalSpend: 120000 }).id === 'legend');
+ck('ladder: garbage in (null, strings, negatives) → rookie, never a crash', E.tierOf(null).id === 'rookie' && E.tierOf({ orders: 'x', totalSpend: -5 }).id === 'rookie' && E.tierOf({ orders: -3 }).id === 'rookie');
+ck('ladder: the next tier says exactly what is missing; the top tier has none',
+  (() => { const n = E.nextTier({ orders: 1, totalSpend: 3000 }); return n.tier.id === 'player' && n.ordersLeft === 1 && n.spendLeft === 7000 && n.progress === 0.5; })() && E.nextTier({ orders: 20 }) === null);
+ck('tier boost: +3 / +6 / +10 points of profit share, 0 for a rookie', [E.TIERS[0].boost, E.TIERS[1].boost, E.TIERS[2].boost, E.TIERS[3].boost].join() === '0,3,6,10');
+ck('effEarnPct: base + extra, capped at 90 − referral share (the store keeps ≥10% of every profit)',
+  E.effEarnPct(e0, 0) === 40 && E.effEarnPct(e0, 10) === 50 && E.effEarnPct(e0, 99) === 50 && E.effEarnPct(E.normEcon({ earnPct: 40, refPct: 10 }), 99) === 80 && E.effEarnPct(e0, -7) === 40 && E.effEarnPct(e0, 'zz') === 40);
+{ let bad = 0;   // whatever the owner configures, base + the biggest perk + referral never passes 90%
+  for (let i = 0; i < 500; i++) { const x = E.normEcon({ earnPct: Math.random() * 90, refPct: Math.random() * 90 }); if (E.effEarnPct(x, 10) + x.refPct > 90 && E.effEarnPct(x, 10) > x.earnPct) bad++; }
+  ck('effEarnPct: 500 random configs — a perk can never push (earn + referral) past 90% of the profit', bad === 0, bad); }
+ck('earnPts: the tier perk adds points on a profitable order and never on a loss', E.earnPts(500, e0, 0) === 20 && E.earnPts(500, e0, 10) === 25 && E.earnPts(-100, e0, 10) === 0);
+ck('expiry: lastPurchaseAt (else firstSeenAt) + 12 months; 0 months = never; nothing known = no deadline',
+  (() => { const t = 1700000000000; return Math.abs(E.expiryAt({ lastPurchaseAt: t }, e0) - (t + 12 * 30.4375 * DAY)) < 2 && E.expiryAt({ firstSeenAt: t }, e0) > t && E.expiryAt({ lastPurchaseAt: t }, E.normEcon({ expiryMonths: 0 })) === 0 && E.expiryAt({}, e0) === 0; })());
+ck('normEcon: expiryMonths default 12, accepts 0–36, garbage → 12, 99 → 36', e0.expiryMonths === 12 && E.normEcon({ expiryMonths: 0 }).expiryMonths === 0 && E.normEcon({ expiryMonths: 'x' }).expiryMonths === 12 && E.normEcon({ expiryMonths: 99 }).expiryMonths === 36);
+ck('nextReward: the closest reward not yet reached, with the exact gap; null when everything is reachable',
+  (() => { const n = E.nextReward(10, e0.rewards, e0), cheapest = Math.min(...e0.rewards.map(r => E.rewardPts(r, e0))); return n && n.reward.pts === cheapest && n.missing === cheapest - 10 && n.progress > 0 && n.progress < 1 && E.nextReward(1e9, e0.rewards, e0) === null; })());
+ck('liability: exposure counts only redeemable points (min of points and pool), the rest is "locked"',
+  (() => { const l = E.liability([{ points: 100, rewardPool: 300 }, { points: 50, rewardPool: 0 }], e0); return l.points === 150 && l.exposureDZD === 30 * 10 && l.lockedDZD === 120 * 10; })());
+
+{ const day = 86400000;   // the REAL completeOrder(): tier perk, win-back boost, expiry clock, abandoned-cart flag, thank-you timer
+  const mk = (u, o) => { const w = world(econCost, prods); w.store.set('users/cust', { points: 0, rewardPool: 0, orders: 0, totalSpend: 0, notifications: [], cartAt: 123, ...u }); w.store.set('orders/o1', mkOrder(o)); return w; };
+  let w = mk({}); await w.completeOrder('o1', { title: 't' });
+  let u = w.store.get('users/cust'), l = w.store.get('order_econ/o1'), o = w.store.get('orders/o1');
+  ck('deliver (rookie): 20 pts as before; lastPurchaseAt set, the abandoned-cart reminder switched off, doneAt stamped on the order', u.points === 20 && u.lastPurchaseAt > Date.now() - 5000 && u.cartAt === 0 && o.doneAt > Date.now() - 5000 && l.tier === 'rookie' && l.extraPP === 0 && l.effPct === 40, JSON.stringify([u, o.doneAt, l]));
+  w = mk({ orders: 2 }); await w.completeOrder('o1', null); u = w.store.get('users/cust'); l = w.store.get('order_econ/o1');
+  ck('deliver (player, 2 earlier orders): 43% of the profit → 21 pts, the perk is written in the ledger', u.points === 21 && u.rewardPool === 210 && l.tier === 'player' && l.extraPP === 3 && l.effPct === 43, JSON.stringify([u, l]));
+  w = mk({ orders: 15 }); await w.completeOrder('o1', null); ck('deliver (legend): 50% → 25 pts', w.store.get('users/cust').points === 25, w.store.get('users/cust').points);
+  w = mk({ boostPP: 10, boostUntil: Date.now() + 5 * day }); await w.completeOrder('o1', null); u = w.store.get('users/cust'); l = w.store.get('order_econ/o1');
+  ck('win-back boost: promised +10 points inside its window → 25 pts, recorded, and used up (cannot be used twice)', u.points === 25 && u.boostPP === 0 && u.boostUntil === 0 && l.boostUsed === true && l.extraPP === 10, JSON.stringify([u, l]));
+  w = mk({ boostPP: 10, boostUntil: Date.now() - 1 * day }); await w.completeOrder('o1', null); ck('win-back boost: an expired window gives nothing (20 pts)', w.store.get('users/cust').points === 20, w.store.get('users/cust').points);
+  w = mk({ boostPP: 10, boostUntil: Date.now() - 1 * day }, { ts: { toMillis: () => Date.now() - 3 * day } }); await w.completeOrder('o1', null);
+  ck('win-back boost: placed inside the window, delivered after it closed → he still gets what was promised (25 pts)', w.store.get('users/cust').points === 25, w.store.get('users/cust').points);
+  w = mk({ orders: 6, boostPP: 3, boostUntil: Date.now() + day }); await w.completeOrder('o1', null); u = w.store.get('users/cust');
+  ck('perks never stack: pro (+6) with a +3 boost → the larger one (46% → 23 pts), and the unused small boost is not consumed', u.points === 23 && u.boostPP === 3, JSON.stringify(u));
+  w = mk({ orders: 15, boostPP: 10, boostUntil: Date.now() + day }); w.store.set('settings/maintenance', { pointsOff: true }); await w.completeOrder('o1', null);
+  ck('points paused: no tier perk, no boost, nothing — but the purchase still restarts his expiry clock', w.store.get('users/cust').points === 0 && w.store.get('users/cust').lastPurchaseAt > 0, JSON.stringify(w.store.get('users/cust')));
+  w = mk({}, { awarded: undefined }); delete w.store.get('orders/o1').awarded; await w.completeOrder('o1', { title: 'n' }); u = w.store.get('users/cust');
+  ck('legacy order (no awarded flag): no points again, but the delivery still resets lastPurchaseAt / cartAt', u.points === 0 && u.lastPurchaseAt > 0 && u.cartAt === 0, JSON.stringify(u));
+  w = mk({}, { doneAt: 1234 }); await w.completeOrder('o1', null); ck('doneAt is fixed at the FIRST delivery — a re-send never moves the thank-you timer', w.store.get('orders/o1').doneAt === 1234, w.store.get('orders/o1').doneAt); }
+
 /* ───────── store-level simulation: the store never ends up behind ───────── */
 { // 300 customers, random prices/costs (cost 80–99.5% of price), random invite links; every customer redeems whenever the Worker would allow it.
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;

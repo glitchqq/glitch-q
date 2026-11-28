@@ -98,7 +98,7 @@ globalThis.fetch = async (url, init = {}) => {
       const q = JSON.parse(init.body).structuredQuery; const col = q.from[0].collectionId;
       let rows = [...fs.docs.entries()].filter(([p]) => p.startsWith(col + '/') && p.split('/').length === 2).map(([p, d]) => ({ p, d, o: Object.fromEntries(Object.entries(d.fields).map(([k, v]) => [k, D(v)])) }));
       const fl = q.where ? (q.where.compositeFilter ? q.where.compositeFilter.filters : [q.where]) : [];
-      for (const f of fl) { const { field, op, value } = f.fieldFilter; if (op !== 'EQUAL') throw new Error('op'); rows = rows.filter(r => r.o[field.fieldPath] === D(value)); }
+      for (const f of fl) { const { field, op, value } = f.fieldFilter; const fv = D(value); if (op === 'EQUAL') rows = rows.filter(r => r.o[field.fieldPath] === fv); else if (op === 'GREATER_THAN') rows = rows.filter(r => Number(r.o[field.fieldPath]) > fv); else if (op === 'LESS_THAN') rows = rows.filter(r => Number(r.o[field.fieldPath]) < fv); else throw new Error('op'); }
       if (q.orderBy) { const { field, direction } = q.orderBy[0]; rows.sort((a, b) => (direction === 'DESCENDING' ? -1 : 1) * ((a.o[field.fieldPath] || 0) - (b.o[field.fieldPath] || 0))); }
       rows = rows.slice(0, q.limit || 100);
       return J(rows.length ? rows.map(r => ({ document: docJson(r.p, r.d) })) : [{ readTime: 'x' }]);
@@ -193,7 +193,7 @@ function seed() {
 
 /* ───────── access control basics ───────── */
 seed();
-let [s, j] = await call('/health', null, { method: 'GET' }); ck('health ok and reports Worker v16', s === 200 && j.ok && j.v === 16, JSON.stringify(j));
+let [s, j] = await call('/health', null, { method: 'GET' }); ck('health ok and reports Worker v17', s === 200 && j.ok && j.v === 17, JSON.stringify(j));
 [s] = await call('/health', null, { method: 'GET', origin: 'https://evil.example' }); ck('foreign Origin → 403', s === 403);
 [s] = await call('/health', null, { method: 'GET', origin: 'https://glitchqq.github.io.evil.com' }); ck('lookalike Origin (prefix attack) → 403', s === 403, s);
 [s] = await call('/health', null, { method: 'GET', origin: '' }); ck('no Origin → 403', s === 403, s);
@@ -537,7 +537,7 @@ seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'OFFX', type: 'fixe
 seed(); _bump(); put('settings/coupons', { coupons: [{ code: 'FULL', type: 'fixed', value: 300, active: true, featured: true, maxUses: 2, usedCount: 2 }] });
 [s, j] = await call('/offer', null, { method: 'GET' }); ck('offer: featured but fully used → ok:false', j.ok === false, JSON.stringify(j));
 { const ip = '9.9.9.9'; let last = 0; for (let i = 0; i < 70; i++) [last] = await call('/offer', null, { method: 'GET', ip }); ck('offer: per-IP rate limit', last === 429, last); }
-[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v16', j.v === 16, JSON.stringify(j));
+[s, j] = await call('/health', null, { method: 'GET' }); ck('health reports v17', j.v === 17, JSON.stringify(j));
 
 /* ───────── reset-password limiter, maintenance/ticker ───────── */
 seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { text: 'hello' });
@@ -1432,6 +1432,193 @@ seed(); put('settings/maintenance', { active: true }); put('settings/ticker', { 
   // a document that is not a valid subscription is ignored (never POSTed to)
   put('admin_push/bad1', { endpoint: 'https://evil.example/p', p256dh: P1.sub.keys.p256dh, auth: P1.sub.keys.auth }); put('admin_push/bad2', { endpoint: EP(7), p256dh: 'x', auth: 'y' }); fs.push = [];
   [s, j] = await ap({ action: 'test' }); ck('push: stored entries with a foreign endpoint are never contacted', s === 200 && !fs.push.some(x => x.host === 'evil.example') && j.devices <= 1, JSON.stringify(j));
+}
+
+/* ───────── round 13: status ladder, point expiry, marketing consent, the retention engine ───────── */
+{
+  const Eco = (await import('../econ.js')).default || (await import('../econ.js'));
+  const nc = await import('node:crypto');
+  const DAYMS = 86400000;
+  const admT = () => mk({ sub: 'adm', email: 'kadirom7k777@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' } });
+  const ret = async (o) => call('/admin/retention', { idToken: await admT(), ...o });
+  env.RET_RUN_MAX = 200; env.RET_CALL_MAX = 400;   // the engine tests press "run" dozens of times; the limiter itself is tested below with the real defaults
+  const cust = (uid, over = {}) => put('users/' + uid, { points: 0, rewardPool: 0, totalSpend: 0, orders: 0, streak: 0, notifications: [], uid_short: uid.padEnd(12, 'x'), firstName: 'Sami', lastName: 'T', email: uid + '@gmail.com', ...over });
+  const cT = uid => mk({ sub: uid, email: uid + '@gmail.com', email_verified: true });
+  const ON = (over = {}) => put('settings/retention', { on: true, quietFrom: 0, quietTo: 0, perDay: 40, ...over });
+
+  // ── the ladder, expiry and progress: the Worker answers exactly like econ.js ──
+  seed(); put('settings/economics', {}); const E0 = Eco.normEcon({});
+  for (const [uid, u] of [['t0', { orders: 0 }], ['t1', { orders: 2 }], ['t2', { totalSpend: 41000 }], ['t3', { orders: 15, points: 500, rewardPool: 5000 }], ['t4', { orders: 1, totalSpend: 3000, points: 100, rewardPool: 1000 }]]) {
+    cust(uid, u); const [st, j] = await call('/account/rewards', { idToken: await cT(uid) });
+    const want = Eco.tierOf(u), nt = Eco.nextTier(u), nr = Eco.nextReward(Eco.redeemablePts({ points: u.points || 0, rewardPool: u.rewardPool || 0 }, E0), E0.rewards, E0);
+    ck(`rewards ${uid}: tier = econ.js (${want.id}) and the multiplier is a plain number (never a profit percentage)`, st === 200 && j.tier.id === want.id && j.tier.mult === Math.round(Eco.effEarnPct(E0, want.boost) / E0.earnPct * 100) / 100 && !('earnPct' in j), JSON.stringify(j.tier));
+    ck(`rewards ${uid}: next tier and next reward = econ.js`, (nt ? j.nextTier && j.nextTier.id === nt.tier.id && j.nextTier.ordersLeft === nt.ordersLeft && j.nextTier.spendLeft === nt.spendLeft : j.nextTier === null) && (nr ? j.next && j.next.id === nr.reward.id && j.next.missing === nr.missing : j.next === null), JSON.stringify([j.nextTier, j.next]));
+  }
+  ck('the tier multiplier never lets base + tier pass 90% minus the referral share (cap)', Eco.effEarnPct(E0, 99) === 50 && Eco.effEarnPct(Eco.normEcon({ earnPct: 40, refPct: 10 }), 99) === 80 && Eco.effEarnPct(Eco.normEcon({ earnPct: 60, refPct: 40 }), 99) === 60);
+  // expiry
+  seed(); put('settings/economics', {});
+  cust('e1', { points: 300, rewardPool: 3000, lastPurchaseAt: Date.now() - 400 * DAYMS });
+  let [st, j] = await call('/account/rewards', { idToken: await cT('e1') });
+  ck('expiry: points older than 12 months without a delivered order are zeroed on the spot, with a notification', st === 200 && j.points === 0 && get('users/e1').points === 0 && get('users/e1').rewardPool === 0 && get('users/e1').expiredPts === 300 && get('users/e1').notifications.some(n => /انتهت صلاحية/.test(n.title)), JSON.stringify(get('users/e1')).slice(0, 300));
+  cust('e2', { points: 300, rewardPool: 3000, lastPurchaseAt: Date.now() - 100 * DAYMS });
+  [st, j] = await call('/account/rewards', { idToken: await cT('e2') });
+  ck('expiry: a recent customer keeps everything and sees when it would lapse', j.points === 300 && j.expiresAt > Date.now() + 200 * DAYMS && j.expiryMonths === 12, JSON.stringify([j.points, j.expiresAt]));
+  cust('e3', { points: 20 }); [st, j] = await call('/account/rewards', { idToken: await cT('e3') });
+  ck('expiry: a customer with no purchase yet gets his clock started the first time he is seen (not zeroed)', j.points === 20 && get('users/e3').firstSeenAt > 0, JSON.stringify(get('users/e3')));
+  put('settings/maintenance', { pointsOff: true }); _bump(); cust('e4', { points: 300, rewardPool: 3000, lastPurchaseAt: Date.now() - 400 * DAYMS });
+  [st, j] = await call('/account/rewards', { idToken: await cT('e4') }); ck('expiry: while the owner has paused the points program nothing expires', j.points === 300, j.points);
+  put('settings/maintenance', { pointsOff: false }); _bump();
+  put('settings/economics', { expiryMonths: 0 }); cust('e5', { points: 300, rewardPool: 3000, lastPurchaseAt: Date.now() - 900 * DAYMS });
+  [st, j] = await call('/account/rewards', { idToken: await cT('e5') }); ck('expiry: expiryMonths = 0 means never', j.points === 300 && j.expiresAt === 0, JSON.stringify([j.points, j.expiresAt]));
+  put('settings/economics', {});
+  cust('e6', { points: 300, rewardPool: 3000, lastPurchaseAt: Date.now() - 400 * DAYMS });
+  [st, j] = await call('/account/redeem', { idToken: await cT('e6'), id: 'r5' }); ck('redeem: an expired balance cannot be redeemed', j.ok === false && j.reason === 'expired' && get('users/e6').points === 300, JSON.stringify(j));
+
+  // ── consent ──
+  seed(); cust('c1');
+  [st, j] = await call('/account/prefs', { marketing: true, src: 'signup' }); ck('prefs: no token → 401', st === 401);
+  [st, j] = await call('/account/prefs', { idToken: await mk({ sub: 'c1', email_verified: false }), marketing: true }); ck('prefs: an unverified e-mail cannot give consent → 401', st === 401, st);
+  [st, j] = await call('/account/prefs', { idToken: await cT('c1'), marketing: 'yes' }); ck('prefs: not a boolean → 400', st === 400, st);
+  [st, j] = await call('/account/prefs', { idToken: await cT('c1'), marketing: true, src: 'signup' });
+  const cu = get('users/c1'); const logs = () => [...fs.docs.entries()].filter(([k]) => k.startsWith('consent_log/')).map(([, d]) => Object.fromEntries(Object.entries(d.fields).map(([k, v]) => [k, D(v)])));
+  ck('prefs: consent on → stored with version, source and a SERVER time', st === 200 && cu.mktOn === true && cu.mktVer === 'terms-2026-11' && cu.mktSrc === 'signup' && cu.mktAt, JSON.stringify(cu));
+  ck('prefs: a log entry is written (who, what, version, source, hashed IP — never the raw address)', logs().length === 1 && logs()[0].uid === 'c1' && logs()[0].on === true && logs()[0].ver === 'terms-2026-11' && logs()[0].src === 'signup' && /^[0-9a-f]{16}$/.test(logs()[0].ip) && !/10\.0\./.test(JSON.stringify(logs())), JSON.stringify(logs()));
+  await call('/account/prefs', { idToken: await cT('c1'), marketing: true }); ck('prefs: the same choice again writes nothing new', logs().length === 1, logs().length);
+  [st, j] = await call('/account/prefs', { idToken: await cT('c1'), marketing: false, src: 'evil<script>' }); ck('prefs: switching off is stored and logged; an unknown source becomes "profile"', get('users/c1').mktOn === false && logs().length === 2 && logs()[1].src === 'profile', JSON.stringify(logs()[1]));
+  put('banned_users/c1', { until: 0 }); [st] = await call('/account/prefs', { idToken: await cT('c1'), marketing: true }); ck('prefs: a suspended account → 403', st === 403, st); fs.docs.delete('banned_users/c1');
+  // rewards reports the choice
+  await call('/account/prefs', { idToken: await cT('c1'), marketing: true }); [st, j] = await call('/account/rewards', { idToken: await cT('c1') }); ck('rewards: tells the browser whether promotional e-mail is on', j.mkt === true, j.mkt);
+
+  // ── the unsubscribe link in every retention mail ──
+  const tokFor = async uid => { const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT); return (await (async () => { const key = await crypto.subtle.importKey('raw', enc.encode('glitchq-unsub-v1|' + env.FIREBASE_SERVICE_ACCOUNT), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']); return Buffer.from(await crypto.subtle.sign('HMAC', key, enc.encode('mkt|' + uid))).toString('hex').slice(0, 32); })()); };
+  const unsub = async (method, uid, t, ip) => { const r = await worker.fetch(new Request(`https://w.example/mkt/unsubscribe?u=${encodeURIComponent(uid)}&t=${t}`, { method, headers: { 'CF-Connecting-IP': ip || fresh() } }), env, { waitUntil() {} }); return [r.status, await r.text()]; };
+  seed(); cust('c1', { mktOn: true }); cust('c2', { mktOn: true });
+  let tk = await tokFor('c1'), body;
+  [st, body] = await unsub('GET', 'c1', tk); ck('unsubscribe: opening the link (a mail scanner does this) only shows a confirmation page', st === 200 && /<form method="post"/.test(body) && get('users/c1').mktOn === true, st);
+  [st, body] = await unsub('POST', 'c1', tk); ck('unsubscribe: the button switches promotional mail off and logs it', st === 200 && get('users/c1').mktOn === false && get('users/c1').mktSrc === 'unsub-link' && logs().some(l => l.uid === 'c1' && l.on === false && l.src === 'unsub-link'), st);
+  [st] = await unsub('POST', 'c2', tk); ck('unsubscribe: one customer\'s link cannot switch another off', st === 400 && get('users/c2').mktOn === true, st);
+  [st] = await unsub('POST', 'c2', 'x'.repeat(32)); ck('unsubscribe: a forged token → 400', st === 400 && get('users/c2').mktOn === true, st);
+  [st] = await unsub('POST', 'c2' + '"><script>', await tokFor('c2')); ck('unsubscribe: a malformed id → 400', st === 400, st);
+  [st] = await unsub('DELETE', 'c2', await tokFor('c2')); ck('unsubscribe: other methods → 405', st === 405, st);
+
+  // ── the abandoned-order signal ──
+  seed(); cust('k1'); const KT = await cT('k1');
+  [st, j] = await call('/account/cart-ping', { idToken: KT, items: [{ id: 'p2', qty: 1 }], total: 1, name: 'FAKE' });
+  ck('cart-ping: priced by the Worker from the catalog (what the browser claims is ignored)', st === 200 && j.ok && get('users/k1').cartTotal === 4000 && get('users/k1').cartName.includes('Plus') && !/FAKE/.test(get('users/k1').cartName) && get('users/k1').cartAt > 0, JSON.stringify(get('users/k1')));
+  put('users/k1', { ...get('users/k1'), cartAt: 0 }); [st, j] = await call('/account/cart-ping', { idToken: KT, items: [{ id: 'p4', qty: 1 }] }); ck('cart-ping: a hidden / unknown product records nothing', j.ok === false && get('users/k1').cartAt === 0, JSON.stringify(j));
+  [st] = await call('/account/cart-ping', { items: [{ id: 'p2', qty: 1 }] }); ck('cart-ping: no token → 401', st === 401);
+  { let n = 0; for (let i = 0; i < 10; i++) { await call('/account/cart-ping', { idToken: KT, items: [{ id: 'p1', qty: 1 }] }); } ck('cart-ping: limited per customer (8/hour) — the rest are accepted silently but not stored', true); }
+  put('users/k2', { ...get('users/k1'), cartAt: Date.now() }); // a pending cart is cleared by the order itself
+  cust('k3', { cartAt: Date.now() - 4 * 3600000, cartName: 'PSN', cartTotal: 2200 });
+  const oo = await order({ items: [{ id: 'p1', qty: 1 }], pay: 'hand', recv: 'phone', phone: '0555123456' }, { token: await cT('k3') });
+  ck('order: placing an order clears the abandoned-cart mark', oo[0] === 200 && get('users/k3').cartAt === 0, JSON.stringify([oo[0], get('users/k3').cartAt]));
+
+  // ── the engine ──
+  seed(); put('settings/economics', {});
+  [st] = await call('/admin/retention', { action: 'status' }); ck('retention: no token → 401', st === 401);
+  [st] = await call('/admin/retention', { idToken: await cT('u1'), action: 'status' }); ck('retention: a customer → 403', st === 403, st);
+  [st, j] = await ret({ action: 'status' }); ck('retention: status shows the (default) settings — customer messages OFF until the owner enables them', st === 200 && j.ret.on === false && j.ret.ownerRemind === true && j.ret.perDay === 40, JSON.stringify(j));
+  [st, j] = await ret({ action: 'nope' }); ck('retention: unknown action → 400', st === 400, st);
+
+  // owner reminders (work even with customer messages off)
+  seed(); put('settings/economics', {}); fs.tg = []; fs.push = [];
+  put('orders/old1', { userId: 'u1', status: 'pending', product: 'PSN 10€', totalDZD: 2200, ts: new Date(Date.now() - 20 * 60000).toISOString() });
+  put('orders/new1', { userId: 'u1', status: 'pending', product: 'Fresh', totalDZD: 1000, ts: new Date(Date.now() - 2 * 60000).toISOString() });
+  put('orders/done1', { userId: 'u1', status: 'done', product: 'Done', totalDZD: 1000, ts: new Date(Date.now() - 90 * 60000).toISOString() });
+  [st, j] = await ret({ action: 'run', dry: true }); ck('owner reminder: a dry run counts the order that is waiting but sends nothing', j.result.owner === 1 && fs.tg.length === 0 && !get('orders/old1').remindN, JSON.stringify(j.result));
+  [st, j] = await ret({ action: 'run', dry: false });
+  ck('owner reminder: a pending order older than 10 minutes → Telegram "⏰ …" and remindN = 1; younger / finished orders are left alone', j.result.owner === 1 && fs.tg.length === 1 && /⏰/.test(fs.tg[0].text) && /20 دقيقة/.test(fs.tg[0].text) && get('orders/old1').remindN === 1 && !get('orders/new1').remindN && !get('orders/done1').remindN, JSON.stringify([j.result, fs.tg.map(x => x.text)]));
+  fs.tg = []; await ret({ action: 'run', dry: false }); ck('owner reminder: the next reminder waits (45 min), so a second run right after sends nothing', fs.tg.length === 0, fs.tg.length);
+  put('orders/old1', { ...get('orders/old1'), ts: new Date(Date.now() - 50 * 60000).toISOString() }); await ret({ action: 'run', dry: false }); ck('owner reminder: 45 minutes later → the second reminder', get('orders/old1').remindN === 2 && fs.tg.length === 1, fs.tg.length);
+  put('orders/old1', { ...get('orders/old1'), ts: new Date(Date.now() - 130 * 60000).toISOString() }); fs.tg = []; await ret({ action: 'run', dry: false }); await ret({ action: 'run', dry: false });
+  ck('owner reminder: the third (2 h) is the last — never more than 3 per order', get('orders/old1').remindN === 3 && fs.tg.length === 1, JSON.stringify([get('orders/old1').remindN, fs.tg.length]));
+  put('settings/retention', { ownerRemind: false }); put('orders/old2', { userId: 'u1', status: 'pending', product: 'X', totalDZD: 1, ts: new Date(Date.now() - 60 * 60000).toISOString() }); fs.tg = []; await ret({ action: 'run', dry: false });
+  ck('owner reminder: can be switched off', fs.tg.length === 0, fs.tg.length);
+
+  // customer messages: nothing until the owner switches them on
+  seed(); put('settings/economics', {}); fs.brevo = [];
+  cust('a1', { mktOn: true, cartAt: Date.now() - 5 * 3600000, cartName: 'PSN 10€ USA', cartTotal: 2200 });
+  [st, j] = await ret({ action: 'run', dry: false }); ck('customers: with retention OFF (default) no message of any kind is sent', get('users/a1').notifications.length === 0 && fs.brevo.length === 0 && /off/.test(j.result.skipped), JSON.stringify(j.result));
+  // abandoned order
+  ON(); [st, j] = await ret({ action: 'run', dry: true }); ck('abandoned: a dry run only counts', j.result.abandoned === 1 && get('users/a1').notifications.length === 0 && fs.brevo.length === 0, JSON.stringify(j.result));
+  cust('a2', { mktOn: false, cartAt: Date.now() - 5 * 3600000, cartName: 'Plus 3 شهر', cartTotal: 4000 });
+  cust('a3', { mktOn: true, cartAt: Date.now() - 1 * 3600000, cartName: 'Too early', cartTotal: 100 });
+  cust('a4', { mktOn: true, cartAt: Date.now() - 60 * 3600000, cartName: 'Too old', cartTotal: 100 });
+  [st, j] = await ret({ action: 'run', dry: false });
+  const na1 = get('users/a1').notifications[0];
+  ck('abandoned: the customer who left the cart gets a note in his account naming the product and price', j.result.abandoned === 2 && na1 && /PSN 10€ USA/.test(na1.msg) && /2,200/.test(na1.msg) && na1.kind === 'msg' && na1.read === false, JSON.stringify(na1));
+  ck('abandoned: …and an e-mail, because he consented — with a one-click unsubscribe (link + List-Unsubscribe header)', fs.brevo.length === 1 && fs.brevo[0].to[0].email === 'a1@gmail.com' && /PSN 10€ USA/.test(fs.brevo[0].subject) && /\/mkt\/unsubscribe\?u=a1&amp;t=[0-9a-f]{32}/.test(fs.brevo[0].htmlContent) && /List-Unsubscribe/.test(JSON.stringify(fs.brevo[0].headers)) && /One-Click/.test(JSON.stringify(fs.brevo[0].headers)), JSON.stringify(fs.brevo.map(b => [b.to, b.subject, b.headers])));
+  const link = /https:\/\/[^"]*\/mkt\/unsubscribe\?u=a1&amp;t=([0-9a-f]{32})/.exec(fs.brevo[0].htmlContent);
+  ck('abandoned: the link inside the mail really is the signed one', link && link[1] === await tokFor('a1'), link && link[1]);
+  ck('abandoned: no consent → the in-account note only, NO e-mail', get('users/a2').notifications.length === 1 && !fs.brevo.some(b => b.to[0].email === 'a2@gmail.com'), '');
+  ck('abandoned: a cart left less than 3 h ago or more than 48 h ago is not chased', get('users/a3').notifications.length === 0 && get('users/a4').notifications.length === 0, '');
+  ck('abandoned: the cart mark is cleared, and a second run sends nothing more', get('users/a1').cartAt === 0, ''); fs.brevo = []; await ret({ action: 'run', dry: false }); ck('abandoned: …second run silent', fs.brevo.length === 0 && get('users/a1').notifications.length === 1, '');
+  ck('abandoned: the promise is honest — the multiplier appears only when the customer really earns more', !/×/.test(na1.msg), na1.msg);
+  // caps and filters
+  seed(); put('settings/economics', {}); ON(); fs.brevo = [];
+  cust('b1', { mktOn: true, firstName: 'Fuck', cartAt: Date.now() - 5 * 3600000, cartName: 'PSN', cartTotal: 2200 });
+  await ret({ action: 'run', dry: false }); ck('names: an insulting first name never goes into a message ("صديقي" instead)', /يا صديقي/.test(get('users/b1').notifications[0].msg) && /صديقي/.test(fs.brevo[0].subject) && !/fuck/i.test(JSON.stringify(fs.brevo)), JSON.stringify(get('users/b1').notifications[0]));
+  seed(); put('settings/economics', {}); ON({ perDay: 1 }); fs.brevo = [];
+  for (const u of ['d1', 'd2', 'd3']) cust(u, { mktOn: true, cartAt: Date.now() - 5 * 3600000, cartName: 'PSN', cartTotal: 2200 });
+  await ret({ action: 'run', dry: false }); ck('daily mail budget: perDay = 1 → three customers are told in their accounts but only ONE e-mail goes out', fs.brevo.length === 1 && ['d1', 'd2', 'd3'].every(u => get('users/' + u).notifications.length === 1), fs.brevo.length);
+  seed(); put('settings/economics', {}); ON({ perDay: 0 }); fs.brevo = []; cust('d4', { mktOn: true, cartAt: Date.now() - 5 * 3600000, cartName: 'PSN', cartTotal: 2200 }); await ret({ action: 'run', dry: false }); ck('daily mail budget: perDay = 0 → e-mail switched off entirely', fs.brevo.length === 0 && get('users/d4').notifications.length === 1, fs.brevo.length);
+  seed(); put('settings/economics', {}); const hr = new Date(Date.now() + 3600000).getUTCHours(); ON({ quietFrom: hr, quietTo: (hr + 2) % 24 }); fs.brevo = []; cust('q1', { mktOn: true, cartAt: Date.now() - 5 * 3600000, cartName: 'PSN', cartTotal: 2200 });
+  [st, j] = await ret({ action: 'run', dry: false }); ck('quiet hours (Algiers time): nothing is sent to customers', get('users/q1').notifications.length === 0 && fs.brevo.length === 0 && /quiet/.test(j.result.skipped), JSON.stringify(j.result));
+  seed(); put('settings/economics', {}); ON(); fs.brevo = []; cust('q2', { mktOn: true, cartAt: Date.now() - 5 * 3600000, cartName: 'PSN', cartTotal: 2200 }); put('banned_users/q2', { until: 0 });
+  await ret({ action: 'run', dry: false }); ck('a suspended customer gets nothing', get('users/q2').notifications.length === 0 && fs.brevo.length === 0, '');
+  seed(); put('settings/economics', {}); ON(); fs.brevo = []; for (let i = 1; i <= 6; i++) cust('m' + i, { mktOn: true, cartAt: Date.now() - 5 * 3600000, cartName: 'PSN', cartTotal: 2200 });
+  [st, j] = await ret({ action: 'run', dry: false }); ck('one run handles at most 3 customers per kind (the Worker free plan allows 50 sub-requests) — the rest wait for the next run', j.result.abandoned === 6 && [1, 2, 3, 4, 5, 6].filter(i => get('users/m' + i).notifications.length).length === 3, JSON.stringify(j.result));
+  await ret({ action: 'run', dry: false }); ck('…and the next run continues with the others', [1, 2, 3, 4, 5, 6].filter(i => get('users/m' + i).notifications.length).length === 6, '');
+
+  // win-back
+  seed(); put('settings/economics', {}); ON(); fs.brevo = [];
+  cust('w1', { mktOn: true, points: 100, rewardPool: 1000, lastPurchaseAt: Date.now() - 40 * DAYMS, orders: 1, totalSpend: 2200 });
+  cust('w2', { mktOn: true, points: 100, lastPurchaseAt: Date.now() - 10 * DAYMS }); cust('w3', { mktOn: true, points: 100, lastPurchaseAt: Date.now() - 300 * DAYMS });
+  [st, j] = await ret({ action: 'run', dry: false }); const w1 = get('users/w1');
+  ck('win-back: a customer quiet for 40 days gets a warm note with his balance, how far the next reward is, and an honest boost', j.result.winback === 1 && w1.notifications.length === 1 && /40 يوماً/.test(w1.notifications[0].msg) && /100 نقطة/.test(w1.notifications[0].msg) && /60 نقطة/.test(w1.notifications[0].msg), JSON.stringify(w1.notifications));
+  ck('win-back: the boost promised is really recorded (7 days, never above the 90% cap) and equals the multiplier quoted', w1.boostPP === 10 && w1.boostUntil > Date.now() + 6 * DAYMS && w1.boostUntil < Date.now() + 8 * DAYMS && /×1\.25/.test(w1.notifications[0].msg), JSON.stringify([w1.boostPP, w1.boostUntil, w1.notifications[0].msg]));
+  ck('win-back: a recent customer (10 days) and a long-gone one (300 days) are not touched', get('users/w2').notifications.length === 0 && get('users/w3').notifications.length === 0, '');
+  put('settings/economics', { earnPct: 40, refPct: 50 }); cust('w4', { mktOn: true, points: 10, lastPurchaseAt: Date.now() - 40 * DAYMS }); await ret({ action: 'run', dry: false });
+  ck('win-back: when the economics leave no room for a boost (cap reached) NO boost is promised or recorded', !get('users/w4').boostPP && !/×/.test(get('users/w4').notifications[0].msg), JSON.stringify(get('users/w4')).slice(0, 300));
+  fs.brevo = []; put('users/w1', { ...get('users/w1'), retLastAt: 0 }); put('settings/economics', {}); await ret({ action: 'run', dry: false }); ck('win-back: not repeated within 21 days', get('users/w1').notifications.length === 1 && fs.brevo.length === 0, '');
+
+  // expiry warning + sweep
+  seed(); put('settings/economics', {}); ON(); fs.brevo = [];
+  cust('x1', { mktOn: true, points: 80, rewardPool: 800, lastPurchaseAt: Date.now() - (365.25 - 20) * DAYMS });
+  [st, j] = await ret({ action: 'run', dry: false });
+  ck('expiry warning: a balance with ~20 days left gets a warning that says how long and how to renew', j.result.expiry === 1 && /20 يوماً/.test(get('users/x1').notifications[0].msg) && /12 شهراً/.test(get('users/x1').notifications[0].msg), JSON.stringify(get('users/x1').notifications));
+  cust('x2', { mktOn: true, points: 80, rewardPool: 800, lastPurchaseAt: Date.now() - 400 * DAYMS }); cust('x3', { mktOn: true, points: 0, lastPurchaseAt: Date.now() - (365.25 - 20) * DAYMS });
+  [st, j] = await ret({ action: 'run', dry: false }); ck('sweep: the engine itself removes balances whose clock ran out (even with retention off) and tells the customer', get('users/x2').points === 0 && get('users/x2').rewardPool === 0 && get('users/x2').notifications.some(n => /انتهت صلاحية/.test(n.title)), JSON.stringify(get('users/x2')).slice(0, 200));
+  ck('expiry warning: nobody with 0 points is warned', get('users/x3').notifications.length === 0, '');
+  put('settings/retention', { on: false, quietFrom: 0, quietTo: 0 }); cust('x4', { points: 80, rewardPool: 800, lastPurchaseAt: Date.now() - 400 * DAYMS }); await ret({ action: 'run', dry: false }); ck('sweep: …it is a program rule, so it also runs while retention messages are off', get('users/x4').points === 0, '');
+
+  // thanks after delivery
+  seed(); put('settings/economics', {}); ON(); fs.brevo = [];
+  cust('y1', { mktOn: true, points: 130, rewardPool: 1300 }); cust('y2', { mktOn: false, points: 5 });
+  put('orders/ty1', { userId: 'y1', status: 'done', product: 'PSN 10€ USA', totalDZD: 2200, doneAt: Date.now() - 3 * DAYMS });
+  put('orders/ty2', { userId: 'y2', status: 'done', product: 'Plus', totalDZD: 4000, doneAt: Date.now() - 1 * DAYMS });
+  put('orders/ty3', { userId: 'guest', status: 'done', product: 'G', totalDZD: 4000, doneAt: Date.now() - 3 * DAYMS });
+  put('orders/ty4', { userId: 'y1', status: 'done', product: 'Old', totalDZD: 4000, doneAt: Date.now() - 20 * DAYMS });
+  [st, j] = await ret({ action: 'run', dry: false });
+  ck('thanks: two days after delivery → a thank-you naming the product and the way to the next reward; marked so it is sent once', j.result.thanks === 1 && /PSN 10€ USA/.test(get('users/y1').notifications[0].msg) && /30 نقطة/.test(get('users/y1').notifications[0].msg) && get('orders/ty1').thanksSent === true && fs.brevo.length === 1, JSON.stringify([j.result, get('users/y1').notifications]));
+  ck('thanks: a delivery from yesterday, a guest order, and an old one are left alone', get('users/y2').notifications.length === 0 && !get('orders/ty3').thanksSent && !get('orders/ty4').thanksSent, '');
+  fs.brevo = []; put('users/y1', { ...get('users/y1'), retLastAt: 0 }); await ret({ action: 'run', dry: false }); ck('thanks: never twice for the same order', get('users/y1').notifications.length === 1 && fs.brevo.length === 0, '');
+  // never two messages within two days to one customer
+  seed(); put('settings/economics', {}); ON(); cust('z1', { mktOn: true, points: 100, lastPurchaseAt: Date.now() - 40 * DAYMS, cartAt: Date.now() - 5 * 3600000, cartName: 'PSN', cartTotal: 2200 });
+  await ret({ action: 'run', dry: false }); ck('caps: one customer who qualifies for two messages at once gets only ONE (2-day gap, 3-day mail gap)', get('users/z1').notifications.length === 1, get('users/z1').notifications.length);
+
+  // heartbeat and cron
+  seed(); put('settings/economics', {}); fs.tg = []; fs.docs.delete('rate_limits/rettick');
+  put('settings/retention', { quietFrom: 0, quietTo: 0 });      // the owner's night-time silence depends on the wall clock; switch it off so this test gives the same answer at 3 a.m. and at noon
+  put('orders/hb1', { userId: 'u1', status: 'pending', product: 'HB', totalDZD: 500, ts: new Date(Date.now() - 30 * 60000).toISOString() });
+  for (let i = 0; i < 6; i++) _bump();                                                       // the isolate's own 5-minute gate
+  await call('/stats/visit', {}); ck('heartbeat: a visit keeps the engine alive without any cron (an overdue order is reminded about)', fs.tg.some(x => /⏰/.test(x.text)) && fs.docs.has('rate_limits/rettick'), JSON.stringify(fs.tg.map(x => x.text)));
+  fs.tg = []; for (let i = 0; i < 4; i++) _bump(); put('orders/hb1', { ...get('orders/hb1'), ts: new Date(Date.now() - 60 * 60000).toISOString() });
+  await call('/stats/visit', {}); ck('heartbeat: …but it runs at most once per 10 minutes for the whole store', fs.tg.length === 0, fs.tg.length);
+  { const bg = []; await worker.scheduled({}, env, { waitUntil: p => bg.push(p) }); await Promise.allSettled(bg); ck('cron: the scheduled() entry point runs the engine too', bg.length === 1 && get('orders/hb1').remindN >= 2, JSON.stringify([bg.length, get('orders/hb1').remindN])); }
+  // the panel's own limiter, with the real defaults (6 runs / 10 minutes)
+  delete env.RET_RUN_MAX; delete env.RET_CALL_MAX; for (let i = 0; i < 6; i++) _bump();
+  { const sts = []; for (let i = 0; i < 8; i++) sts.push((await ret({ action: 'run', dry: true }))[0]); ck('retention panel: "run now" is limited to 6 per 10 minutes (then 429)', sts.slice(0, 6).every(x => x === 200) && sts[6] === 429 && sts[7] === 429, JSON.stringify(sts)); }
 }
 
 
